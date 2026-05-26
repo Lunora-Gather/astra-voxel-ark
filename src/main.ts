@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v0.7 Adaptive Quality'
+const GAME_VERSION_LABEL = 'v0.8 Adaptive Animation'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -88,7 +88,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.7</h2><p>Adaptive Quality - smoother frames on desktop and mobile</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.8</h2><p>Adaptive Animation - decorative motion scales with frame budget</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -178,6 +178,9 @@ const GRASS_ANIMATION_BUDGET = lowPowerMode ? 55 : 140
 const MIN_RENDER_QUALITY = lowPowerMode ? 0.68 : 0.78
 const MAX_RENDER_QUALITY = lowPowerMode ? 0.95 : 1
 const QUALITY_STEP = 0.06
+function adaptiveBudget(base: number, minimum: number) {
+  return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55)))
+}
 const BLOCK_IDS = new Set<BlockId>(BLOCKS.map((block) => block.id))
 type SavedBlock = [number, number, number, BlockId]
 type SavedWorld = {
@@ -1905,14 +1908,15 @@ function animate() {
 
   world.rotation.y = Math.sin(elapsedTime * 0.05) * 0.006
   animateBlockMaterials(materials, elapsedTime)
-  for (let i = 0; i < waterBlocks.length; i++) {
+  const waterUpdates = adaptiveBudget(waterBlocks.length, Math.min(8, waterBlocks.length))
+  for (let i = 0; i < waterUpdates; i++) {
     const water = waterBlocks[i]
     const phase = elapsedTime * 1.8 + i * 0.37
     water.position.y = (water.userData.baseY as number) + Math.sin(phase) * 0.035
     water.scale.y = 0.92 + Math.sin(phase * 1.3) * 0.035
   }
   const grassCount = grassTufts.length
-  const grassUpdates = Math.min(grassCount, GRASS_ANIMATION_BUDGET)
+  const grassUpdates = Math.min(grassCount, adaptiveBudget(GRASS_ANIMATION_BUDGET, lowPowerMode ? 24 : 48))
   if (grassAnimationCursor >= grassCount) grassAnimationCursor = 0
   for (let i = 0; i < grassUpdates; i++) {
     const tuft = grassTufts[grassAnimationCursor]
@@ -1921,11 +1925,13 @@ function animate() {
     grassAnimationCursor = (grassAnimationCursor + 1) % grassCount
   }
   clouds.rotation.y += dt * 0.006
-  for (let i = 0; i < clouds.children.length; i++) {
+  const cloudUpdates = adaptiveBudget(clouds.children.length, Math.min(3, clouds.children.length))
+  for (let i = 0; i < cloudUpdates; i++) {
     const cloud = clouds.children[i]
     cloud.position.x += Math.sin(elapsedTime * 0.08 + i) * dt * 0.03
   }
-  for (let i = 0; i < sparkles.children.length; i++) {
+  const sparkleUpdates = adaptiveBudget(sparkles.children.length, lowPowerMode ? 12 : 24)
+  for (let i = 0; i < sparkleUpdates; i++) {
     const sparkle = sparkles.children[i]
     const seed = sparkle.userData.seed as number
     sparkle.position.y += Math.sin(elapsedTime * 1.4 + seed) * dt * 0.08
