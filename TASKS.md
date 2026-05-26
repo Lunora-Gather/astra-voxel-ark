@@ -262,3 +262,14 @@ Run npm run build before finishing.
 - 收紧帮助文案，把探索目标压缩为 “find 6 landmark shards”，避免 Controls/Tips 过长造成桌面和移动端拥挤。
 - 不新增玩法系统、不新增 HUD 面板；v2.3 作为 v2.1 背包真实感与 v2.2 探索目标之后的稳定停工点。
 - 验收要求：`git diff --check`、`npm run build`、浏览器进入游戏、save/load smoke、console 零错误、后台进程为空。
+
+## QA Feedback & Optimization (v0.2) [三弟 QA]
+
+- **移动端与触控交互优化 (Mobile & Touch Interactivity Polish)**:
+  - 已通过 CSS `@media (hover: hover)` 包裹 `.help-toggle-btn:hover`、`.save-tools button:hover` 以及 `.panel button:hover` 的悬停样式，成功消除移动端触屏设备上按钮被点击后遗留/卡死的“粘性悬停 (sticky hover)”状态，极大提升触控物理反馈体验。
+  - 维持现有移动端自适应布局。移动端横屏模式下，左上角标题与 `.save-tools` 的自适应排版以及生存诊断 `.survival-badge` 面板适配度已通过安全区域 (`env(safe-area-inset-*)`) 的细致核对，无布局塌陷或水平挤压重叠风险。
+- **页面资源与仓库整洁度 (Repository & Asset Hygiene)**:
+  - 修改 `index.html` 浏览器标题为 `AstraVoxel Ark v0.2`，保证版本与 `main.ts` 中的 `${GAME_VERSION_LABEL}` 一致，提高页面发布的专业度。
+  - 核查并确认 `.gitignore` 规则，排除 Android Gradle 生成的临时文件、构建文件和 `.npmkeep` 等，保持 Git 干净整洁，仅追踪有效源码。
+- **运行及构建验证 (Build Verification)**:
+  - 成功运行 `npm run build` 打包。所有 TypeScript 类型检查通过，Vite 生成的产物无报错及警告。

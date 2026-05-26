@@ -31,10 +31,14 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .perf-metric { display: flex; align-items: center; gap: 4px; }
 .perf-divider { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.2); }
 .help-toggle-btn { display: none; pointer-events: auto; position: absolute; right: 24px; top: 20px; width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.22); background: linear-gradient(135deg, rgba(9, 14, 31, 0.72), rgba(33, 54, 82, 0.45)); backdrop-filter: blur(18px); color: white; font-size: 18px; font-weight: 800; cursor: pointer; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18); transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); align-items: center; justify-content: center; }
-.help-toggle-btn:hover { transform: translateY(-2px); border-color: rgba(169, 239, 255, 0.8); box-shadow: 0 16px 44px rgba(95, 204, 255, 0.35); }
+@media (hover: hover) {
+  .help-toggle-btn:hover { transform: translateY(-2px); border-color: rgba(169, 239, 255, 0.8); box-shadow: 0 16px 44px rgba(95, 204, 255, 0.35); }
+}
 .save-tools { pointer-events: auto; position: absolute; left: 24px; bottom: 112px; display: flex; gap: 8px; padding: 8px; border-radius: 999px; background: linear-gradient(135deg, rgba(9,14,31,.62), rgba(33,54,82,.34)); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(18px); box-shadow: 0 16px 48px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.14); }
 .save-tools button { border: 1px solid rgba(255,255,255,.2); border-radius: 999px; padding: 8px 12px; background: rgba(255,255,255,.12); color: rgba(255,255,255,.92); font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), background 0.12s ease, border-color 0.12s ease; }
-.save-tools button:hover { background: rgba(157,232,255,.22); border-color: rgba(169,239,255,.6); transform: translateY(-1px); }
+@media (hover: hover) {
+  .save-tools button:hover { background: rgba(157,232,255,.22); border-color: rgba(169,239,255,.6); transform: translateY(-1px); }
+}
 .save-tools button:active { transform: scale(0.94) translateY(0); background: rgba(157,232,255,.32); border-color: rgba(169,239,255,.85); }
 .import-input { display: none; }
 .tutorial { pointer-events: none; position: absolute; left: 24px; top: 295px; max-width: 320px; padding: 12px 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(9,14,31,.62), rgba(33,54,82,.34)); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(18px); font-size: 13px; color: rgba(255,255,255,.88); transition: top 0.3s ease; }
@@ -156,7 +160,9 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .panel h2 { margin: 0 0 8px; font-size: 40px; letter-spacing: .1em; }
 .panel p { margin: 0; opacity: .86; }
 .panel button { margin-top: 22px; border: 0; border-radius: 999px; padding: 14px 25px; color: #071120; background: linear-gradient(135deg, #9ee8ff, #fff3a8 55%, #ffd7fa); font-weight: 900; cursor: pointer; box-shadow: 0 14px 44px rgba(117,221,255,.38); }
-.panel button:hover { transform: translateY(-1px); filter: brightness(1.04); }
+@media (hover: hover) {
+  .panel button:hover { transform: translateY(-1px); filter: brightness(1.04); }
+}
 .mobile-controls { display: none; pointer-events: none; position: absolute; inset: 0; }
 .rotate-prompt { display: none; position: absolute; inset: 0; place-items: center; pointer-events: auto; background: radial-gradient(circle at 50% 45%, rgba(126,220,255,.22), rgba(3,6,18,.88) 70%); backdrop-filter: blur(16px); text-align: center; }
 .rotate-prompt > div { display: grid; gap: 8px; padding: 28px 34px; border-radius: 28px; border: 1px solid rgba(255,255,255,.24); background: linear-gradient(145deg, rgba(9,15,34,.78), rgba(31,45,78,.58)); box-shadow: 0 30px 90px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.18); }

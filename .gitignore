@@ -1,9 +1,17 @@
 node_modules/
+
+# Web and desktop release outputs
 dist/
 release/
+
+# Android/Gradle generated outputs
 android/app/build/
 android/.gradle/
 android/build/
+android/**/*.apk
+android/**/*.aab
+android/**/*.aar
+
 .DS_Store
 .env
 .vite/

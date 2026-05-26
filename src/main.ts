@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v0.1 Reborn Baseline'
+const GAME_VERSION_LABEL = 'v0.2 Optimization Pass'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 
 app.innerHTML = `
@@ -83,7 +83,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.1</h2><p>Reborn Baseline - stable exploration slice</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.2</h2><p>Optimization Pass - performance and repo hygiene</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -100,7 +100,7 @@ camera.position.set(0, 12, 18)
 
 const renderer = new THREE.WebGLRenderer({ antialias: !isTouchDevice, powerPreference: 'high-performance' })
 renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2))
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.25 : 1.5))
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -116,11 +116,11 @@ scene.add(hemi)
 const sun = new THREE.DirectionalLight(0xfff3c4, 2.9)
 sun.position.set(38, 55, 22)
 sun.castShadow = true
-sun.shadow.mapSize.set(isTouchDevice ? 1024 : 2048, isTouchDevice ? 1024 : 2048)
-sun.shadow.camera.left = -80
-sun.shadow.camera.right = 80
-sun.shadow.camera.top = 80
-sun.shadow.camera.bottom = -80
+sun.shadow.mapSize.set(1024, 1024)
+sun.shadow.camera.left = -56
+sun.shadow.camera.right = 56
+sun.shadow.camera.top = 56
+sun.shadow.camera.bottom = -56
 scene.add(sun)
 
 const moon = new THREE.DirectionalLight(0x93baff, 0.25)
@@ -143,7 +143,7 @@ const grassTufts: THREE.Group[] = []
 const SAVE_KEY = 'astra-voxel-ark-world-v1'
 const CHUNK_SIZE = 8
 const INITIAL_TERRAIN_LOAD_RADIUS = 1
-const TERRAIN_LOAD_RADIUS = 2
+const TERRAIN_LOAD_RADIUS = 1
 const TERRAIN_MAX_RADIUS = 6
 const TERRAIN_CHUNKS_PER_FRAME = 1
 const BLOCK_IDS = new Set<BlockId>(BLOCKS.map((block) => block.id))
