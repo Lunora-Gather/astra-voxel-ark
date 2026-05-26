@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v0.5 Instanced Rendering'
+const GAME_VERSION_LABEL = 'v0.6 Grid Raycast'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -88,7 +88,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.5</h2><p>Instanced Rendering - block batches for steadier frames</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.6</h2><p>Grid Raycast - instant block picking without mesh scans</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -1284,69 +1284,65 @@ document.addEventListener('keydown', (e) => {
 })
 document.addEventListener('keyup', (e) => keys.delete(e.code))
 
-const raycaster = new THREE.Raycaster()
-const raycastHits: THREE.Intersection<THREE.Object3D>[] = []
-const raycastCandidates: THREE.Object3D[] = []
-const raycastCandidateIds = new Set<string>()
-const screenCenter = new THREE.Vector2(0, 0)
+type PickHit = {
+  key: string
+  distance: number
+  normal: THREE.Vector3
+}
+const pickDirection = new THREE.Vector3()
+const pickNormal = new THREE.Vector3()
 const placeNormal = new THREE.Vector3()
 const placePosition = new THREE.Vector3()
 const hitBlockPosition = new THREE.Vector3()
 const upNormal = new THREE.Vector3(0, 1, 0)
-let raycastCandidateCacheKey = ''
-
-function getRaycastCandidates() {
-  const pos = controls.object.position
-  const reach = RAYCAST_REACH + 1
-  const minCx = chunkCoord(pos.x - reach)
-  const maxCx = chunkCoord(pos.x + reach)
-  const minCy = chunkCoord(pos.y - reach)
-  const maxCy = chunkCoord(pos.y + reach)
-  const minCz = chunkCoord(pos.z - reach)
-  const maxCz = chunkCoord(pos.z + reach)
-  const cacheKey = `${minCx},${maxCx},${minCy},${maxCy},${minCz},${maxCz},${blockMutationVersion}`
-  if (cacheKey === raycastCandidateCacheKey) return raycastCandidates
-
-  raycastCandidateCacheKey = cacheKey
-  raycastCandidates.length = 0
-  raycastCandidateIds.clear()
-  for (let cx = minCx; cx <= maxCx; cx++) {
-    for (let cy = minCy; cy <= maxCy; cy++) {
-      for (let cz = minCz; cz <= maxCz; cz++) {
-        const chunk = chunks.get(chunkKey(cx, cy, cz))
-        if (!chunk) continue
-        chunk.buckets.forEach((bucket) => {
-          if (bucket.id === 'water') {
-            bucket.blockKeys.forEach((key) => {
-              const visual = blocks.get(key)
-              if (visual instanceof THREE.Mesh) raycastCandidates.push(visual)
-            })
-            return
-          }
-          const mesh = instancedBlockMeshes.get(bucket.id)
-          if (mesh && mesh.count > 0 && !raycastCandidateIds.has(bucket.id)) {
-            raycastCandidateIds.add(bucket.id)
-            raycastCandidates.push(mesh)
-          }
-        })
-      }
-    }
-  }
-  return raycastCandidates
-}
 
 function pickBlock() {
-  raycastHits.length = 0
-  raycaster.setFromCamera(screenCenter, camera)
-  raycaster.far = RAYCAST_REACH
-  return raycaster.intersectObjects(getRaycastCandidates(), false, raycastHits)[0]
+  camera.getWorldDirection(pickDirection).normalize()
+  const origin = controls.object.position
+  let ix = Math.floor(origin.x + 0.5)
+  let iy = Math.floor(origin.y + 0.5)
+  let iz = Math.floor(origin.z + 0.5)
+  const stepX = pickDirection.x >= 0 ? 1 : -1
+  const stepY = pickDirection.y >= 0 ? 1 : -1
+  const stepZ = pickDirection.z >= 0 ? 1 : -1
+  const tDeltaX = Math.abs(1 / (pickDirection.x || Number.EPSILON))
+  const tDeltaY = Math.abs(1 / (pickDirection.y || Number.EPSILON))
+  const tDeltaZ = Math.abs(1 / (pickDirection.z || Number.EPSILON))
+  let tMaxX = (((stepX > 0 ? ix + 0.5 : ix - 0.5) - origin.x) / (pickDirection.x || Number.EPSILON))
+  let tMaxY = (((stepY > 0 ? iy + 0.5 : iy - 0.5) - origin.y) / (pickDirection.y || Number.EPSILON))
+  let tMaxZ = (((stepZ > 0 ? iz + 0.5 : iz - 0.5) - origin.z) / (pickDirection.z || Number.EPSILON))
+  let traveled = 0
+  pickNormal.set(0, 0, 0)
+
+  while (traveled <= RAYCAST_REACH) {
+    const key = blockKey(ix, iy, iz)
+    if (blocks.has(key) && traveled > 0.05) {
+      return { key, distance: traveled, normal: pickNormal.clone() } satisfies PickHit
+    }
+    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+      ix += stepX
+      traveled = tMaxX
+      tMaxX += tDeltaX
+      pickNormal.set(-stepX, 0, 0)
+    } else if (tMaxY < tMaxZ) {
+      iy += stepY
+      traveled = tMaxY
+      tMaxY += tDeltaY
+      pickNormal.set(0, -stepY, 0)
+    } else {
+      iz += stepZ
+      traveled = tMaxZ
+      tMaxZ += tDeltaZ
+      pickNormal.set(0, 0, -stepZ)
+    }
+  }
+  return undefined
 }
 
 function breakTargetBlock() {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return
-  const minedKey = getBlockKeyFromHit(hit)
-  if (!minedKey) return
+  const minedKey = hit.key
   const blockId = blockData.get(minedKey)
   if (!blockId) return
   getBlockPositionFromKey(minedKey, hitBlockPosition)
@@ -1367,8 +1363,7 @@ function breakTargetBlock() {
 function placeTargetBlock() {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return
-  const hitKey = getBlockKeyFromHit(hit)
-  if (!hitKey) return
+  const hitKey = hit.key
   const selectedBlock = BLOCKS[selected].id
   getBlockPositionFromKey(hitKey, hitBlockPosition)
   const hitBlockId = blockData.get(hitKey)
@@ -1389,7 +1384,7 @@ function placeTargetBlock() {
     return
   }
 
-  placeNormal.copy(hit.face?.normal ?? upNormal).transformDirection(hit.object.matrixWorld)
+  placeNormal.copy(hit.normal.lengthSq() > 0 ? hit.normal : upNormal)
   placePosition.copy(hitBlockPosition).add(placeNormal).round()
   const key = blockKey(placePosition.x, placePosition.y, placePosition.z)
   if (!blocks.has(key) && !wouldTrapPlayer(placePosition)) {
