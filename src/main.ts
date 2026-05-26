@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v0.8 Adaptive Animation'
+const GAME_VERSION_LABEL = 'v0.9 Smooth Core'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -88,7 +88,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.8</h2><p>Adaptive Animation - decorative motion scales with frame budget</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.9</h2><p>Smooth Core - steadier terrain streaming and animation pacing</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -254,7 +254,11 @@ const enableBlockOutlines = !lowPowerMode
 const enableBlockShadows = !lowPowerMode
 const MAX_GLOW_LIGHTS = lowPowerMode ? 12 : Number.POSITIVE_INFINITY
 let blockMutationVersion = 0
+let waterAnimationCursor = 0
 let grassAnimationCursor = 0
+let cloudAnimationCursor = 0
+let sparkleAnimationCursor = 0
+let terrainQueueFrameSkip = 0
 const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
   grass: 8,
   dirt: 12,
@@ -1899,7 +1903,9 @@ function animate() {
     pendingTerrainEnsure = null
     lastTerrainEnsureAt = elapsedTime
   }
-  processTerrainQueue()
+  const terrainQueueIsUnderPressure = currentFps > 0 && (currentFps < 28 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
+  const terrainQueueBudget = terrainQueueIsUnderPressure ? (terrainQueueFrameSkip++ % 4 === 0 ? 1 : 0) : TERRAIN_CHUNKS_PER_FRAME
+  if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
   const floor = findFloorAt(pos.x, pos.z, pos.y)
   if (pos.y < floor) { pos.y = floor; velocityY = 0; canJump = true }
   else if (pos.y > floor + 0.05) canJump = false
@@ -1908,12 +1914,15 @@ function animate() {
 
   world.rotation.y = Math.sin(elapsedTime * 0.05) * 0.006
   animateBlockMaterials(materials, elapsedTime)
-  const waterUpdates = adaptiveBudget(waterBlocks.length, Math.min(8, waterBlocks.length))
+  const waterCount = waterBlocks.length
+  const waterUpdates = Math.min(waterCount, adaptiveBudget(waterCount, Math.min(8, waterCount)))
+  if (waterAnimationCursor >= waterCount) waterAnimationCursor = 0
   for (let i = 0; i < waterUpdates; i++) {
-    const water = waterBlocks[i]
-    const phase = elapsedTime * 1.8 + i * 0.37
+    const water = waterBlocks[waterAnimationCursor]
+    const phase = elapsedTime * 1.8 + waterAnimationCursor * 0.37
     water.position.y = (water.userData.baseY as number) + Math.sin(phase) * 0.035
     water.scale.y = 0.92 + Math.sin(phase * 1.3) * 0.035
+    waterAnimationCursor = (waterAnimationCursor + 1) % waterCount
   }
   const grassCount = grassTufts.length
   const grassUpdates = Math.min(grassCount, adaptiveBudget(GRASS_ANIMATION_BUDGET, lowPowerMode ? 24 : 48))
@@ -1925,17 +1934,23 @@ function animate() {
     grassAnimationCursor = (grassAnimationCursor + 1) % grassCount
   }
   clouds.rotation.y += dt * 0.006
-  const cloudUpdates = adaptiveBudget(clouds.children.length, Math.min(3, clouds.children.length))
+  const cloudCount = clouds.children.length
+  const cloudUpdates = Math.min(cloudCount, adaptiveBudget(cloudCount, Math.min(3, cloudCount)))
+  if (cloudAnimationCursor >= cloudCount) cloudAnimationCursor = 0
   for (let i = 0; i < cloudUpdates; i++) {
-    const cloud = clouds.children[i]
-    cloud.position.x += Math.sin(elapsedTime * 0.08 + i) * dt * 0.03
+    const cloud = clouds.children[cloudAnimationCursor]
+    cloud.position.x += Math.sin(elapsedTime * 0.08 + cloudAnimationCursor) * dt * 0.03
+    cloudAnimationCursor = (cloudAnimationCursor + 1) % cloudCount
   }
-  const sparkleUpdates = adaptiveBudget(sparkles.children.length, lowPowerMode ? 12 : 24)
+  const sparkleCount = sparkles.children.length
+  const sparkleUpdates = Math.min(sparkleCount, adaptiveBudget(sparkleCount, lowPowerMode ? 12 : 24))
+  if (sparkleAnimationCursor >= sparkleCount) sparkleAnimationCursor = 0
   for (let i = 0; i < sparkleUpdates; i++) {
-    const sparkle = sparkles.children[i]
+    const sparkle = sparkles.children[sparkleAnimationCursor]
     const seed = sparkle.userData.seed as number
     sparkle.position.y += Math.sin(elapsedTime * 1.4 + seed) * dt * 0.08
     sparkle.rotation.y += dt * 1.2
+    sparkleAnimationCursor = (sparkleAnimationCursor + 1) % sparkleCount
   }
   renderer.render(scene, camera)
   requestAnimationFrame(animate)
