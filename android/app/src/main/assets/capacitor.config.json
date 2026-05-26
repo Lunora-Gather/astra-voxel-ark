@@ -1,0 +1,12 @@
+{
+	"appId": "com.wangjiehu.astravoxelark",
+	"appName": "AstraVoxel Ark",
+	"webDir": "dist",
+	"bundledWebRuntime": false,
+	"server": {
+		"androidScheme": "https"
+	},
+	"android": {
+		"allowMixedContent": false
+	}
+}
