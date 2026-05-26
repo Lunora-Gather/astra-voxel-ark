@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v0.9 Smooth Core'
+const GAME_VERSION_LABEL = 'v1.0 Visible Face Core'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -88,7 +88,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v0.9</h2><p>Smooth Core - steadier terrain streaming and animation pacing</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.0</h2><p>Visible Face Core - smoother terrain rendering with hidden enclosed solids</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -152,7 +152,7 @@ type InstancedBlockRef = {
   y: number
   z: number
 }
-type BlockVisual = THREE.Mesh | InstancedBlockRef
+type BlockVisual = THREE.Mesh | InstancedBlockRef | undefined
 const blocks = new Map<string, BlockVisual>()
 const blockData = new Map<string, BlockId>()
 const INITIAL_INSTANCED_MESH_CAPACITY = 15000
@@ -269,6 +269,14 @@ const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
   crystal: 2,
   glow: 2,
 }
+const SOLID_NEIGHBOR_OFFSETS = [
+  [1, 0, 0],
+  [-1, 0, 0],
+  [0, 1, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0, 0, -1],
+] as const
 
 function removeArrayItemAtUnordered<T>(array: T[], index: number) {
   const last = array.pop()
@@ -297,6 +305,60 @@ BLOCKS.forEach(({ id }) => {
 
 function isInstancedBlockRef(visual: BlockVisual | undefined): visual is InstancedBlockRef {
   return Boolean(visual && !(visual instanceof THREE.Mesh) && visual.kind === 'instanced')
+}
+
+function isSolidBlockId(id: BlockId | undefined): id is Exclude<BlockId, 'water'> {
+  return Boolean(id && id !== 'water')
+}
+
+function hasExposedSolidFace(x: number, y: number, z: number) {
+  return SOLID_NEIGHBOR_OFFSETS.some(([dx, dy, dz]) => !isSolidBlockId(blockData.get(blockKey(x + dx, y + dy, z + dz))))
+}
+
+function removeGlowLightAt(k: string) {
+  const light = glowLightsByBlock.get(k)
+  if (!light) return
+  scene.remove(light)
+  removeArrayItemUnordered(glowLights, light)
+  glowLightsByBlock.delete(k)
+}
+
+function ensureGlowLightAt(k: string, x: number, y: number, z: number, id: BlockId) {
+  if ((id !== 'glow' && id !== 'crystal') || glowLightsByBlock.has(k) || glowLights.length >= MAX_GLOW_LIGHTS) return
+  const light = new THREE.PointLight(
+    id === 'glow' ? 0xffcf7a : 0x9b86ff,
+    lowPowerMode ? (id === 'glow' ? 0.55 : 0.35) : (id === 'glow' ? 1.2 : 0.75),
+    lowPowerMode ? 5 : 8,
+  )
+  light.position.set(x, y + 0.2, z)
+  scene.add(light)
+  glowLightsByBlock.set(k, light)
+  glowLights.push(light)
+}
+
+function refreshSolidBlockVisualAt(k: string) {
+  const id = blockData.get(k)
+  if (!isSolidBlockId(id)) return
+  const [x, y, z] = k.split(',').map(Number)
+  const visual = blocks.get(k)
+  const shouldRender = hasExposedSolidFace(x, y, z)
+
+  if (shouldRender && !isInstancedBlockRef(visual)) {
+    blocks.set(k, addInstancedBlockVisual(k, x, y, z, id))
+    ensureGlowLightAt(k, x, y, z, id)
+    return
+  }
+
+  if (!shouldRender && isInstancedBlockRef(visual)) {
+    removeInstancedBlockVisual(k, visual)
+    blocks.set(k, undefined)
+    removeGlowLightAt(k)
+  }
+}
+
+function refreshSolidBlockAndNeighbors(x: number, y: number, z: number) {
+  refreshSolidBlockVisualAt(blockKey(x, y, z))
+  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshSolidBlockVisualAt(blockKey(x + dx, y + dy, z + dz)))
 }
 
 function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id: BlockId) {
@@ -490,7 +552,6 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
     removedTerrainBlocks.delete(k)
     playerPlacedBlocks.add(k)
   }
-  let visual: BlockVisual | undefined
   if (id === 'water') {
     const mesh = new THREE.Mesh(cubeGeometry, materials.get(id)!)
     mesh.position.set(x, y, z)
@@ -501,54 +562,39 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
     mesh.userData.baseY = y
     world.add(mesh)
     waterBlocks.push(mesh)
-    visual = mesh
+    blocks.set(k, mesh)
   } else {
-    visual = addInstancedBlockVisual(k, x, y, z, id)
+    blocks.set(k, undefined)
   }
-  if (!visual) return
-  blocks.set(k, visual)
   blockMutationVersion++
   blockData.set(k, id)
   registerBlockInChunk(x, y, z, id, k)
+  refreshSolidBlockAndNeighbors(x, y, z)
+
+  const visual = blocks.get(k)
 
   if (visual instanceof THREE.Mesh && enableBlockOutlines && outlinedBlockIds.has(id)) {
     const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial)
     visual.add(edges)
   }
 
-  if ((id === 'glow' || id === 'crystal') && glowLights.length < MAX_GLOW_LIGHTS) {
-    const light = new THREE.PointLight(
-      id === 'glow' ? 0xffcf7a : 0x9b86ff,
-      lowPowerMode ? (id === 'glow' ? 0.55 : 0.35) : (id === 'glow' ? 1.2 : 0.75),
-      lowPowerMode ? 5 : 8,
-    )
-    light.position.set(x, y + 0.2, z)
-    scene.add(light)
-    if (visual instanceof THREE.Mesh) visual.userData.light = light
-    glowLightsByBlock.set(k, light)
-    glowLights.push(light)
-  }
+  if (visual) ensureGlowLightAt(k, x, y, z, id)
 }
 
 function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
+  if (!blocks.has(k)) return
   const visual = blocks.get(k)
-  if (!visual) return
   const [x, y, z] = k.split(',').map(Number)
   if (source === 'player') {
     if (playerPlacedBlocks.has(k)) playerPlacedBlocks.delete(k)
     else removedTerrainBlocks.add(k)
   }
-  const id = blockData.get(k) ?? (isInstancedBlockRef(visual) ? visual.id : visual.userData.id as BlockId | undefined)
-  const light = glowLightsByBlock.get(k) ?? (visual instanceof THREE.Mesh ? visual.userData.light as THREE.PointLight | undefined : undefined)
-  if (light) {
-    scene.remove(light)
-    removeArrayItemUnordered(glowLights, light)
-    glowLightsByBlock.delete(k)
-  }
+  const id = blockData.get(k) ?? (isInstancedBlockRef(visual) ? visual.id : visual instanceof THREE.Mesh ? visual.userData.id as BlockId | undefined : undefined)
+  removeGlowLightAt(k)
   if (visual instanceof THREE.Mesh) {
     removeArrayItemUnordered(waterBlocks, visual)
     world.remove(visual)
-  } else {
+  } else if (isInstancedBlockRef(visual)) {
     removeInstancedBlockVisual(k, visual)
   }
   removeGrassTuftsAt(k)
@@ -556,6 +602,7 @@ function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
   blockMutationVersion++
   blockData.delete(k)
   if (id) unregisterBlockFromChunk(x, y, z, id, k)
+  refreshSolidBlockAndNeighbors(x, y, z)
 }
 
 function removeBlock(mesh: THREE.Mesh, source: 'player' | 'system' = 'system') {
