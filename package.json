@@ -24,7 +24,7 @@
     "electron-builder": "^26.0.12"
   },
   "name": "astra-voxel-ark",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A landscape-first voxel sandbox app for web, Android, Ubuntu Linux and Windows",
   "private": false,
   "main": "electron/main.cjs",

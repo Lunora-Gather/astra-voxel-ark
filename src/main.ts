@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v1.0 Visible Face Core'
+const GAME_VERSION_LABEL = 'v1.1 Smooth Playability'
 const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -88,7 +88,7 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.0</h2><p>Visible Face Core - smoother terrain rendering with hidden enclosed solids</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.1</h2><p>Smooth Playability - tuned movement, steadier input, adaptive effects</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -178,8 +178,19 @@ const GRASS_ANIMATION_BUDGET = lowPowerMode ? 55 : 140
 const MIN_RENDER_QUALITY = lowPowerMode ? 0.68 : 0.78
 const MAX_RENDER_QUALITY = lowPowerMode ? 0.95 : 1
 const QUALITY_STEP = 0.06
+const WALK_SPEED = 7.6
+const SPRINT_SPEED = 12.2
+const GROUND_ACCEL_RESPONSE = 14
+const GROUND_STOP_RESPONSE = 12
+const AIR_ACCEL_RESPONSE = 6
+const AIR_STOP_RESPONSE = 2.5
+const JUMP_VELOCITY = 8.2
+const GRAVITY = 21.5
+const TOUCH_JOYSTICK_DEADZONE = 0.1
+const TOUCH_LOOK_DEADZONE = 0.35
 function adaptiveBudget(base: number, minimum: number) {
-  return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55)))
+  const pressureScale = currentFps > 0 && currentFps < 36 ? 0.65 : 1
+  return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale))
 }
 const BLOCK_IDS = new Set<BlockId>(BLOCKS.map((block) => block.id))
 type SavedBlock = [number, number, number, BlockId]
@@ -258,6 +269,7 @@ let waterAnimationCursor = 0
 let grassAnimationCursor = 0
 let cloudAnimationCursor = 0
 let sparkleAnimationCursor = 0
+let cosmeticEffectsReduced = false
 let terrainQueueFrameSkip = 0
 const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
   grass: 8,
@@ -987,8 +999,10 @@ function getBreakParticleMaterial(blockId: BlockId) {
 }
 
 function createBreakParticles(position: THREE.Vector3, blockId: BlockId) {
+  if (cosmeticEffectsReduced && particles.length > 18) return
   const material = getBreakParticleMaterial(blockId)
-  for (let i = 0; i < 6; i++) {
+  const particleCount = cosmeticEffectsReduced ? 3 : 6
+  for (let i = 0; i < particleCount; i++) {
     const mesh = new THREE.Mesh(breakParticleGeometry, material)
     breakParticleOffset.set((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)
     mesh.position.copy(position).add(breakParticleOffset)
@@ -1338,12 +1352,18 @@ controls.addEventListener('unlock', () => {
 })
 
 document.addEventListener('keydown', (e) => {
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'].includes(e.code)) e.preventDefault()
   keys.add(e.code)
   const n = Number(e.key)
   if (n >= 1 && n <= BLOCKS.length) { selected = n - 1; updateHotbar() }
   if (e.code === 'Space') runJump()
 })
 document.addEventListener('keyup', (e) => keys.delete(e.code))
+window.addEventListener('blur', () => {
+  keys.clear()
+  mobileMove.set(0, 0)
+  stick.style.transform = 'translate(-50%, -50%)'
+})
 
 type PickHit = {
   key: string
@@ -1560,7 +1580,15 @@ function updateJoystick(event: PointerEvent) {
   const x = dx * scale
   const y = dy * scale
   stick.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`
-  mobileMove.set(x / max, y / max)
+  const rawX = x / max
+  const rawY = y / max
+  const magnitude = Math.hypot(rawX, rawY)
+  if (magnitude < TOUCH_JOYSTICK_DEADZONE) {
+    mobileMove.set(0, 0)
+    return
+  }
+  const adjustedMagnitude = (magnitude - TOUCH_JOYSTICK_DEADZONE) / (1 - TOUCH_JOYSTICK_DEADZONE)
+  mobileMove.set(rawX / magnitude * adjustedMagnitude, rawY / magnitude * adjustedMagnitude)
 }
 
 joystick.addEventListener('pointerdown', (event) => {
@@ -1587,7 +1615,7 @@ joystick.addEventListener('pointercancel', releaseJoystick)
 
 function runJump() {
   if (!canJump) return
-  velocityY = 8.5
+  velocityY = JUMP_VELOCITY
   canJump = false
   playSound('jump', 0.2)
 }
@@ -1675,8 +1703,10 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     if (touchMining && !touchMiningComplete) cancelTouchMining()
   }
   const object = controls.object
-  object.rotation.y -= dx * 0.003
-  camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - dy * 0.003))
+  const lookDx = Math.abs(dx) < TOUCH_LOOK_DEADZONE ? 0 : dx
+  const lookDy = Math.abs(dy) < TOUCH_LOOK_DEADZONE ? 0 : dy
+  object.rotation.y -= lookDx * 0.003
+  camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - lookDy * 0.003))
 })
 renderer.domElement.addEventListener('pointerup', (event) => {
   if (event.pointerId !== lookPointerId) return
@@ -1709,6 +1739,8 @@ const threatValEl = document.querySelector<HTMLElement>('.threat-val')
 const survivalBadgeEl = document.querySelector<HTMLElement>('.survival-badge')
 const coldVignetteEl = document.querySelector<HTMLElement>('.cold-vignette')
 const moveDirection = new THREE.Vector3()
+const targetMoveVelocity = new THREE.Vector3()
+const smoothedMoveVelocity = new THREE.Vector3()
 const previousPosition = new THREE.Vector3()
 const movementDelta = new THREE.Vector3()
 let fpsFrameCount = 0
@@ -1862,6 +1894,7 @@ function updateFrameStats(dt: number, elapsedTime: number) {
 
   const avgMs = Math.round(frameBudgetTotal / frameBudgetCount)
   updateAdaptiveQuality(avgMs, elapsedTime)
+  cosmeticEffectsReduced = currentFps > 0 && (currentFps < 36 || avgMs > 24 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
 
   if (fpsEl && msEl) {
     fpsEl.textContent = String(currentFps)
@@ -1917,7 +1950,7 @@ function animate() {
   sceneFog.color.copy(skyColor)
   updateSurvivalLoop(dt, day, elapsedTime)
 
-  const speed = keys.has('ShiftLeft') ? 13 : 8
+  const speed = keys.has('ShiftLeft') ? SPRINT_SPEED : WALK_SPEED
   moveDirection.set(0, 0, 0)
   if (keys.has('KeyW')) moveDirection.z -= 1
   if (keys.has('KeyS')) moveDirection.z += 1
@@ -1927,17 +1960,25 @@ function animate() {
     moveDirection.x += mobileMove.x
     moveDirection.z += mobileMove.y
   }
-  moveDirection.normalize().multiplyScalar(speed * dt)
+  if (moveDirection.lengthSq() > 1) moveDirection.normalize()
+  targetMoveVelocity.copy(moveDirection).multiplyScalar(speed)
+  const movementResponse = moveDirection.lengthSq() > 0
+    ? canJump ? GROUND_ACCEL_RESPONSE : AIR_ACCEL_RESPONSE
+    : canJump ? GROUND_STOP_RESPONSE : AIR_STOP_RESPONSE
+  smoothedMoveVelocity.lerp(targetMoveVelocity, 1 - Math.exp(-movementResponse * dt))
+  if (smoothedMoveVelocity.lengthSq() < 0.0004) smoothedMoveVelocity.set(0, 0, 0)
   if (controls.isLocked || mobileActive) {
     previousPosition.copy(controls.object.position)
-    controls.moveRight(moveDirection.x)
-    controls.moveForward(-moveDirection.z)
+    controls.moveRight(smoothedMoveVelocity.x * dt)
+    controls.moveForward(-smoothedMoveVelocity.z * dt)
     movementDelta.copy(controls.object.position).sub(previousPosition)
     controls.object.position.copy(previousPosition)
     movePlayerHorizontal(movementDelta)
+  } else {
+    smoothedMoveVelocity.set(0, 0, 0)
   }
 
-  velocityY -= 22 * dt
+  velocityY -= GRAVITY * dt
   movePlayerVertical(velocityY * dt)
   const pos = controls.object.position
   const terrainCenterKey = terrainChunkKey(chunkCoord(pos.x), chunkCoord(pos.z))
@@ -1959,10 +2000,11 @@ function animate() {
   if (playerCollidesAt(pos)) pos.y = Math.max(pos.y, floor)
   updateTouchMining()
 
-  world.rotation.y = Math.sin(elapsedTime * 0.05) * 0.006
-  animateBlockMaterials(materials, elapsedTime)
+  world.rotation.y = cosmeticEffectsReduced ? 0 : Math.sin(elapsedTime * 0.05) * 0.006
+  if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
   const waterCount = waterBlocks.length
-  const waterUpdates = Math.min(waterCount, adaptiveBudget(waterCount, Math.min(8, waterCount)))
+  const waterMinimum = cosmeticEffectsReduced ? Math.min(3, waterCount) : Math.min(8, waterCount)
+  const waterUpdates = Math.min(waterCount, adaptiveBudget(waterCount, waterMinimum))
   if (waterAnimationCursor >= waterCount) waterAnimationCursor = 0
   for (let i = 0; i < waterUpdates; i++) {
     const water = waterBlocks[waterAnimationCursor]
@@ -1980,9 +2022,9 @@ function animate() {
     tuft.rotation.z = Math.sin(elapsedTime * 1.35 + seed) * 0.06
     grassAnimationCursor = (grassAnimationCursor + 1) % grassCount
   }
-  clouds.rotation.y += dt * 0.006
+  if (!cosmeticEffectsReduced) clouds.rotation.y += dt * 0.006
   const cloudCount = clouds.children.length
-  const cloudUpdates = Math.min(cloudCount, adaptiveBudget(cloudCount, Math.min(3, cloudCount)))
+  const cloudUpdates = cosmeticEffectsReduced ? 0 : Math.min(cloudCount, adaptiveBudget(cloudCount, Math.min(3, cloudCount)))
   if (cloudAnimationCursor >= cloudCount) cloudAnimationCursor = 0
   for (let i = 0; i < cloudUpdates; i++) {
     const cloud = clouds.children[cloudAnimationCursor]
