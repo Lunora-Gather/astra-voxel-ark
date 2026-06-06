@@ -3,6 +3,7 @@ node_modules/
 # Web and desktop release outputs
 dist/
 release/
+artifacts/
 
 # Android/Gradle generated outputs
 android/app/build/
@@ -15,3 +16,4 @@ android/**/*.aar
 .DS_Store
 .env
 .vite/
+TASKS.md

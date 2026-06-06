@@ -1,0 +1,59 @@
+name: Verify
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  actionlint:
+    name: Workflow syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.11 -color
+
+  verify:
+    name: Build and HUD smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install smoke-test display runtime
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Run build and HUD smoke
+        run: xvfb-run -a npm run verify
+        env:
+          ASTRA_SMOKE_ARTIFACT_DIR: artifacts/hud-smoke
+      - name: Upload HUD smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hud-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/hud-smoke
+          if-no-files-found: ignore

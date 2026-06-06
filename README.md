@@ -20,7 +20,8 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Landscape-first phone experience with a rotate-device prompt in portrait mode
 - Android shell via Capacitor
 - Ubuntu Linux and Windows desktop shells via Electron Builder
-- 8-block hotbar: grass, dirt, stone, wood, leaves, water, crystal, glow
+- 18-block hotbar with terrain, wood, water, crystal, glow, clay, metal and rare blocks
+- Beacon Trail exploration loop: collect landmark shards, repair visible Ark Core modules and strengthen night survival
 - Dreamy day-night cycle
 - Soft fog, shadows, stars, clouds, sparkles, animated water, swaying grass and emissive blocks
 - Procedural pixel textures for every block type
@@ -38,17 +39,21 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 | Sprint | Left Shift |
 | Break block | Left click |
 | Place block | Right click |
-| Select block | 1-8 / tap hotbar slot |
-| Save / Load / Export / Import / Reset | HUD buttons |
-| Unlock mouse | Esc |
+| Select block | 1-18 / mouse wheel / tap hotbar slot |
+| Save / Load / Export / Import / Reset | Game Menu |
+| Open game menu / unlock mouse | Esc / II button |
 
 ## Development
+
+Requires Node.js `^20.19.0` or `>=22.12.0`.
 
 ```bash
 npm install
 npm run dev
-npm run build
+npm run verify
 ```
+
+Set `ASTRA_SMOKE_ARTIFACT_DIR=artifacts/hud-smoke` before `npm run verify` to save HUD smoke screenshots and layout JSON.
 
 ## App packaging
 
@@ -77,8 +82,7 @@ This repo includes GitHub Actions workflows for GitHub Pages and app package art
 ## Project docs
 
 - `GAME_DESIGN.md` — full design direction
-- `TASKS.md` — future task pool
-- `GITHUB_RELEASE_PLAN.md` — GitHub release checklist
+- `PACKAGING.md` — platform packaging notes
 
 ## Roadmap
 

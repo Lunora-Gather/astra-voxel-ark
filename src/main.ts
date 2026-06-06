@@ -7,80 +7,82 @@ import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const GAME_VERSION_LABEL = 'v1.4 Beacon Trail'
-const isTouchDevice = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0
+const smokeParams = new URLSearchParams(window.location.hash.slice(1))
+const isSmokeTest = smokeParams.has('smoke')
+const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
+const smokeTouchMode = smokeTouchParam === '1'
+const smokeDesktopMode = smokeTouchParam === '0'
+const isTouchDevice = smokeTouchMode || (!smokeDesktopMode && (window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0))
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const lowPowerMode = isTouchDevice || isSmallScreen || prefersReducedMotion
 
 app.innerHTML = `
   <div class="hud">
-    <div class="title"><span class="eyebrow">VOXEL SANDBOX</span><h1>ASTRAVOXEL ARK</h1><p>${GAME_VERSION_LABEL}</p></div>
-    <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1-18 select block · Click to enter<br/>Goal: follow beacon to find 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap right side: place · Hold right side: break<br/>Follow beacon to find shards</span></div>
-    <div class="world-badge"><span class="badge-pulse"></span>${GAME_VERSION_LABEL}</div>
-
-    <div class="wayfinder-badge">
-      <span class="wayfinder-label">Shard Signal</span>
-      <span class="wayfinder-value">Scanning</span>
-    </div>
-    <div class="compass-badge" aria-live="polite">
-      <span class="compass-arrow">↑</span>
-      <span class="compass-distance">Beacon scanning</span>
-    </div>
-    <div class="survival-badge">
-      <div class="survival-title">SURVIVAL DIAGNOSTICS</div>
-      <div class="survival-status">
-        <div class="survival-metric">
-          <span class="metric-label">
-            <svg class="metric-icon crystal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-            Crystal Power
-          </span>
-          <div class="charge-bar-container">
-            <div class="charge-bar"></div>
+    <div class="hud-stack hud-left-stack">
+      <div class="title"><span class="eyebrow">VOXEL SANDBOX</span><h1>ASTRAVOXEL ARK</h1><p>${GAME_VERSION_LABEL}</p></div>
+      <div class="survival-badge">
+        <div class="survival-title">SURVIVAL DIAGNOSTICS</div>
+        <div class="survival-status">
+          <div class="survival-metric">
+            <span class="metric-label">
+              <svg class="metric-icon crystal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              Crystal Power
+            </span>
+            <div class="charge-bar-container">
+              <div class="charge-bar"></div>
+            </div>
+            <span class="metric-value crystal-val">--</span>
           </div>
-          <span class="metric-value crystal-val">--</span>
+          <div class="survival-metric">
+            <span class="metric-label">
+              <svg class="metric-icon threat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Threat Level
+            </span>
+            <span class="metric-value threat-val">--</span>
+          </div>
         </div>
-        <div class="survival-metric">
-          <span class="metric-label">
-            <svg class="metric-icon threat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-            Threat Level
-          </span>
-          <span class="metric-value threat-val">--</span>
-        </div>
+      </div>
+      <div class="tutorial">
+        <p><strong>Tips:</strong> Click to enter · Follow beacon to shards · Save often</p>
+      </div>
+      <div class="compass-badge" aria-live="polite">
+        <span class="compass-arrow">↑</span>
+        <span class="compass-distance">Beacon scanning</span>
+      </div>
+      <div class="wayfinder-badge">
+        <span class="wayfinder-label">Ark Core</span>
+        <span class="wayfinder-value">Scanning</span>
       </div>
     </div>
 
-    <div class="perf-badge">
-      <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Frame</span><div><span class="perf-ms">--</span><span class="perf-unit">ms</span></div></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Chunks</span><span class="perf-chunks">0</span></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Terrain</span><span class="perf-terrain-chunks">0</span></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Blocks</span><span class="perf-blocks">0</span></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Queue</span><span class="perf-dirty">0</span></div>
-      <div class="perf-divider"></div>
-      <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${lowPowerMode ? 'Low' : 'Full'}</span></div>
+    <div class="hud-stack hud-right-stack">
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1-18 select block · Click to enter<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap right side: place · Hold right side: break<br/>Repair Ark Core with shards</span></div>
+      <div class="perf-badge">
+        <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Frame</span><div><span class="perf-ms">--</span><span class="perf-unit">ms</span></div></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Chunks</span><span class="perf-chunks">0</span></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Terrain</span><span class="perf-terrain-chunks">0</span></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Blocks</span><span class="perf-blocks">0</span></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Queue</span><span class="perf-dirty">0</span></div>
+        <div class="perf-divider"></div>
+        <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${lowPowerMode ? 'Low' : 'Full'}</span></div>
+      </div>
+      <div class="world-badge"><span class="badge-pulse"></span>${GAME_VERSION_LABEL}</div>
     </div>
+
     <button class="help-toggle-btn" aria-label="Toggle Help">?</button>
-    <div class="tutorial">
-      <p><strong>🎮 Tips:</strong> Click to enter · Follow beacon to shards · Save often</p>
-    </div>
-    <div class="save-tools">
-      <button class="save-btn">Save</button>
-      <button class="load-btn">Load</button>
-      <button class="export-btn">Export</button>
-      <button class="import-btn">Import</button>
-      <button class="reset-btn">Reset</button>
-      <input class="import-input" type="file" accept="application/json,.json" />
-    </div>
+    <button class="menu-toggle-btn" aria-label="Open Menu">II</button>
     <div class="toast" aria-live="polite"></div>
     <div class="cold-vignette"></div>
     <div class="mine-progress"><div class="mine-ring"></div><span>Hold</span></div>
@@ -96,7 +98,55 @@ app.innerHTML = `
       </div>
     </div>
     <div class="rotate-prompt"><div><span>↻</span><strong>请横屏游玩</strong><small>Rotate your phone to landscape</small></div></div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.4</h2><p>Beacon Trail - in-world shard beacon, compass pulse, and safer controls</p><button>Start Exploring</button></div></div>
+    <div class="pause-menu hidden" role="dialog" aria-modal="true" aria-label="Game Menu">
+      <div class="pause-panel">
+        <div class="pause-header">
+          <span>Game Menu</span>
+          <button class="resume-btn">Resume</button>
+        </div>
+        <div class="settings-grid">
+          <label class="setting-row">
+            <span>Mouse Sensitivity</span>
+            <output class="sensitivity-value">72%</output>
+            <input class="sensitivity-input" type="range" min="35" max="150" value="72" />
+          </label>
+          <label class="setting-row">
+            <span>Field of View</span>
+            <output class="fov-value">72</output>
+            <input class="fov-input" type="range" min="60" max="90" value="72" />
+          </label>
+          <label class="setting-row">
+            <span>View Distance</span>
+            <select class="view-distance-select">
+              <option value="1">Near</option>
+              <option value="2">Normal</option>
+              <option value="3">Far</option>
+            </select>
+          </label>
+          <div class="setting-row setting-row-buttons">
+            <span>Graphics</span>
+            <div class="quality-options" role="group" aria-label="Graphics quality">
+              <button class="quality-btn" data-quality="low">Low</button>
+              <button class="quality-btn active" data-quality="balanced">Balanced</button>
+              <button class="quality-btn" data-quality="high">High</button>
+            </div>
+          </div>
+          <label class="setting-check">
+            <input class="perf-toggle" type="checkbox" />
+            <span>Show performance HUD</span>
+          </label>
+        </div>
+        <div class="save-tools">
+          <button class="save-btn">Save</button>
+          <button class="load-btn">Load</button>
+          <button class="export-btn">Export</button>
+          <button class="import-btn">Import</button>
+          <button class="reset-btn">Reset</button>
+          <input class="import-input" type="file" accept="application/json,.json" />
+        </div>
+      </div>
+    </div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.4</h2><p>Beacon Trail - repair the Ark Core through landmark shards and warded nights</p><button>Start Exploring</button></div></div>
   </div>
 `
 
@@ -110,6 +160,7 @@ scene.fog = sceneFog
 
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 600)
 camera.position.set(0, 12, 18)
+camera.rotation.order = 'YXZ'
 
 const renderer = new THREE.WebGLRenderer({ antialias: !lowPowerMode, powerPreference: lowPowerMode ? 'low-power' : 'high-performance' })
 renderer.setSize(window.innerWidth, window.innerHeight)
@@ -126,6 +177,28 @@ app.appendChild(renderer.domElement)
 
 const controls = new PointerLockControls(camera, renderer.domElement)
 scene.add(controls.object)
+const SETTINGS_KEY = 'astra-voxel-ark-settings-v1'
+let mouseLookSpeed = 0.72
+let touchLookSpeed = 0.00245
+let qualityPreset: QualityPreset = 'balanced'
+let showPerformanceHud = false
+const MAX_LOOK_PITCH = THREE.MathUtils.degToRad(85)
+const lookStabilizerEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+controls.pointerSpeed = mouseLookSpeed
+controls.minPolarAngle = Math.PI / 2 - MAX_LOOK_PITCH
+controls.maxPolarAngle = Math.PI / 2 + MAX_LOOK_PITCH
+
+function clampLookPitch(value: number) {
+  return Math.max(-MAX_LOOK_PITCH, Math.min(MAX_LOOK_PITCH, value))
+}
+
+function stabilizeFirstPersonLook() {
+  lookStabilizerEuler.setFromQuaternion(camera.quaternion, 'YXZ')
+  lookStabilizerEuler.x = clampLookPitch(lookStabilizerEuler.x)
+  lookStabilizerEuler.z = 0
+  camera.quaternion.setFromEuler(lookStabilizerEuler)
+}
+controls.addEventListener('change', stabilizeFirstPersonLook)
 
 const hemi = new THREE.HemisphereLight(0xd9f2ff, 0x73604b, 1.9)
 scene.add(hemi)
@@ -177,15 +250,16 @@ const grassTuftsByAnchor = new Map<string, THREE.Group[]>()
 const SAVE_KEY = 'astra-voxel-ark-world-v1'
 const CHUNK_SIZE = 8
 const INITIAL_TERRAIN_LOAD_RADIUS = 1
-const TERRAIN_LOAD_RADIUS = 1
 const TERRAIN_MAX_RADIUS = 6
 const TERRAIN_CHUNKS_PER_FRAME = 1
 const TERRAIN_SCAN_INTERVAL = 0.2
+let terrainLoadRadius = 1
 const RAYCAST_REACH = 8
 const GRASS_ANIMATION_BUDGET = lowPowerMode ? 55 : 140
 const MIN_RENDER_QUALITY = lowPowerMode ? 0.68 : 0.78
 const MAX_RENDER_QUALITY = lowPowerMode ? 0.95 : 1
 const QUALITY_STEP = 0.06
+type QualityPreset = 'low' | 'balanced' | 'high'
 const WALK_SPEED = 7.6
 const SPRINT_SPEED = 12.2
 const GROUND_ACCEL_RESPONSE = 14
@@ -268,6 +342,8 @@ let carriedCrystal = 0
 let collectedGlowShards = 0
 let lastSurvivalToastAt = 0
 const EXPLORATION_GOAL_SHARDS = 6
+const SHARD_WARD_PROTECTION = 0.03
+const ARK_MODULE_NAMES = ['Signal', 'Power', 'Shield', 'Chart', 'Lift', 'Core']
 const PLAYER_RADIUS = 0.38
 const PLAYER_EYE_HEIGHT = 1.85
 const PLAYER_HEIGHT = 1.35
@@ -1100,7 +1176,17 @@ const previewMaterial = new THREE.MeshStandardMaterial({
   emissive: 0x4488ff,
   emissiveIntensity: 0.2,
 })
+previewMaterial.depthWrite = false
+const previewOutlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.025, 1.025, 1.025))
+const previewOutlineMaterial = new THREE.LineBasicMaterial({ color: 0xa8ffb9, transparent: true, opacity: 0.95, depthTest: false })
+const targetOutlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.018, 1.018, 1.018))
+const targetOutlineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.88, depthTest: false })
 let previewMesh: THREE.Mesh | null = null
+let previewOutlineMesh: THREE.LineSegments | null = null
+const targetOutlineMesh = new THREE.LineSegments(targetOutlineGeometry, targetOutlineMaterial)
+targetOutlineMesh.renderOrder = 12
+targetOutlineMesh.visible = false
+scene.add(targetOutlineMesh)
 
 function getBreakParticleMaterial(blockId: BlockId) {
   let material = breakParticleMaterials.get(blockId)
@@ -1129,29 +1215,6 @@ function createBreakParticles(position: THREE.Vector3, blockId: BlockId) {
       life: cosmeticEffectsReduced ? 0.5 : 0.8,
     })
   }
-  // Camera shake feedback on break
-  const shakeStrength = 0.08
-  const originalPos = new THREE.Vector3().copy(camera.position)
-  const shakeStart = Date.now()
-  const shakeDuration = 100
-  const shakeFrame = () => {
-    const elapsed = Date.now() - shakeStart
-    if (elapsed >= shakeDuration) {
-      camera.position.copy(originalPos)
-      return
-    }
-    const progress = elapsed / shakeDuration
-    const falloff = 1 - progress * progress
-    camera.position.copy(originalPos).add(
-      new THREE.Vector3(
-        (Math.random() - 0.5) * shakeStrength * falloff,
-        (Math.random() - 0.5) * shakeStrength * falloff,
-        (Math.random() - 0.5) * shakeStrength * falloff
-      )
-    )
-    requestAnimationFrame(shakeFrame)
-  }
-  shakeFrame()
 }
 
 function createShardBurst(position: THREE.Vector3) {
@@ -1184,7 +1247,7 @@ function getAudioContext() {
   }
   return audioContext
 }
-function playSound(type: 'break' | 'place' | 'jump', volume: number) {
+function playSound(type: 'break' | 'place' | 'jump' | 'select', volume: number) {
   const audioContext = getAudioContext()
   const osc = audioContext.createOscillator()
   const gain = audioContext.createGain()
@@ -1203,6 +1266,9 @@ function playSound(type: 'break' | 'place' | 'jump', volume: number) {
   } else if (type === 'jump') {
     osc.frequency.setValueAtTime(440, audioContext.currentTime)
     osc.frequency.exponentialRampToValueAtTime(660, audioContext.currentTime + 0.1)
+  } else if (type === 'select') {
+    osc.frequency.setValueAtTime(520, audioContext.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(650, audioContext.currentTime + 0.06)
   }
 
   osc.type = 'sine'
@@ -1317,7 +1383,7 @@ function processTerrainQueue(limit = TERRAIN_CHUNKS_PER_FRAME) {
   }
 }
 
-function ensureTerrainChunksAround(x: number, z: number, radius = TERRAIN_LOAD_RADIUS) {
+function ensureTerrainChunksAround(x: number, z: number, radius = terrainLoadRadius) {
   const centerCx = chunkCoord(x)
   const centerCz = chunkCoord(z)
   const scanKey = `${centerCx},${centerCz},${radius}`
@@ -1460,6 +1526,47 @@ shardBeacon.add(shardBeaconRing, shardBeaconHalo, shardBeaconLight)
 shardBeacon.visible = false
 scene.add(shardBeacon)
 
+const arkCore = new THREE.Group()
+const arkCoreBase = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.15, 1.35, 0.28, 6),
+  new THREE.MeshStandardMaterial({ color: 0x22334c, roughness: 0.72, metalness: 0.18 })
+)
+const arkCoreRing = new THREE.Mesh(
+  new THREE.TorusGeometry(1.32, 0.035, 8, 48),
+  new THREE.MeshBasicMaterial({ color: 0x9ee8ff, transparent: true, opacity: 0.24 })
+)
+const arkCoreSpire = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.42, 0),
+  new THREE.MeshStandardMaterial({ color: 0x6a7cff, emissive: 0x2b3b9a, emissiveIntensity: 0.22, roughness: 0.34, metalness: 0.2 })
+)
+const arkCoreLight = new THREE.PointLight(0x9ee8ff, lowPowerMode ? 0 : 0.2, 9)
+const arkCoreModuleMaterials: THREE.MeshStandardMaterial[] = []
+const arkCoreModules: THREE.Mesh[] = []
+arkCore.position.set(0, 7.6, 10)
+arkCoreRing.rotation.x = Math.PI / 2
+arkCoreSpire.position.y = 0.82
+arkCoreLight.position.y = 0.9
+arkCore.add(arkCoreBase, arkCoreRing, arkCoreSpire, arkCoreLight)
+for (let i = 0; i < EXPLORATION_GOAL_SHARDS; i += 1) {
+  const angle = (i / EXPLORATION_GOAL_SHARDS) * Math.PI * 2
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x5f748e,
+    emissive: 0x08111c,
+    emissiveIntensity: 0.08,
+    transparent: true,
+    opacity: 0.72,
+    roughness: 0.5,
+    metalness: 0.16,
+  })
+  const module = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), material)
+  module.position.set(Math.cos(angle) * 1.34, 0.35, Math.sin(angle) * 1.34)
+  module.rotation.y = angle
+  arkCoreModuleMaterials.push(material)
+  arkCoreModules.push(module)
+  arkCore.add(module)
+}
+scene.add(arkCore)
+
 let selected = 0
 const hotbar = document.querySelector<HTMLDivElement>('.hotbar')!
 const blockInfo = document.querySelector<HTMLDivElement>('.block-info')!
@@ -1491,6 +1598,26 @@ function updateHotbar() {
   }
   hotbarSlots[selected]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
   updateBlockInfo()
+}
+
+function pulseSelectedSlot() {
+  const slot = hotbarSlots[selected]
+  if (!slot) return
+  slot.classList.remove('selected-pulse')
+  void slot.offsetWidth
+  slot.classList.add('selected-pulse')
+  window.setTimeout(() => slot.classList.remove('selected-pulse'), 180)
+}
+
+function selectHotbarSlot(index: number, source: 'pointer' | 'wheel' | 'key' | 'auto' = 'pointer') {
+  if (!Number.isInteger(index) || index < 0 || index >= BLOCKS.length) return
+  const changed = selected !== index
+  selected = index
+  updateHotbar()
+  if (source !== 'auto') {
+    pulseSelectedSlot()
+    if (changed || source === 'wheel') playSound('select', source === 'wheel' ? 0.08 : 0.06)
+  }
 }
 
 function directionLabel(dx: number, dz: number) {
@@ -1531,14 +1658,14 @@ function updateCompassUi(nearest: ReturnType<typeof findNearestShard>) {
   if (collectedGlowShards >= EXPLORATION_GOAL_SHARDS) {
     compassBadge.classList.add('complete')
     compassArrow.style.transform = 'rotate(0deg)'
-    compassDistance.textContent = 'Goal complete'
+    compassDistance.textContent = 'Ark core restored'
     shardBeacon.visible = false
     return
   }
   compassBadge.classList.remove('complete')
   if (!nearest) {
     compassArrow.style.transform = 'rotate(0deg)'
-    compassDistance.textContent = 'Explore to scan'
+    compassDistance.textContent = 'Scan for core shards'
     shardBeacon.visible = false
     return
   }
@@ -1553,21 +1680,36 @@ function updateCompassUi(nearest: ReturnType<typeof findNearestShard>) {
 function updateShardSignal() {
   const nearest = findNearestShard()
   updateCompassUi(nearest)
+  updateArkCoreVisual()
   if (collectedGlowShards >= EXPLORATION_GOAL_SHARDS) {
-    wayfinderValue.textContent = 'Complete'
+    wayfinderValue.textContent = 'Core Online'
     return
   }
   if (!nearest) {
-    wayfinderValue.textContent = `${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · Explore`
+    wayfinderValue.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · Explore`
     return
   }
-  wayfinderValue.textContent = `${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
+  wayfinderValue.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
+}
+
+function updateArkCoreVisual() {
+  const progress = collectedGlowShards / EXPLORATION_GOAL_SHARDS
+  arkCoreModuleMaterials.forEach((material, index) => {
+    const active = index < collectedGlowShards
+    material.color.setHex(active ? 0xfff3a8 : 0x5f748e)
+    material.emissive.setHex(active ? 0x8d75ff : 0x08111c)
+    material.emissiveIntensity = active ? 0.65 : 0.08
+    material.opacity = active ? 0.96 : 0.72
+  })
+  ;(arkCoreRing.material as THREE.MeshBasicMaterial).opacity = 0.2 + progress * 0.44
+  ;(arkCoreSpire.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.22 + progress * 0.52
+  arkCoreLight.intensity = lowPowerMode ? 0 : 0.2 + progress * 0.75
 }
 
 function selectNextAvailableBlock() {
   if (countBlocksInInventory(BLOCKS[selected].id) > 0) return
   const nextIndex = BLOCKS.findIndex((block) => countBlocksInInventory(block.id) > 0)
-  if (nextIndex >= 0 && nextIndex !== selected) selected = nextIndex
+  if (nextIndex >= 0 && nextIndex !== selected) selectHotbarSlot(nextIndex, 'auto')
 }
 
 function renderHotbar() {
@@ -1583,8 +1725,7 @@ function renderHotbar() {
     slot.addEventListener('pointerdown', (event) => {
       event.preventDefault()
       event.stopPropagation()
-      selected = Number(slot.dataset.slot)
-      updateHotbar()
+      selectHotbarSlot(Number(slot.dataset.slot), 'pointer')
     })
   })
   updateBlockInfo()
@@ -1597,6 +1738,252 @@ let mobileActive = false
 const helpToggleBtn = document.querySelector<HTMLButtonElement>('.help-toggle-btn')!
 const helpPanel = document.querySelector<HTMLDivElement>('.help')!
 const tutorialPanel = document.querySelector<HTMLDivElement>('.tutorial')!
+const menuToggleBtn = document.querySelector<HTMLButtonElement>('.menu-toggle-btn')!
+const pauseMenu = document.querySelector<HTMLDivElement>('.pause-menu')!
+const resumeButton = document.querySelector<HTMLButtonElement>('.resume-btn')!
+const sensitivityInput = document.querySelector<HTMLInputElement>('.sensitivity-input')!
+const sensitivityValue = document.querySelector<HTMLOutputElement>('.sensitivity-value')!
+const fovInput = document.querySelector<HTMLInputElement>('.fov-input')!
+const fovValue = document.querySelector<HTMLOutputElement>('.fov-value')!
+const viewDistanceSelect = document.querySelector<HTMLSelectElement>('.view-distance-select')!
+const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('.quality-btn')]
+const perfToggle = document.querySelector<HTMLInputElement>('.perf-toggle')!
+type HudDensity = 'roomy' | 'compact' | 'minimal'
+let hudLayoutFrame = 0
+let hasStarted = false
+let isPaused = false
+
+type GameSettings = {
+  sensitivity: number
+  fov: number
+  viewDistance: number
+  quality: QualityPreset
+  showPerf: boolean
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function readStoredSettings(): GameSettings {
+  const fallback: GameSettings = {
+    sensitivity: Math.round(mouseLookSpeed * 100),
+    fov: camera.fov,
+    viewDistance: terrainLoadRadius,
+    quality: qualityPreset,
+    showPerf: showPerformanceHud,
+  }
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<GameSettings>
+    const quality = parsed.quality === 'low' || parsed.quality === 'balanced' || parsed.quality === 'high'
+      ? parsed.quality
+      : fallback.quality
+    return {
+      sensitivity: clampNumber(Number(parsed.sensitivity) || fallback.sensitivity, 35, 150),
+      fov: clampNumber(Number(parsed.fov) || fallback.fov, 60, 90),
+      viewDistance: Math.round(clampNumber(Number(parsed.viewDistance) || fallback.viewDistance, 1, 3)),
+      quality,
+      showPerf: Boolean(parsed.showPerf),
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function qualityBounds() {
+  if (qualityPreset === 'low') return { min: lowPowerMode ? 0.55 : 0.6, max: lowPowerMode ? 0.72 : 0.78, start: lowPowerMode ? 0.62 : 0.7 }
+  if (qualityPreset === 'high') return { min: lowPowerMode ? 0.78 : 0.86, max: lowPowerMode ? 0.98 : 1, start: lowPowerMode ? 0.88 : 1 }
+  return { min: MIN_RENDER_QUALITY, max: MAX_RENDER_QUALITY, start: lowPowerMode ? 0.85 : 0.94 }
+}
+
+function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
+  qualityPreset = nextPreset
+  const bounds = qualityBounds()
+  renderQuality = resetScale ? bounds.start : clampNumber(renderQuality, bounds.min, bounds.max)
+  renderer.shadowMap.enabled = nextPreset !== 'low' && !lowPowerMode
+  applyRenderQuality()
+  qualityButtons.forEach((button) => button.classList.toggle('active', button.dataset.quality === nextPreset))
+}
+
+function writeStoredSettings() {
+  const settings: GameSettings = {
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: showPerformanceHud,
+  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+}
+
+function setPerformanceHudVisible(visible: boolean) {
+  showPerformanceHud = visible
+  document.body.classList.toggle('show-perf-hud', visible)
+  perfToggle.checked = visible
+}
+
+function applySettings(settings: GameSettings, persist = false) {
+  const sensitivity = clampNumber(settings.sensitivity, 35, 150)
+  mouseLookSpeed = sensitivity / 100
+  touchLookSpeed = mouseLookSpeed * 0.0034
+  controls.pointerSpeed = mouseLookSpeed
+  sensitivityInput.value = String(Math.round(sensitivity))
+  sensitivityValue.textContent = `${Math.round(sensitivity)}%`
+
+  const fov = clampNumber(settings.fov, 60, 90)
+  camera.fov = fov
+  camera.updateProjectionMatrix()
+  fovInput.value = String(Math.round(fov))
+  fovValue.textContent = String(Math.round(fov))
+
+  terrainLoadRadius = Math.round(clampNumber(settings.viewDistance, 1, 3))
+  viewDistanceSelect.value = String(terrainLoadRadius)
+  lastTerrainEnsureScanKey = ''
+  pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
+
+  applyQualityPreset(settings.quality, persist)
+  setPerformanceHudVisible(settings.showPerf)
+  if (persist) writeStoredSettings()
+}
+
+applySettings(readStoredSettings())
+
+function resetInputState() {
+  keys.clear()
+  mobileMove.set(0, 0)
+  joystickPointerId = null
+  lookPointerId = null
+  stick.style.transform = 'translate(-50%, -50%)'
+  cancelTouchMining()
+}
+
+function openPauseMenu() {
+  if (!hasStarted) return
+  isPaused = true
+  pauseMenu.classList.remove('hidden')
+  document.body.classList.add('menu-open')
+  resetInputState()
+  if (controls.isLocked) controls.unlock()
+}
+
+function closePauseMenu(resumeGame = true) {
+  isPaused = false
+  pauseMenu.classList.add('hidden')
+  document.body.classList.remove('menu-open')
+  resetInputState()
+  if (resumeGame && hasStarted && !mobileActive && !isSmokeTest) controls.lock()
+}
+
+menuToggleBtn.addEventListener('click', (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  openPauseMenu()
+})
+resumeButton.addEventListener('click', () => closePauseMenu())
+sensitivityInput.addEventListener('input', () => {
+  applySettings({
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: showPerformanceHud,
+  }, true)
+})
+fovInput.addEventListener('input', () => {
+  applySettings({
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: showPerformanceHud,
+  }, true)
+})
+viewDistanceSelect.addEventListener('change', () => {
+  applySettings({
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: showPerformanceHud,
+  }, true)
+})
+qualityButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const nextQuality = button.dataset.quality
+    if (nextQuality !== 'low' && nextQuality !== 'balanced' && nextQuality !== 'high') return
+    applySettings({
+      sensitivity: Number(sensitivityInput.value),
+      fov: Number(fovInput.value),
+      viewDistance: Number(viewDistanceSelect.value),
+      quality: nextQuality,
+      showPerf: showPerformanceHud,
+    }, true)
+  })
+})
+perfToggle.addEventListener('change', () => {
+  applySettings({
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: perfToggle.checked,
+  }, true)
+})
+
+function setHudDensity(density: HudDensity) {
+  document.body.dataset.hudDensity = density
+}
+
+function visibleElementRect(selector: string) {
+  const el = document.querySelector<HTMLElement>(selector)
+  if (!el) return null
+  const style = window.getComputedStyle(el)
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return null
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 1 || rect.height <= 1) return null
+  return rect
+}
+
+function rectsOverlap(a: DOMRect, b: DOMRect, gap = 8) {
+  return a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + gap && a.bottom + gap > b.top
+}
+
+function hudHasVisibleOverlap() {
+  const selectors = ['.hud-left-stack', '.hud-right-stack', '.hotbar', '.block-info', '.joystick', '.touch-actions']
+  const rects = selectors.map(visibleElementRect).filter((rect): rect is DOMRect => Boolean(rect))
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      if (rectsOverlap(rects[i], rects[j])) return true
+    }
+  }
+  return false
+}
+
+function applyHudLayoutClass() {
+  const width = window.innerWidth
+  const height = window.innerHeight
+  const landscape = width >= height
+  let density: HudDensity = 'roomy'
+
+  if (isTouchDevice || width < 1120 || height < 720) density = 'compact'
+  if (width < 820 || height < 560 || (isTouchDevice && landscape)) density = 'minimal'
+
+  document.documentElement.style.setProperty('--app-height', `${height}px`)
+  document.body.classList.toggle('touch-layout', isTouchDevice)
+  document.body.classList.toggle('landscape-layout', landscape)
+  document.body.classList.toggle('short-layout', height < 560)
+  setHudDensity(density)
+
+  if (hudLayoutFrame) window.cancelAnimationFrame(hudLayoutFrame)
+  hudLayoutFrame = window.requestAnimationFrame(() => {
+    hudLayoutFrame = 0
+    if (document.body.dataset.hudDensity !== 'minimal' && hudHasVisibleOverlap()) {
+      setHudDensity(document.body.dataset.hudDensity === 'roomy' ? 'compact' : 'minimal')
+    }
+  })
+}
 
 helpToggleBtn.addEventListener('click', (e) => {
   e.preventDefault()
@@ -1604,6 +1991,7 @@ helpToggleBtn.addEventListener('click', (e) => {
   const isVisible = helpPanel.classList.toggle('visible-mobile')
   tutorialPanel.classList.toggle('visible-mobile', isVisible)
   helpToggleBtn.textContent = isVisible ? '×' : '?'
+  applyHudLayoutClass()
 })
 
 if (isTouchDevice) {
@@ -1614,6 +2002,7 @@ if (isTouchDevice) {
 }
 
 function updateOrientationClass() {
+  applyHudLayoutClass()
   document.body.classList.toggle('portrait-touch', isTouchDevice && window.innerHeight > window.innerWidth)
   if (isTouchDevice && window.innerHeight > window.innerWidth) {
     keys.clear()
@@ -1627,8 +2016,14 @@ function updateOrientationClass() {
 
 start.querySelector('button')!.addEventListener('click', () => {
   getAudioContext()
+  hasStarted = true
+  closePauseMenu(false)
   if (isTouchDevice) {
     mobileActive = true
+    start.classList.add('hidden')
+    return
+  }
+  if (isSmokeTest) {
     start.classList.add('hidden')
     return
   }
@@ -1636,21 +2031,31 @@ start.querySelector('button')!.addEventListener('click', () => {
 })
 controls.addEventListener('lock', () => start.classList.add('hidden'))
 controls.addEventListener('unlock', () => {
-  if (!mobileActive) start.classList.remove('hidden')
+  if (!hasStarted) {
+    start.classList.remove('hidden')
+    return
+  }
+  if (!mobileActive && !isPaused) openPauseMenu()
 })
 
 document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape') {
+    e.preventDefault()
+    if (isPaused) closePauseMenu()
+    else openPauseMenu()
+    return
+  }
+  if (isPaused) return
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'].includes(e.code)) e.preventDefault()
   keys.add(e.code)
   const n = Number(e.key)
-  if (n >= 1 && n <= BLOCKS.length) { selected = n - 1; updateHotbar() }
+  if (n >= 1 && n <= BLOCKS.length) selectHotbarSlot(n - 1, 'key')
   if (e.code === 'Space') runJump()
 })
 renderer.domElement.addEventListener('wheel', (event) => {
-  if (!controls.isLocked) return
+  if (!controls.isLocked || isPaused) return
   event.preventDefault()
-  selected = (selected + (event.deltaY > 0 ? 1 : -1) + BLOCKS.length) % BLOCKS.length
-  updateHotbar()
+  selectHotbarSlot((selected + (event.deltaY > 0 ? 1 : -1) + BLOCKS.length) % BLOCKS.length, 'wheel')
 }, { passive: false })
 document.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => {
@@ -1802,9 +2207,10 @@ function collectExplorationShard(blockKey: string, blockId: BlockId) {
   landmarkShardBlocks.delete(blockKey)
   collectedShardBlocks.add(blockKey)
   collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedGlowShards + 1)
+  const moduleName = ARK_MODULE_NAMES[Math.max(0, collectedGlowShards - 1)] ?? 'Core'
   showToast(collectedGlowShards >= EXPLORATION_GOAL_SHARDS
-    ? `Exploration goal complete: ${EXPLORATION_GOAL_SHARDS}/${EXPLORATION_GOAL_SHARDS} shards`
-    : `Glow shard found: ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS}`)
+    ? `Ark Core restored: ${EXPLORATION_GOAL_SHARDS}/${EXPLORATION_GOAL_SHARDS} shards`
+    : `${moduleName} module online: ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS}`)
   return true
 }
 
@@ -1830,7 +2236,7 @@ function wouldTrapPlayer(blockPosition: THREE.Vector3) {
 }
 
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (!controls.isLocked) return
+  if (!controls.isLocked || isPaused) return
   if (e.button === 0) breakTargetBlock()
   if (e.button === 2) placeTargetBlock()
 })
@@ -2031,8 +2437,9 @@ renderer.domElement.addEventListener('pointermove', (event) => {
   const object = controls.object
   const lookDx = Math.abs(dx) < TOUCH_LOOK_DEADZONE ? 0 : dx
   const lookDy = Math.abs(dy) < TOUCH_LOOK_DEADZONE ? 0 : dy
-  object.rotation.y -= lookDx * 0.003
-  camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x - lookDy * 0.003))
+  object.rotation.y -= lookDx * touchLookSpeed
+  camera.rotation.x = clampLookPitch(camera.rotation.x - lookDy * touchLookSpeed)
+  stabilizeFirstPersonLook()
 })
 renderer.domElement.addEventListener('pointerup', (event) => {
   if (event.pointerId !== lookPointerId) return
@@ -2083,10 +2490,11 @@ let lastQualityAdjustAt = 0
 function updateAdaptiveQuality(avgMs: number, elapsedTime: number) {
   if (elapsedTime - lastQualityAdjustAt < 2.5) return
   const previousQuality = renderQuality
+  const bounds = qualityBounds()
   if ((currentFps > 0 && currentFps < 38) || avgMs > 28) {
-    renderQuality = Math.max(MIN_RENDER_QUALITY, renderQuality - QUALITY_STEP)
+    renderQuality = Math.max(bounds.min, renderQuality - QUALITY_STEP)
   } else if (currentFps >= 56 && avgMs < 18) {
-    renderQuality = Math.min(MAX_RENDER_QUALITY, renderQuality + QUALITY_STEP)
+    renderQuality = Math.min(bounds.max, renderQuality + QUALITY_STEP)
   }
   if (Math.abs(renderQuality - previousQuality) >= 0.01) {
     applyRenderQuality()
@@ -2104,14 +2512,23 @@ let lastShardSignalAt = -Infinity
 function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const deepNight = day < 0.23
   const night = day < 0.38
+  const shardWardLevel = Math.min(collectedGlowShards, EXPLORATION_GOAL_SHARDS)
   const carriedProtection = Math.min(carriedCrystal, 4) * 0.045
-  const drainRate = deepNight ? Math.max(0.5, 2.8 - carriedProtection * 20) : night ? 0.55 : -0.22
+  const shardProtection = shardWardLevel * SHARD_WARD_PROTECTION
+  const drainProtection = carriedProtection + shardProtection
+  const drainRate = deepNight
+    ? Math.max(0.45, 2.8 - drainProtection * 20)
+    : night
+      ? Math.max(0.12, 0.55 - shardProtection * 2.2 - carriedProtection * 1.2)
+      : -0.22
   crystalPower = Math.max(0, Math.min(100, crystalPower - drainRate * dt))
 
   const lowPower = crystalPower < 35
   const danger = deepNight && lowPower
   const coldIntensity = danger ? Math.min(1, (35 - crystalPower) / 35) * (1 - day / 0.23) : 0
-  const protectionLabel = carriedCrystal > 0 ? ` · x${carriedCrystal}` : ''
+  const carriedLabel = carriedCrystal > 0 ? ` · x${carriedCrystal}` : ''
+  const shardWardLabel = shardWardLevel > 0 ? ` · Ward ${shardWardLevel}` : ''
+  const protectionLabel = `${carriedLabel}${shardWardLabel}`
 
   if (coldVignetteEl) {
     coldVignetteEl.style.opacity = String(coldIntensity)
@@ -2121,7 +2538,7 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   sceneFog.density = 0.015 + (1 - day) * 0.012 + coldIntensity * 0.035
 
   let phase = 'Day'
-  let threat = carriedCrystal > 0 ? 'Protected' : 'Safe'
+  let threat = carriedCrystal > 0 ? 'Protected' : shardWardLevel > 0 ? 'Beacon Ward' : 'Safe'
   let threatColor = '#a8ffb9'
   let styleBand = 'high'
 
@@ -2135,12 +2552,12 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
     threatColor = '#fff3a8'
   } else if (danger) {
     phase = 'Deep Night'
-    threat = 'Cold Exposure'
-    threatColor = '#8fd8ff'
+    threat = shardWardLevel > 0 ? 'Ward Strained' : 'Cold Exposure'
+    threatColor = shardWardLevel > 0 ? '#fff3a8' : '#8fd8ff'
   } else {
     phase = 'Night'
-    threat = carriedCrystal > 0 ? 'Crystal Ward' : 'Keep Power'
-    threatColor = carriedCrystal > 0 ? '#d999ff' : '#ffb4d9'
+    threat = carriedCrystal > 0 ? 'Crystal Ward' : shardWardLevel > 0 ? 'Beacon Ward' : 'Keep Power'
+    threatColor = carriedCrystal > 0 ? '#d999ff' : shardWardLevel > 0 ? '#fff3a8' : '#ffb4d9'
   }
 
   if (danger && elapsedTime - lastSurvivalToastAt > 14) {
@@ -2270,12 +2687,14 @@ function animate() {
     p.mesh.scale.setScalar(Math.max(0, p.life / 0.6))
   }
 
-  // 更新放置预览 ghost box
-  const hit = pickBlock()
+  const aimingActive = hasStarted && !isPaused && (controls.isLocked || mobileActive)
+  const hit = aimingActive ? pickBlock() : undefined
   if (hit && hit.distance <= RAYCAST_REACH) {
     getBlockPositionFromKey(hit.key, hitBlockPosition)
     const hitBlockId = blockData.get(hit.key)
     const canReplaceWater = hitBlockId === 'water' && BLOCKS[selected].id !== 'water'
+    targetOutlineMesh.position.copy(hitBlockPosition)
+    targetOutlineMesh.visible = true
     
     if (canReplaceWater) {
       placePosition.copy(hitBlockPosition)
@@ -2292,17 +2711,33 @@ function animate() {
       previewMesh = new THREE.Mesh(previewGeometry, previewMaterial)
       previewMesh.castShadow = false
       previewMesh.receiveShadow = false
+      previewMesh.renderOrder = 10
       scene.add(previewMesh)
     }
+    if (!previewOutlineMesh) {
+      previewOutlineMesh = new THREE.LineSegments(previewOutlineGeometry, previewOutlineMaterial)
+      previewOutlineMesh.renderOrder = 11
+      scene.add(previewOutlineMesh)
+    }
     previewMesh.position.copy(placePosition)
+    previewMesh.scale.setScalar(1.01)
     const material = previewMesh.material as THREE.MeshStandardMaterial
-    material.opacity = isValidPlacement ? 0.35 : 0.55
+    material.opacity = isValidPlacement ? 0.28 : 0.46
     material.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
-    material.emissive.setHex(isValidPlacement ? 0x4488ff : 0xff6666)
+    material.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
+    material.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
     previewMesh.visible = true
+    previewOutlineMesh.position.copy(placePosition)
+    previewOutlineMaterial.color.setHex(isValidPlacement ? 0xa8ffb9 : 0xff7777)
+    previewOutlineMaterial.opacity = isValidPlacement ? 0.92 : 1
+    previewOutlineMesh.visible = true
   } else {
+    targetOutlineMesh.visible = false
     if (previewMesh) {
       previewMesh.visible = false
+    }
+    if (previewOutlineMesh) {
+      previewOutlineMesh.visible = false
     }
   }
 
@@ -2313,6 +2748,11 @@ function animate() {
     shardBeacon.scale.setScalar(pulse)
     ;(shardBeaconRing.material as THREE.MeshBasicMaterial).opacity = cosmeticEffectsReduced ? 0.45 : 0.68 + Math.sin(elapsedTime * 3.4) * 0.16
   }
+  arkCore.rotation.y += dt * 0.16
+  arkCoreSpire.rotation.y -= dt * 0.42
+  arkCoreModules.forEach((module, index) => {
+    module.rotation.y += dt * (0.22 + index * 0.015)
+  })
 
   const t = elapsedTime * 0.055
   const day = (Math.sin(t) + 1) / 2
@@ -2374,8 +2814,9 @@ function animate() {
   else if (pos.y > floor + 0.05) canJump = false
   if (playerCollidesAt(pos)) pos.y = Math.max(pos.y, floor)
   updateTouchMining()
+  stabilizeFirstPersonLook()
 
-  world.rotation.y = cosmeticEffectsReduced ? 0 : Math.sin(elapsedTime * 0.05) * 0.006
+  if (world.rotation.y !== 0) world.rotation.y = 0
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
   const waterCount = waterBlocks.length
   const waterMinimum = cosmeticEffectsReduced ? Math.min(3, waterCount) : Math.min(8, waterCount)
