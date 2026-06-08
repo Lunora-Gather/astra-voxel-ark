@@ -1,0 +1,70 @@
+{
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "smoke:hud": "npm run build && node scripts/hud-smoke.mjs",
+    "verify": "npm run smoke:hud",
+    "preview": "vite preview --host 0.0.0.0",
+    "electron:dev": "npm run build && electron .",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
+    "dist:windows": "npm run build && electron-builder --win nsis portable --publish never",
+    "android:sync": "npm run build && cap sync android",
+    "android:open": "cap open android",
+    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
+    "@types/three": "^0.176.0",
+    "three": "^0.176.0",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.16"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4",
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12"
+  },
+  "name": "astra-voxel-ark",
+  "version": "1.4.0",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "description": "A landscape-first voxel sandbox app for web, Android, Ubuntu Linux and Windows",
+  "private": false,
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.wangjiehu.astravoxelark",
+    "productName": "AstraVoxel Ark",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "author": {
+    "name": "wangjiehu",
+    "email": "wangjiehu@example.com"
+  }
+}
