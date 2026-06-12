@@ -221,6 +221,31 @@ const cubeGeometry = new THREE.BoxGeometry(1, 1, 1)
 const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry)
 const edgeMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.055 })
 const materials = createBlockMaterials()
+const waterMaterialRaw = materials.get('water')
+const waterMaterial = (Array.isArray(waterMaterialRaw) ? waterMaterialRaw[0] : waterMaterialRaw) as THREE.MeshStandardMaterial
+const waterTimeUniform = { value: 0 }
+if (waterMaterial) {
+  waterMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = waterTimeUniform
+    shader.vertexShader = `
+      uniform float uTime;
+    ` + shader.vertexShader
+    
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+      #include <begin_vertex>
+      #ifdef USE_INSTANCING
+      vec3 instPos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+      float phase = uTime * 1.8 + (instPos.x + instPos.z) * 0.37;
+      float waveY = sin(phase) * 0.035;
+      float scaleY = 0.92 + sin(phase * 1.3) * 0.035;
+      transformed.y = transformed.y * scaleY + waveY;
+      #endif
+      `
+    )
+  }
+}
 
 const world = new THREE.Group()
 scene.add(world)
@@ -244,9 +269,10 @@ const instancedMatrix = new THREE.Matrix4()
 const hiddenInstanceMatrix = new THREE.Matrix4().makeTranslation(0, -100000, 0)
 const glowLights: THREE.PointLight[] = []
 const glowLightsByBlock = new Map<string, THREE.PointLight>()
-const waterBlocks: THREE.Mesh[] = []
-const grassTufts: THREE.Group[] = []
-const grassTuftsByAnchor = new Map<string, THREE.Group[]>()
+let grassBladeMesh: THREE.InstancedMesh | null = null
+const grassBladeKeys: string[] = []
+let needUpdateBounds = false
+const INITIAL_GRASS_CAPACITY = 12000
 const SAVE_KEY = 'astra-voxel-ark-world-v1'
 const CHUNK_SIZE = 8
 const INITIAL_TERRAIN_LOAD_RADIUS = 1
@@ -358,13 +384,41 @@ const grassBladeMaterial = new THREE.MeshStandardMaterial({
   opacity: 0.82,
   roughness: 0.95,
 })
+const grassTimeUniform = { value: 0 }
+grassBladeMaterial.onBeforeCompile = (shader) => {
+  shader.uniforms.uTime = grassTimeUniform
+  shader.vertexShader = `
+    uniform float uTime;
+  ` + shader.vertexShader
+  
+  shader.vertexShader = shader.vertexShader.replace(
+    '#include <begin_vertex>',
+    `
+    #include <begin_vertex>
+    #ifdef USE_INSTANCING
+    vec3 instPos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
+    float phase = uTime * 2.2 + (instPos.x + instPos.z) * 0.45;
+    float swayFactor = transformed.y / 0.58;
+    transformed.x += sin(phase) * 0.09 * swayFactor;
+    transformed.z += cos(phase * 0.8) * 0.07 * swayFactor;
+    #endif
+    `
+  )
+}
 const outlinedBlockIds = new Set<BlockId>(['wood', 'leaves', 'crystal', 'glow', 'brick', 'obsidian', 'copper', 'gold'])
 const enableBlockOutlines = !lowPowerMode
 const enableBlockShadows = !lowPowerMode
-const MAX_GLOW_LIGHTS = lowPowerMode ? 12 : Number.POSITIVE_INFINITY
+const MAX_GLOW_LIGHTS = lowPowerMode ? 0 : Number.POSITIVE_INFINITY
+
+const grassBladeGeo = grassBladeGeometry.clone()
+grassBladeGeo.translate(0, 0.29, 0)
+grassBladeMesh = new THREE.InstancedMesh(grassBladeGeo, grassBladeMaterial, INITIAL_GRASS_CAPACITY)
+grassBladeMesh.count = 0
+grassBladeMesh.castShadow = false
+grassBladeMesh.receiveShadow = enableBlockShadows
+grassBladeMesh.frustumCulled = true
+world.add(grassBladeMesh)
 let blockMutationVersion = 0
-let waterAnimationCursor = 0
-let grassAnimationCursor = 0
 let cloudAnimationCursor = 0
 let sparkleAnimationCursor = 0
 let cosmeticEffectsReduced = false
@@ -407,12 +461,11 @@ function removeArrayItemUnordered<T>(array: T[], item: T) {
 }
 
 BLOCKS.forEach(({ id }) => {
-  if (id === 'water') return
   const instancedMesh = new THREE.InstancedMesh(cubeGeometry, materials.get(id)!, INITIAL_INSTANCED_MESH_CAPACITY)
   instancedMesh.count = 0
   instancedMesh.castShadow = enableBlockShadows && (id === 'wood' || id === 'leaves' || id === 'crystal' || id === 'glow')
   instancedMesh.receiveShadow = enableBlockShadows
-  instancedMesh.frustumCulled = false
+  instancedMesh.frustumCulled = true
   instancedMesh.userData.block = true
   instancedMesh.userData.id = id
   instancedBlockMeshes.set(id, instancedMesh)
@@ -425,19 +478,36 @@ function isInstancedBlockRef(visual: BlockVisual | undefined): visual is Instanc
   return Boolean(visual && !(visual instanceof THREE.Mesh) && visual.kind === 'instanced')
 }
 
-function isSolidBlockId(id: BlockId | undefined): id is Exclude<BlockId, 'water'> {
-  return Boolean(id && id !== 'water')
+const TRANSPARENT_BLOCK_IDS = new Set<BlockId>(['leaves', 'water', 'crystal', 'glow'])
+function isOpaqueBlockId(id: BlockId | undefined): boolean {
+  return Boolean(id) && !TRANSPARENT_BLOCK_IDS.has(id as BlockId)
 }
 
-function hasExposedSolidFace(x: number, y: number, z: number) {
-  return SOLID_NEIGHBOR_OFFSETS.some(([dx, dy, dz]) => !isSolidBlockId(blockData.get(blockKey(x + dx, y + dy, z + dz))))
+function hasExposedFace(x: number, y: number, z: number, id: BlockId) {
+  const isOpaque = isOpaqueBlockId(id)
+  return SOLID_NEIGHBOR_OFFSETS.some(([dx, dy, dz]) => {
+    const neighborId = blockData.get(blockKey(x + dx, y + dy, z + dz))
+    if (!neighborId) return true
+    if (isOpaque) {
+      return !isOpaqueBlockId(neighborId)
+    } else {
+      return neighborId !== id && !isOpaqueBlockId(neighborId)
+    }
+  })
 }
 
-function countExposedSolidFaces(x: number, y: number, z: number) {
-  if (!isSolidBlockId(blockData.get(blockKey(x, y, z)))) return 0
+function countExposedFaces(x: number, y: number, z: number, id: BlockId) {
+  const isOpaque = isOpaqueBlockId(id)
   let exposedFaces = 0
   SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => {
-    if (!isSolidBlockId(blockData.get(blockKey(x + dx, y + dy, z + dz)))) exposedFaces++
+    const neighborId = blockData.get(blockKey(x + dx, y + dy, z + dz))
+    if (!neighborId) {
+      exposedFaces++
+    } else if (isOpaque) {
+      if (!isOpaqueBlockId(neighborId)) exposedFaces++
+    } else {
+      if (neighborId !== id && !isOpaqueBlockId(neighborId)) exposedFaces++
+    }
   })
   return exposedFaces
 }
@@ -463,12 +533,12 @@ function ensureGlowLightAt(k: string, x: number, y: number, z: number, id: Block
   glowLights.push(light)
 }
 
-function refreshSolidBlockVisualAt(k: string) {
+function refreshBlockVisualAt(k: string) {
   const id = blockData.get(k)
-  if (!isSolidBlockId(id)) return
+  if (!id) return
   const [x, y, z] = k.split(',').map(Number)
   const visual = blocks.get(k)
-  const shouldRender = hasExposedSolidFace(x, y, z)
+  const shouldRender = hasExposedFace(x, y, z, id)
 
   if (shouldRender && !isInstancedBlockRef(visual)) {
     blocks.set(k, addInstancedBlockVisual(k, x, y, z, id))
@@ -483,9 +553,9 @@ function refreshSolidBlockVisualAt(k: string) {
   }
 }
 
-function refreshSolidBlockAndNeighbors(x: number, y: number, z: number) {
-  refreshSolidBlockVisualAt(blockKey(x, y, z))
-  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshSolidBlockVisualAt(blockKey(x + dx, y + dy, z + dz)))
+function refreshBlockAndNeighbors(x: number, y: number, z: number) {
+  refreshBlockVisualAt(blockKey(x, y, z))
+  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshBlockVisualAt(blockKey(x + dx, y + dy, z + dz)))
 }
 
 function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id: BlockId) {
@@ -502,6 +572,7 @@ function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id:
   instancedMesh.count = index + 1
   instancedMesh.instanceMatrix.needsUpdate = true
   instancedMesh.boundingSphere = null
+  needUpdateBounds = true
   keysForType[index] = k
   return { kind: 'instanced', id, mesh: instancedMesh, index, x, y, z } satisfies InstancedBlockRef
 }
@@ -513,7 +584,7 @@ function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysF
   newMesh.count = oldMesh.count
   newMesh.castShadow = oldMesh.castShadow
   newMesh.receiveShadow = oldMesh.receiveShadow
-  newMesh.frustumCulled = false
+  newMesh.frustumCulled = true
   newMesh.userData.block = true
   newMesh.userData.id = id
 
@@ -554,6 +625,7 @@ function removeInstancedBlockVisual(k: string, ref: InstancedBlockRef) {
   keysForType.pop()
   ref.mesh.instanceMatrix.needsUpdate = true
   ref.mesh.boundingSphere = null
+  needUpdateBounds = true
 }
 
 function getBlockKeyFromHit(hit: THREE.Intersection<THREE.Object3D>) {
@@ -656,15 +728,9 @@ function rebuildChunkVisibleFaceSummary(chunk: ChunkMetadata) {
       visibleFaceCount: 0,
     }
 
-    if (id === 'water') {
-      specialBlockCount += bucket.blockKeys.size
-      bucketStats.set(id, stats)
-      return
-    }
-
     bucket.blockKeys.forEach((key) => {
       const [x, y, z] = key.split(',').map(Number)
-      const exposedFaces = countExposedSolidFaces(x, y, z)
+      const exposedFaces = countExposedFaces(x, y, z, id)
       solidBlockCount++
       if (exposedFaces > 0) {
         visibleSolidBlockCount++
@@ -701,34 +767,82 @@ function seededNoise(...values: number[]) {
   return hashNoise(values.reduce((seed, value) => seed * 31 + value, 17))
 }
 
-function addGrassTuft(x: number, y: number, z: number) {
-  const tuft = new THREE.Group()
-  tuft.position.set(x + (seededNoise(x, y, z, 1) - 0.5) * 0.35, y + 0.56, z + (seededNoise(x, y, z, 2) - 0.5) * 0.35)
-  tuft.userData.seed = seededNoise(x, y, z, 3) * Math.PI * 2
-  tuft.userData.anchorKey = blockKey(x, y, z)
-  for (let i = 0; i < 3; i++) {
-    const blade = new THREE.Mesh(grassBladeGeometry, grassBladeMaterial)
-    blade.rotation.y = (Math.PI / 3) * i + seededNoise(x, y, z, i, 4) * 0.22
-    blade.scale.setScalar(0.72 + seededNoise(x, y, z, i, 5) * 0.35)
-    tuft.add(blade)
+const grassPos = new THREE.Vector3()
+const grassRot = new THREE.Quaternion()
+const grassScale = new THREE.Vector3()
+const grassEuler = new THREE.Euler()
+const grassMatrix = new THREE.Matrix4()
+
+function growGrassBladeMesh() {
+  if (!grassBladeMesh) return
+  const oldMesh = grassBladeMesh
+  const oldCapacity = oldMesh.instanceMatrix.array.length / 16
+  const newCapacity = oldCapacity * 2
+  const newMesh = new THREE.InstancedMesh(oldMesh.geometry, oldMesh.material, newCapacity)
+  newMesh.count = oldMesh.count
+  newMesh.castShadow = oldMesh.castShadow
+  newMesh.receiveShadow = oldMesh.receiveShadow
+  newMesh.frustumCulled = oldMesh.frustumCulled
+  
+  for (let i = 0; i < oldMesh.count; i++) {
+    oldMesh.getMatrixAt(i, grassMatrix)
+    newMesh.setMatrixAt(i, grassMatrix)
   }
-  world.add(tuft)
-  grassTufts.push(tuft)
-  const anchorKey = tuft.userData.anchorKey as string
-  const anchorTufts = grassTuftsByAnchor.get(anchorKey)
-  if (anchorTufts) anchorTufts.push(tuft)
-  else grassTuftsByAnchor.set(anchorKey, [tuft])
+  newMesh.instanceMatrix.needsUpdate = true
+  world.remove(oldMesh)
+  world.add(newMesh)
+  grassBladeMesh = newMesh
+}
+
+function addGrassTuft(x: number, y: number, z: number) {
+  if (!grassBladeMesh) return
+  const anchorKey = blockKey(x, y, z)
+  const baseX = x + (seededNoise(x, y, z, 1) - 0.5) * 0.35
+  const baseY = y + 0.56
+  const baseZ = z + (seededNoise(x, y, z, 2) - 0.5) * 0.35
+  
+  const capacity = grassBladeMesh.instanceMatrix.array.length / 16
+  for (let i = 0; i < 3; i++) {
+    let index = grassBladeMesh.count
+    if (index >= capacity) {
+      growGrassBladeMesh()
+    }
+    index = grassBladeMesh.count
+    
+    const rotY = (Math.PI / 3) * i + seededNoise(x, y, z, i, 4) * 0.22
+    const scale = 0.72 + seededNoise(x, y, z, i, 5) * 0.35
+    
+    grassPos.set(baseX, baseY, baseZ)
+    grassEuler.set(0, rotY, 0)
+    grassRot.setFromEuler(grassEuler)
+    grassScale.set(scale, scale, scale)
+    grassMatrix.compose(grassPos, grassRot, grassScale)
+    
+    grassBladeMesh.setMatrixAt(index, grassMatrix)
+    grassBladeMesh.count = index + 1
+    grassBladeKeys[index] = anchorKey
+  }
+  grassBladeMesh.instanceMatrix.needsUpdate = true
+  needUpdateBounds = true
 }
 
 function removeGrassTuftsAt(anchorKey: string) {
-  const anchorTufts = grassTuftsByAnchor.get(anchorKey)
-  if (!anchorTufts) return
-  for (let i = anchorTufts.length - 1; i >= 0; i--) {
-    const tuft = anchorTufts[i]
-    world.remove(tuft)
-    removeArrayItemUnordered(grassTufts, tuft)
+  if (!grassBladeMesh) return
+  for (let i = grassBladeMesh.count - 1; i >= 0; i--) {
+    if (grassBladeKeys[i] === anchorKey) {
+      const lastIndex = grassBladeMesh.count - 1
+      if (i !== lastIndex) {
+        grassBladeMesh.getMatrixAt(lastIndex, grassMatrix)
+        grassBladeMesh.setMatrixAt(i, grassMatrix)
+        grassBladeKeys[i] = grassBladeKeys[lastIndex]
+      }
+      grassBladeMesh.setMatrixAt(lastIndex, hiddenInstanceMatrix)
+      grassBladeMesh.count = lastIndex
+      grassBladeKeys.pop()
+    }
   }
-  grassTuftsByAnchor.delete(anchorKey)
+  grassBladeMesh.instanceMatrix.needsUpdate = true
+  needUpdateBounds = true
 }
 
 function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSource = 'terrain') {
@@ -739,32 +853,13 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
     removedTerrainBlocks.delete(k)
     playerPlacedBlocks.add(k)
   }
-  if (id === 'water') {
-    const mesh = new THREE.Mesh(cubeGeometry, materials.get(id)!)
-    mesh.position.set(x, y, z)
-    mesh.castShadow = false
-    mesh.receiveShadow = enableBlockShadows
-    mesh.userData.block = true
-    mesh.userData.id = id
-    mesh.userData.baseY = y
-    world.add(mesh)
-    waterBlocks.push(mesh)
-    blocks.set(k, mesh)
-  } else {
-    blocks.set(k, undefined)
-  }
+  blocks.set(k, undefined)
   blockMutationVersion++
   blockData.set(k, id)
   registerBlockInChunk(x, y, z, id, k)
-  refreshSolidBlockAndNeighbors(x, y, z)
+  refreshBlockAndNeighbors(x, y, z)
 
   const visual = blocks.get(k)
-
-  if (visual instanceof THREE.Mesh && enableBlockOutlines && outlinedBlockIds.has(id)) {
-    const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial)
-    visual.add(edges)
-  }
-
   if (visual) ensureGlowLightAt(k, x, y, z, id)
 }
 
@@ -776,12 +871,9 @@ function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
     if (playerPlacedBlocks.has(k)) playerPlacedBlocks.delete(k)
     else removedTerrainBlocks.add(k)
   }
-  const id = blockData.get(k) ?? (isInstancedBlockRef(visual) ? visual.id : visual instanceof THREE.Mesh ? visual.userData.id as BlockId | undefined : undefined)
+  const id = blockData.get(k) ?? (isInstancedBlockRef(visual) ? visual.id : undefined)
   removeGlowLightAt(k)
-  if (visual instanceof THREE.Mesh) {
-    removeArrayItemUnordered(waterBlocks, visual)
-    world.remove(visual)
-  } else if (isInstancedBlockRef(visual)) {
+  if (isInstancedBlockRef(visual)) {
     removeInstancedBlockVisual(k, visual)
   }
   removeGrassTuftsAt(k)
@@ -789,12 +881,7 @@ function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
   blockMutationVersion++
   blockData.delete(k)
   if (id) unregisterBlockFromChunk(x, y, z, id, k)
-  refreshSolidBlockAndNeighbors(x, y, z)
-}
-
-function removeBlock(mesh: THREE.Mesh, source: 'player' | 'system' = 'system') {
-  const p = mesh.position
-  removeBlockAtKey(blockKey(Math.round(p.x), Math.round(p.y), Math.round(p.z)), source)
+  refreshBlockAndNeighbors(x, y, z)
 }
 
 function setStarterInventory() {
@@ -849,10 +936,14 @@ function clearWorldBlocks() {
     mesh.boundingSphere = null
   })
   instancedBlockKeys.forEach((keysForType) => { keysForType.length = 0 })
-  waterBlocks.length = 0
   glowLightsByBlock.clear()
   chunks.clear()
-  grassTuftsByAnchor.clear()
+  if (grassBladeMesh) {
+    grassBladeMesh.count = 0
+    grassBladeMesh.instanceMatrix.needsUpdate = true
+    grassBladeMesh.boundingSphere = null
+  }
+  grassBladeKeys.length = 0
   generatedTerrainChunks.clear()
   queuedTerrainChunks.clear()
   terrainGenerationQueue.length = 0
@@ -1188,11 +1279,11 @@ targetOutlineMesh.renderOrder = 12
 targetOutlineMesh.visible = false
 scene.add(targetOutlineMesh)
 
+const BLOCK_COLOR_MAP = new Map<BlockId, number>(BLOCKS.map((b) => [b.id, b.color]))
 function getBreakParticleMaterial(blockId: BlockId) {
   let material = breakParticleMaterials.get(blockId)
   if (!material) {
-    const block = BLOCKS.find(b => b.id === blockId)
-    material = new THREE.MeshStandardMaterial({ color: block?.color || 0xffffff, roughness: 0.8 })
+    material = new THREE.MeshStandardMaterial({ color: BLOCK_COLOR_MAP.get(blockId) ?? 0xffffff, roughness: 0.8 })
     breakParticleMaterials.set(blockId, material)
   }
   return material
@@ -1470,20 +1561,24 @@ platform.position.y = -2
 platform.receiveShadow = !lowPowerMode
 scene.add(platform)
 
-const stars = new THREE.Group()
-const starGeo = new THREE.SphereGeometry(0.035, 8, 8)
-const starMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
-for (let i = 0; i < 260; i++) {
-  const star = new THREE.Mesh(starGeo, starMat)
-  star.position.set((Math.random() - 0.5) * 180, 35 + Math.random() * 80, (Math.random() - 0.5) * 180)
-  stars.add(star)
+const maxStars = lowPowerMode ? 60 : 260
+const starPositions = new Float32Array(maxStars * 3)
+for (let i = 0; i < maxStars; i++) {
+  starPositions[i * 3] = (Math.random() - 0.5) * 180
+  starPositions[i * 3 + 1] = 35 + Math.random() * 80
+  starPositions[i * 3 + 2] = (Math.random() - 0.5) * 180
 }
+const starBufferGeo = new THREE.BufferGeometry()
+starBufferGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
+const starPointMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, sizeAttenuation: true })
+const stars = new THREE.Points(starBufferGeo, starPointMat)
 scene.add(stars)
 
 const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 1 })
 const cloudGeo = new THREE.SphereGeometry(1, 16, 8)
 const clouds = new THREE.Group()
-for (let i = 0; i < 18; i++) {
+const maxClouds = lowPowerMode ? 6 : 18
+for (let i = 0; i < maxClouds; i++) {
   const cloud = new THREE.Group()
   const x = (Math.random() - 0.5) * 95
   const z = (Math.random() - 0.5) * 95
@@ -1502,7 +1597,8 @@ scene.add(clouds)
 const sparkles = new THREE.Group()
 const sparkleGeo = new THREE.IcosahedronGeometry(0.055, 0)
 const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.82 })
-for (let i = 0; i < 120; i++) {
+const maxSparkles = lowPowerMode ? 24 : 120
+for (let i = 0; i < maxSparkles; i++) {
   const sparkle = new THREE.Mesh(sparkleGeo, sparkleMat)
   sparkle.position.set((Math.random() - 0.5) * 62, 5 + Math.random() * 18, (Math.random() - 0.5) * 62)
   sparkle.userData.seed = Math.random() * Math.PI * 2
@@ -1715,7 +1811,7 @@ function selectNextAvailableBlock() {
 function renderHotbar() {
   hotbar.innerHTML = BLOCKS.map((b, i) => {
     const count = countBlocksInInventory(b.id)
-    return `<button class="slot ${i === selected ? 'active' : ''} ${count <= 0 ? 'empty' : ''}" data-slot="${i}" aria-label="Select ${b.name}"><span class="key">${i + 1}</span><span class="swatch" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="name">${b.name}</span><span class="count">${count}</span></button>`
+    return `<button class="slot ${i === selected ? 'active' : ''} ${count <= 0 ? 'empty' : ''}" data-slot="${i}" aria-label="Select ${b.name}"><span class="key">${i + 1}</span><span class="swatch" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="count">${count}</span></button>`
   }).join('')
   hotbarSlots.length = 0
   hotbarCounts.length = 0
@@ -2055,7 +2151,13 @@ document.addEventListener('keydown', (e) => {
 renderer.domElement.addEventListener('wheel', (event) => {
   if (!controls.isLocked || isPaused) return
   event.preventDefault()
-  selectHotbarSlot((selected + (event.deltaY > 0 ? 1 : -1) + BLOCKS.length) % BLOCKS.length, 'wheel')
+  const dir = event.deltaY > 0 ? 1 : -1
+  let next = (selected + dir + BLOCKS.length) % BLOCKS.length
+  for (let i = 0; i < BLOCKS.length - 1; i++) {
+    if (countBlocksInInventory(BLOCKS[next].id) > 0) break
+    next = (next + dir + BLOCKS.length) % BLOCKS.length
+  }
+  selectHotbarSlot(next, 'wheel')
 }, { passive: false })
 document.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => {
@@ -2237,8 +2339,21 @@ function wouldTrapPlayer(blockPosition: THREE.Vector3) {
 
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (!controls.isLocked || isPaused) return
-  if (e.button === 0) breakTargetBlock()
-  if (e.button === 2) placeTargetBlock()
+  if (e.button === 0) {
+    breakTargetBlock()
+  } else if (e.button === 2) {
+    placeTargetBlock()
+  } else if (e.button === 1) {
+    e.preventDefault()
+    const hit = pickBlock()
+    if (hit && hit.distance <= RAYCAST_REACH) {
+      const hitId = blockData.get(hit.key)
+      if (hitId) {
+        const idx = BLOCKS.findIndex((b) => b.id === hitId)
+        if (idx >= 0) selectHotbarSlot(idx, 'pointer')
+      }
+    }
+  }
 })
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 
@@ -2408,6 +2523,19 @@ function updateTouchMining() {
 updateOrientationClass()
 window.addEventListener('resize', updateOrientationClass)
 window.addEventListener('orientationchange', updateOrientationClass)
+
+// Prevent default touch gestures (pinch-to-zoom, double-tap zoom) on the canvas
+renderer.domElement.addEventListener('touchstart', (event) => {
+  if (event.touches.length > 1) {
+    event.preventDefault()
+  }
+}, { passive: false })
+
+renderer.domElement.addEventListener('touchmove', (event) => {
+  if (event.touches.length > 1 || !isUiTouch(event.target as HTMLElement)) {
+    event.preventDefault()
+  }
+}, { passive: false })
 
 renderer.domElement.addEventListener('pointerdown', (event) => {
   if (!mobileActive || isUiTouch(event.target as HTMLElement)) return
@@ -2621,6 +2749,37 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   }
 }
 
+let lastLightCullAt = -Infinity
+const LIGHT_CULL_DISTANCE_SQ = 24 * 24
+
+function cullPointLights(elapsedTime: number) {
+  if (elapsedTime - lastLightCullAt < 0.2) return
+  lastLightCullAt = elapsedTime
+  const playerPos = controls.object.position
+  glowLights.forEach((light) => {
+    const dx = light.position.x - playerPos.x
+    const dy = light.position.y - playerPos.y
+    const dz = light.position.z - playerPos.z
+    const distSq = dx * dx + dy * dy + dz * dz
+    light.visible = distSq <= LIGHT_CULL_DISTANCE_SQ
+  })
+}
+
+function updateInstancedBounds() {
+  if (!needUpdateBounds) return
+  needUpdateBounds = false
+  instancedBlockMeshes.forEach((mesh) => {
+    if (mesh.count > 0) {
+      mesh.computeBoundingBox()
+      mesh.computeBoundingSphere()
+    }
+  })
+  if (grassBladeMesh && grassBladeMesh.count > 0) {
+    grassBladeMesh.computeBoundingBox()
+    grassBladeMesh.computeBoundingSphere()
+  }
+}
+
 function updateFrameStats(dt: number, elapsedTime: number) {
   const frameMs = dt * 1000
   frameBudgetTotal -= frameBudgetSamples[frameBudgetIndex]
@@ -2659,11 +2818,20 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   }
 }
 
+const AUTO_SAVE_INTERVAL = 300 // 5 minutes
+let lastAutoSaveAt = 0
+
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05)
   const elapsedTime = clock.elapsedTime
+  if (hasStarted && elapsedTime - lastAutoSaveAt > AUTO_SAVE_INTERVAL) {
+    lastAutoSaveAt = elapsedTime
+    localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  }
   rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
+  updateInstancedBounds()
   updateFrameStats(dt, elapsedTime)
+  cullPointLights(elapsedTime)
   if (elapsedTime - lastShardSignalAt > 0.35) {
     lastShardSignalAt = elapsedTime
     updateShardSignal()
@@ -2816,28 +2984,9 @@ function animate() {
   updateTouchMining()
   stabilizeFirstPersonLook()
 
-  if (world.rotation.y !== 0) world.rotation.y = 0
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
-  const waterCount = waterBlocks.length
-  const waterMinimum = cosmeticEffectsReduced ? Math.min(3, waterCount) : Math.min(8, waterCount)
-  const waterUpdates = Math.min(waterCount, adaptiveBudget(waterCount, waterMinimum))
-  if (waterAnimationCursor >= waterCount) waterAnimationCursor = 0
-  for (let i = 0; i < waterUpdates; i++) {
-    const water = waterBlocks[waterAnimationCursor]
-    const phase = elapsedTime * 1.8 + waterAnimationCursor * 0.37
-    water.position.y = (water.userData.baseY as number) + Math.sin(phase) * 0.035
-    water.scale.y = 0.92 + Math.sin(phase * 1.3) * 0.035
-    waterAnimationCursor = (waterAnimationCursor + 1) % waterCount
-  }
-  const grassCount = grassTufts.length
-  const grassUpdates = Math.min(grassCount, adaptiveBudget(GRASS_ANIMATION_BUDGET, lowPowerMode ? 24 : 48))
-  if (grassAnimationCursor >= grassCount) grassAnimationCursor = 0
-  for (let i = 0; i < grassUpdates; i++) {
-    const tuft = grassTufts[grassAnimationCursor]
-    const seed = tuft.userData.seed as number
-    tuft.rotation.z = Math.sin(elapsedTime * 1.35 + seed) * 0.06
-    grassAnimationCursor = (grassAnimationCursor + 1) % grassCount
-  }
+  waterTimeUniform.value = elapsedTime
+  grassTimeUniform.value = elapsedTime
   if (!cosmeticEffectsReduced) clouds.rotation.y += dt * 0.006
   const cloudCount = clouds.children.length
   const cloudUpdates = cosmeticEffectsReduced ? 0 : Math.min(cloudCount, adaptiveBudget(cloudCount, Math.min(3, cloudCount)))

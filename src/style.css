@@ -26,7 +26,6 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .slot.active.selected-pulse { animation: selected-slot-pulse .18s ease-out; }
 .swatch { width: 31px; height: 31px; border-radius: 9px; box-shadow: inset 0 6px 11px rgba(255,255,255,.25), inset 0 -8px 10px rgba(0,0,0,.22), 0 8px 18px rgba(0,0,0,.22); }
 .key { position: absolute; left: 7px; top: 5px; font-size: 11px; opacity: .78; }
-.name { position: absolute; bottom: 5px; font-size: 10px; opacity: .92; }
 .count { position: absolute; right: 4px; bottom: 3px; font-size: 11px; font-weight: 900; color: #ffd7fa; opacity: .88; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.95); }
 .help { position: absolute; right: 24px; top: 20px; max-width: 270px; padding: 15px 17px; border-radius: 20px; border: 1px solid rgba(255,255,255,.18); background: linear-gradient(135deg, rgba(10,18,40,.52), rgba(26,45,72,.24)); backdrop-filter: blur(18px); font-size: 13px; line-height: 1.72; box-shadow: 0 18px 60px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14); }
 .help strong { color: #c7f2ff; letter-spacing: .08em; }
@@ -265,7 +264,7 @@ body:not(.touch-layout) .mobile-controls { display: none; }
   .block-info { right: calc(12px + env(safe-area-inset-right)); bottom: 14px; padding: 10px 12px; font-size: 11px; }
   .block-name { font-size: 13px; margin-bottom: 2px; }
   .block-count { font-size: 10px; }
-  .hotbar { bottom: 14px; width: clamp(220px, calc(100vw - 340px - env(safe-area-inset-left) - env(safe-area-inset-right)), 460px); max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)); gap: 6px; padding: 8px; overflow-x: auto; justify-content: flex-start; border-radius: 18px; scrollbar-width: none; -ms-overflow-style: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+  .hotbar { bottom: 14px; width: max-content; max-width: min(1020px, max(220px, calc(100vw - 360px - env(safe-area-inset-left) - env(safe-area-inset-right)))); gap: 6px; padding: 8px; overflow-x: auto; justify-content: flex-start; border-radius: 18px; scrollbar-width: none; -ms-overflow-style: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
   .hotbar::-webkit-scrollbar { display: none; }
   .slot { flex: 0 0 50px; width: 50px; height: 54px; border-radius: 14px; touch-action: manipulation; }
   .slot.active { transform: translateY(-5px); }
@@ -287,7 +286,7 @@ body:not(.touch-layout) .mobile-controls { display: none; }
   .jump-btn { grid-column: auto; }
   .touch-btn { min-height: 50px; touch-action: manipulation; }
   .block-info { display: none; }
-  .hotbar { bottom: calc(8px + env(safe-area-inset-bottom)); width: min(400px, max(96px, calc(100vw - 430px - env(safe-area-inset-left) - env(safe-area-inset-right)))); max-width: calc(100vw - 316px - env(safe-area-inset-left) - env(safe-area-inset-right)); -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+  .hotbar { bottom: calc(8px + env(safe-area-inset-bottom)); width: max-content; max-width: min(1020px, max(220px, calc(100vw - 430px - env(safe-area-inset-left) - env(safe-area-inset-right)))); -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 12px), transparent); }
   .world-badge, .perf-badge { display: none; }
   .save-tools {
     display: flex;
@@ -525,7 +524,7 @@ body:not(.touch-layout) .mobile-controls { display: none; }
 
 .hotbar {
   bottom: var(--hotbar-bottom);
-  max-width: min(980px, calc(100vw - var(--hud-safe-left) - var(--hud-safe-right) - 220px));
+  max-width: min(1260px, calc(100vw - var(--hud-safe-left) - var(--hud-safe-right) - 220px));
   overflow-x: auto;
   justify-content: flex-start;
   scrollbar-width: none;
