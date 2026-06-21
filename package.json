@@ -35,7 +35,7 @@
   "private": false,
   "main": "electron/main.cjs",
   "build": {
-    "appId": "com.wangjiehu.astravoxelark",
+    "appId": "com.lunoragather.astravoxelark",
     "productName": "AstraVoxel Ark",
     "directories": {
       "output": "release"
@@ -64,7 +64,7 @@
     }
   },
   "author": {
-    "name": "wangjiehu",
-    "email": "wangjiehu@example.com"
+    "name": "Lunora-Gather",
+    "email": "info@example.com"
   }
 }

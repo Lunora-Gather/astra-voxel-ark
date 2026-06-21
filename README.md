@@ -6,7 +6,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 
 ## Play Online
 
-**Play now:** https://wangjiehu.github.io/astra-voxel-ark/
+**Play now:** https://lunora-gather.github.io/astra-voxel-ark/
 
 ![AstraVoxel Ark preview](docs/assets/preview.png)
 

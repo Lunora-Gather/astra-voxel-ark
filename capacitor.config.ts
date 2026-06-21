@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'com.wangjiehu.astravoxelark',
+  appId: 'com.lunoragather.astravoxelark',
   appName: 'AstraVoxel Ark',
   webDir: 'dist',
   bundledWebRuntime: false,
