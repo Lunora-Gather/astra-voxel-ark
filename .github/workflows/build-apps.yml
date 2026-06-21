@@ -1,0 +1,95 @@
+name: Build App Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'electron/**'
+      - 'android/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'capacitor.config.ts'
+      - '.github/workflows/build-apps.yml'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  verify:
+    name: Build and HUD smoke verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install smoke-test display runtime
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: xvfb-run -a npm run verify
+
+  linux:
+    name: Ubuntu Linux desktop packages
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-voxel-ark-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+
+  windows:
+    name: Windows desktop packages
+    runs-on: windows-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-voxel-ark-windows
+          path: |
+            release/*.exe
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run android:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-voxel-ark-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
