@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">AstraVoxel Ark</string>
     <string name="title_activity_main">AstraVoxel Ark</string>
-    <string name="package_name">com.wangjiehu.astravoxelark</string>
-    <string name="custom_url_scheme">com.wangjiehu.astravoxelark</string>
+    <string name="package_name">com.lunoragather.astravoxelark</string>
+    <string name="custom_url_scheme">com.lunoragather.astravoxelark</string>
 </resources>

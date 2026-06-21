@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.wangjiehu.astravoxelark"
+    namespace "com.lunoragather.astravoxelark"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.wangjiehu.astravoxelark"
+        applicationId "com.lunoragather.astravoxelark"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

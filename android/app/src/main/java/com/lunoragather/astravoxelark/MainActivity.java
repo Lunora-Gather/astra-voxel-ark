@@ -1,4 +1,4 @@
-package com.wangjiehu.astravoxelark;
+package com.lunoragather.astravoxelark;
 
 import com.getcapacitor.BridgeActivity;
 
