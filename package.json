@@ -1,7 +1,8 @@
 {
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
     "smoke:hud": "npm run build && node scripts/hud-smoke.mjs",
     "verify": "npm run smoke:hud",
     "preview": "vite preview --host 0.0.0.0",
@@ -15,15 +16,15 @@
   "dependencies": {
     "@capacitor/android": "^7.4.4",
     "@capacitor/core": "^7.4.4",
-    "@types/three": "^0.176.0",
-    "three": "^0.176.0",
-    "typescript": "^5.8.3",
-    "vite": "^8.0.16"
+    "three": "^0.176.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
+    "@types/three": "^0.176.0",
     "electron": "^39.2.4",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.16"
   },
   "name": "astra-voxel-ark",
   "version": "1.4.0",
