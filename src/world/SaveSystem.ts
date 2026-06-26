@@ -1,4 +1,6 @@
-import type { BlockId } from '../blocks'
+import { BLOCKS, type BlockId } from '../blocks'
+
+const BLOCK_ID_SET = new Set<BlockId>(BLOCKS.map((block) => block.id))
 
 export type SavedBlock = {
   x: number
@@ -117,10 +119,14 @@ export function parseSavedWorld(text: string): SavedWorldState | null {
   }
 }
 
+export function isBlockId(value: unknown): value is BlockId {
+  return typeof value === 'string' && BLOCK_ID_SET.has(value as BlockId)
+}
+
 function isSavedBlock(value: unknown): value is SavedBlock {
   if (!value || typeof value !== 'object') return false
   const block = value as Partial<SavedBlock>
-  return Number.isInteger(block.x) && Number.isInteger(block.y) && Number.isInteger(block.z) && typeof block.id === 'string'
+  return Number.isInteger(block.x) && Number.isInteger(block.y) && Number.isInteger(block.z) && isBlockId(block.id)
 }
 
 function filterStrings(values: unknown): string[] {
@@ -130,7 +136,7 @@ function filterStrings(values: unknown): string[] {
 function normalizeInventory(inventory: Partial<Record<BlockId, number>> = {}) {
   const normalized: Partial<Record<BlockId, number>> = {}
   for (const [id, count] of Object.entries(inventory) as [BlockId, number][]) {
-    if (typeof id === 'string' && Number.isFinite(count) && count > 0) {
+    if (isBlockId(id) && Number.isFinite(count) && count > 0) {
       normalized[id] = Math.floor(count)
     }
   }
