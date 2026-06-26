@@ -33,18 +33,20 @@ export class ParticleEffectsPipeline {
 
     if (!this.enabled) return
 
-    this.geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
-    this.shardGeometry = new THREE.IcosahedronGeometry(0.08, 0)
+    const geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
+    const shardGeometry = new THREE.IcosahedronGeometry(0.08, 0)
+    this.geometry = geometry
+    this.shardGeometry = shardGeometry
     this.shardPool = new MeshParticlePool(
       scene,
-      this.shardGeometry,
+      shardGeometry,
       new THREE.MeshStandardMaterial({ color: 0xb9fff0, emissive: 0x4fffe1, emissiveIntensity: 0.6, roughness: 0.35 }),
       Math.max(8, Math.floor(poolSize / 3)),
     )
 
     for (const block of BLOCKS) {
       const material = new THREE.MeshStandardMaterial({ color: BLOCK_COLOR_MAP.get(block.id) ?? 0xffffff, roughness: 0.8 })
-      this.blockPools.set(block.id, new MeshParticlePool(scene, this.geometry, material, poolSize))
+      this.blockPools.set(block.id, new MeshParticlePool(scene, geometry, material, poolSize))
     }
   }
 
