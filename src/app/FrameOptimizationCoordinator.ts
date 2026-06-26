@@ -1,5 +1,6 @@
 import type { BudgetedPointLight, ChunkMeshDiagnostics } from '../render'
 import { formatRuntimeDebugStats, type RuntimeDebugStats } from '../ui'
+import type { AdaptiveQualityController, AdaptiveQualityDecision } from './AdaptiveQualityController'
 import type { OptimizationRuntime } from './OptimizationRuntime'
 import type { PerformanceSample } from './PerformanceSampler'
 
@@ -7,6 +8,7 @@ export type FrameOptimizationState = {
   fps?: number
   frameMs?: number
   performance?: PerformanceSample
+  quality?: AdaptiveQualityController
   chunkCount: number
   dirtyChunkCount: number
   blockCount: number
@@ -22,6 +24,7 @@ export type FrameOptimizationResult = {
   inactiveLightCount: number | null
   averageFps: number | null
   minFps: number | null
+  qualityDecision: AdaptiveQualityDecision | null
 }
 
 export function updateFrameOptimizations(
@@ -31,6 +34,7 @@ export function updateFrameOptimizations(
 ): FrameOptimizationResult {
   optimization.particles?.update(deltaSeconds)
   const lightResult = state.pointLights && optimization.lights ? optimization.lights.apply(state.pointLights) : null
+  const qualityDecision = state.performance && state.quality ? state.quality.evaluate(state.performance) : null
   const fps = state.performance?.fps ?? state.fps ?? 0
   const frameMs = state.performance?.frameMs ?? state.frameMs ?? deltaSeconds * 1000
   const debugStats: RuntimeDebugStats = {
@@ -50,5 +54,6 @@ export function updateFrameOptimizations(
     inactiveLightCount: lightResult ? lightResult.inactive.length : null,
     averageFps: state.performance?.averageFps ?? null,
     minFps: state.performance?.minFps ?? null,
+    qualityDecision,
   }
 }
