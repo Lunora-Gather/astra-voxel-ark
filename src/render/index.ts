@@ -1,4 +1,5 @@
 export * from './ChunkMeshBuilder'
+export * from './ChunkMeshDiagnostics'
 export * from './ChunkMeshRenderer'
 export * from './GreedyGeometry'
 export * from './GreedyMesher'
