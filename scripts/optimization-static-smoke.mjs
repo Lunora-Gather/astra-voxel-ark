@@ -41,11 +41,18 @@ const contentChecks = [
   ['src/app/MainOptimizationBootstrap.ts', 'bootstrapMainOptimizations'],
   ['src/app/MainOptimizationBootstrap.ts', 'PerformanceSampler'],
   ['src/app/OptimizationSmoke.ts', 'assertMainBootstrapSmoke'],
+  ['src/app/MainBootstrapSmoke.ts', 'stringBlockKey'],
   ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality(sample.averageFps, sample.averageFrameMs)'],
   ['src/app/AdaptiveQualityController.ts', 'shouldIncreaseQuality(sample.averageFps, sample.averageFrameMs)'],
   ['src/app/AdaptiveQualityController.ts', 'averageFrameMs: sample.averageFrameMs'],
   ['src/app/ChunkRebuildScheduler.ts', 'nextBatch'],
   ['docs/MAIN_BOOTSTRAP_EXAMPLE.md', 'chunkRebuilds.nextBatch'],
+]
+
+const absentChecks = [
+  ['src/app/MainBootstrapSmoke.ts', "import { blockKey } from '../world'"],
+  ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality(sample.averageFps)'],
+  ['src/app/AdaptiveQualityController.ts', 'shouldIncreaseQuality(sample.averageFps)'],
 ]
 
 const errors = []
@@ -66,6 +73,16 @@ for (const [file, token] of [...exportChecks, ...contentChecks]) {
   const content = readFileSync(path, 'utf8')
   if (!content.includes(token)) {
     errors.push(`Expected ${file} to include ${token}`)
+  }
+}
+
+for (const [file, token] of absentChecks) {
+  const path = resolve(root, file)
+  if (!existsSync(path)) continue
+
+  const content = readFileSync(path, 'utf8')
+  if (content.includes(token)) {
+    errors.push(`Unexpected token in ${file}: ${token}`)
   }
 }
 
