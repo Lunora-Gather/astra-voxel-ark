@@ -20,16 +20,19 @@ This document tracks the staged optimization roadmap for AstraVoxel Ark. The goa
 
 ## Phase 1: Safe engineering pass
 
-Status: in progress.
+Status: mostly complete on `optimize/architecture-performance-pass`.
 
 - Add an explicit `typecheck` script.
 - Keep `build` as typecheck plus Vite build.
 - Tighten Vite production output settings.
 - Keep Electron security defaults strict.
 - Split CI into verification and deployment workflows.
+- Add a dedicated packaging workflow for web, desktop, and Android outputs.
 - Document the optimization roadmap.
 
 ## Phase 2: Source modularization
+
+Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
 
 Target structure:
 
@@ -84,10 +87,12 @@ Recommended extraction order:
 
 ## Phase 3: Runtime performance pass
 
+Status: helper modules started, main-loop integration still pending.
+
 High-impact tasks:
 
 - Cap active glow and crystal point lights by camera distance.
-- Replace mesh-per-particle effects with pooled instanced particles.
+- Replace mesh-per-particle effects with pooled particles.
 - Convert runtime block keys from string keys to packed numeric keys while keeping save files stable.
 - Move terrain chunk generation into a Web Worker.
 - Add chunk-level mesh building for visible faces.
