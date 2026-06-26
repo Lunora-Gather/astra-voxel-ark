@@ -24,6 +24,8 @@ Implemented modules:
 - `src/render/GreedyMesher.ts` merges same-type, same-direction, same-plane faces into rectangular quads.
 - `src/render/GreedyGeometry.ts` converts greedy quads into `THREE.BufferGeometry`.
 - `src/render/ChunkMeshBuilder.ts` runs the complete data pipeline and returns useful stats.
+- `src/render/ChunkMeshDiagnostics.ts` formats reduction and density metrics.
+- `src/render/ChunkMeshSmoke.ts` provides a small typechecked smoke helper for the chunk mesh pipeline.
 - `src/render/ChunkMeshRenderer.ts` owns chunk mesh groups, upserts rebuilt chunks, and disposes geometry when chunks unload.
 
 ## Integration strategy
@@ -57,6 +59,10 @@ Expected direction:
 - greedy quad count should be lower than visible face count on flat terrain;
 - triangle count should be `greedyQuadCount * 2`;
 - vertex count should be `greedyQuadCount * 4` before vertex sharing optimization.
+
+## Smoke helper
+
+`assertChunkMeshSmoke()` builds a small flat chunk, runs it through the chunk mesh pipeline, and validates the basic stat relationships. It is intended to be called from a future test runner or debug-only bootstrap path after the project adds a lightweight test command.
 
 ## Known limitations
 
