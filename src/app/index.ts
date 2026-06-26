@@ -1,4 +1,6 @@
+export * from './AdaptiveQualityController'
 export * from './ChunkMeshIntegration'
+export * from './ChunkRebuildScheduler'
 export * from './FeatureFlags'
 export * from './FrameOptimizationCoordinator'
 export * from './LegacyChunkMirrorController'
