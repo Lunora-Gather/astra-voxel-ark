@@ -12,6 +12,7 @@ The new staged path is:
 
 ```text
 WorldBlock[]
+  -> filterGreedyMeshBlocks(...)
   -> collectVisibleFaces(...)
   -> buildGreedyQuads(...)
   -> buildGreedyGeometryGroups(...)
@@ -20,12 +21,14 @@ WorldBlock[]
 
 Implemented modules:
 
+- `src/render/BlockRenderLayers.ts` classifies blocks into opaque, transparent, water, vegetation and emissive render layers.
 - `src/render/VoxelMesher.ts` collects visible voxel faces.
 - `src/render/GreedyMesher.ts` merges same-type, same-direction, same-plane faces into rectangular quads.
 - `src/render/GreedyGeometry.ts` converts greedy quads into `THREE.BufferGeometry`.
 - `src/render/ChunkMeshBuilder.ts` runs the complete data pipeline and returns useful stats.
-- `src/render/ChunkMeshDiagnostics.ts` formats reduction and density metrics.
+- `src/render/ChunkMeshDiagnostics.ts` formats reduction, coverage and density metrics.
 - `src/render/ChunkMeshSmoke.ts` provides a small typechecked smoke helper for the chunk mesh pipeline.
+- `src/render/RenderLayerSmoke.ts` verifies that water and vegetation stay out of greedy opaque meshing.
 - `src/render/ChunkMeshRenderer.ts` owns chunk mesh groups, upserts rebuilt chunks, and disposes geometry when chunks unload.
 
 ## Integration strategy
@@ -45,24 +48,31 @@ Do not immediately replace the existing renderer. Use a staged rollout:
 Track these values per chunk:
 
 - block count
+- meshed block count
+- skipped block count
 - visible face count
 - greedy quad count
 - geometry group count
 - triangle count
 - vertex count
+- mesh coverage ratio
 - build time
 - rendered chunk mesh count
 
 Expected direction:
 
-- visible face count should be lower than `blockCount * 6`;
+- visible face count should be lower than `meshedBlockCount * 6`;
 - greedy quad count should be lower than visible face count on flat terrain;
 - triangle count should be `greedyQuadCount * 2`;
-- vertex count should be `greedyQuadCount * 4` before vertex sharing optimization.
+- vertex count should be `greedyQuadCount * 4` before vertex sharing optimization;
+- skipped block count should include water and vegetation until those render paths are implemented separately.
 
-## Smoke helper
+## Smoke helpers
 
-`assertChunkMeshSmoke()` builds a small flat chunk, runs it through the chunk mesh pipeline, and validates the basic stat relationships. It is intended to be called from a future test runner or debug-only bootstrap path after the project adds a lightweight test command.
+- `assertChunkMeshSmoke()` builds a small flat chunk, runs it through the chunk mesh pipeline, and validates the basic stat relationships.
+- `assertRenderLayerSmoke()` validates that opaque and emissive blocks are greedy eligible while water and vegetation remain on separate paths.
+
+These helpers are intended to be called from a future test runner or debug-only bootstrap path after the project adds a lightweight test command.
 
 ## Known limitations
 
