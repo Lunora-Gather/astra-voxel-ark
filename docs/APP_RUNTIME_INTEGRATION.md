@@ -90,6 +90,34 @@ const updates = mainOptimization.chunkMirror.diagnoseDirtyChunks({ limit: 2 })
 
 Switch `render` to `true` only for controlled debug chunks after diagnostics match the existing exposed-face counts.
 
+## Runtime performance controls
+
+Use the bootstrap helpers to keep per-frame optimization work bounded:
+
+```ts
+const performance = mainOptimization.performance.begin(time)
+const frame = updateFrameOptimizations(mainOptimization.optimization, deltaSeconds, {
+  performance,
+  quality: mainOptimization.quality,
+  chunkCount,
+  dirtyChunkCount,
+  blockCount,
+  renderedChunkMeshCount,
+  pointLights,
+})
+```
+
+`frame.qualityDecision` reports whether quality should hold, decrease, or increase. The app should apply that decision explicitly after verifying it matches current UI/settings behavior.
+
+For chunk mesh work, enqueue dirty chunks and consume a small batch each frame:
+
+```ts
+for (const chunk of mainOptimization.chunkMirror.chunks.getDirtyChunks()) {
+  mainOptimization.chunkRebuilds.enqueue({ key: chunk.key, payload: chunk })
+}
+const batch = mainOptimization.chunkRebuilds.nextBatch(lowPowerMode ? 1 : 2)
+```
+
 ## Terrain generation
 
 Use the runtime terrain pipeline as the only call site:
@@ -122,11 +150,10 @@ Use `mainOptimization.optimization.lights?.apply(lights)` after point lights are
 
 - feature-flag parsing;
 - chunk mesh smoke;
-- render-layer smoke.
+- render-layer smoke;
+- main bootstrap smoke.
 
-`assertMainBootstrapSmoke()` verifies the bootstrap facade and legacy mirror set/delete path.
-
-These can be wired into a future test runner or a debug-only startup path.
+`npm run smoke:optimization` runs a static optimization smoke check that verifies the expected files, exports, and docs are present. `npm run verify` runs that check before the existing HUD smoke path.
 
 ## Debug display
 
