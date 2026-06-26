@@ -32,7 +32,7 @@ Status: mostly complete on `optimize/architecture-performance-pass`.
 
 ## Phase 2: Source modularization
 
-Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
+Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, block render layers, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
 
 Target structure:
 
@@ -87,7 +87,7 @@ Recommended extraction order:
 
 ## Phase 3: Runtime performance pass
 
-Status: helper modules started, main-loop integration still pending. Terrain worker scaffolding is ready but not wired into the active terrain queue yet. Greedy meshing now has visible-face collection, face merging, buffer geometry generation, and chunk mesh renderer management at the module layer.
+Status: helper modules started, main-loop integration still pending. Terrain worker scaffolding is ready but not wired into the active terrain queue yet. Greedy meshing now has render-layer filtering, visible-face collection, face merging, buffer geometry generation, chunk mesh renderer management, diagnostics, and smoke helpers at the module layer.
 
 High-impact tasks:
 
