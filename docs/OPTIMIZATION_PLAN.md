@@ -32,7 +32,7 @@ Status: mostly complete on `optimize/architecture-performance-pass`.
 
 ## Phase 2: Source modularization
 
-Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, visible-face helpers, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
+Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, visible-face helpers, greedy face merge helpers, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
 
 Target structure:
 
@@ -87,7 +87,7 @@ Recommended extraction order:
 
 ## Phase 3: Runtime performance pass
 
-Status: helper modules started, main-loop integration still pending. Terrain worker scaffolding is ready but not wired into the active terrain queue yet.
+Status: helper modules started, main-loop integration still pending. Terrain worker scaffolding is ready but not wired into the active terrain queue yet. Greedy face merging is scaffolded at the algorithm layer but not yet connected to Three.js buffer geometry output.
 
 High-impact tasks:
 
