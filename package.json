@@ -16,15 +16,15 @@
   "dependencies": {
     "@capacitor/android": "^7.4.4",
     "@capacitor/core": "^7.4.4",
-    "three": "^0.176.0"
+    "@types/three": "^0.176.0",
+    "three": "^0.176.0",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.16"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
-    "@types/three": "^0.176.0",
     "electron": "^39.2.4",
-    "electron-builder": "^26.0.12",
-    "typescript": "^5.8.3",
-    "vite": "^8.0.16"
+    "electron-builder": "^26.0.12"
   },
   "name": "astra-voxel-ark",
   "version": "1.4.0",
