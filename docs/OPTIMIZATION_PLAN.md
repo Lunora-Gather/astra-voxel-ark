@@ -32,7 +32,7 @@ Status: mostly complete on `optimize/architecture-performance-pass`.
 
 ## Phase 2: Source modularization
 
-Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
+Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, visible-face helpers, point-light budgeting, and particle pooling now have standalone modules ready for incremental integration.
 
 Target structure:
 
