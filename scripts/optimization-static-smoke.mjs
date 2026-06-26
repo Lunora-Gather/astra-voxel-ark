@@ -41,7 +41,9 @@ const contentChecks = [
   ['src/app/MainOptimizationBootstrap.ts', 'bootstrapMainOptimizations'],
   ['src/app/MainOptimizationBootstrap.ts', 'PerformanceSampler'],
   ['src/app/OptimizationSmoke.ts', 'assertMainBootstrapSmoke'],
-  ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality'],
+  ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality(sample.averageFps, sample.averageFrameMs)'],
+  ['src/app/AdaptiveQualityController.ts', 'shouldIncreaseQuality(sample.averageFps, sample.averageFrameMs)'],
+  ['src/app/AdaptiveQualityController.ts', 'averageFrameMs: sample.averageFrameMs'],
   ['src/app/ChunkRebuildScheduler.ts', 'nextBatch'],
   ['docs/MAIN_BOOTSTRAP_EXAMPLE.md', 'chunkRebuilds.nextBatch'],
 ]
