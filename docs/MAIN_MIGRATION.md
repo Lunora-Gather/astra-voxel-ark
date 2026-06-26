@@ -18,6 +18,11 @@ import { createOptimizationRuntime } from './app'
 
 const optimization = createOptimizationRuntime({
   terrainOptions: { chunkSize: CHUNK_SIZE },
+  scene,
+  camera,
+  particlePoolSize: 160,
+  maxActivePointLights: 24,
+  lowPowerMode,
 })
 ```
 
@@ -31,6 +36,47 @@ Supported URL hash flags:
 - `#light-budget=1`
 
 Keep all flags opt-in until smoke tests prove each path is stable.
+
+## Step 0.5: Legacy chunk diagnostics hook
+
+Before replacing any renderer path, connect diagnostics only:
+
+```ts
+import { runMainDiagnosticsHook } from './app'
+
+runMainDiagnosticsHook({
+  flags: optimization.flags,
+  blockData,
+  chunkSize: CHUNK_SIZE,
+  limit: 4,
+})
+```
+
+This is gated by `#chunk-mesh-diagnostics=1`, so it does nothing in normal play.
+
+## Step 0.6: Legacy chunk mirror controller
+
+After diagnostics look correct, keep a mirror of the old `blockData` map:
+
+```ts
+import { LegacyChunkMirrorController } from './app'
+
+const chunkMirror = new LegacyChunkMirrorController({ chunkSize: CHUNK_SIZE })
+chunkMirror.syncFromLegacyMap(blockData)
+```
+
+When old code places or removes a block, mirror the same operation:
+
+```ts
+chunkMirror.setBlock(blockKey(x, y, z), id)
+chunkMirror.deleteBlock(blockKey(x, y, z))
+```
+
+Then run dirty chunk diagnostics without rendering:
+
+```ts
+const updates = chunkMirror.diagnoseDirtyChunks({ limit: 2 })
+```
 
 ## Step 1: Audio adapter
 
@@ -69,15 +115,15 @@ Use `SaveSystem` only around the existing serialize/apply functions first:
 
 ## Step 4: Particle pool
 
-Replace the break/shard burst mesh creation with `MeshParticlePool` only after the current particle animation loop is isolated. Do not change particle visuals and collision/placement logic in the same commit.
+Use `optimization.particles?.createBreakBurst(...)`, `optimization.particles?.createShardBurst(...)`, and `optimization.particles?.update(deltaSeconds)` behind the `#particle-pool=1` flag. Do not change particle visuals and collision/placement logic in the same commit.
 
 ## Step 5: Light budget
 
-Wire `applyPointLightBudget(...)` after glow/crystal lights are registered. Start with a conservative desktop cap of 24 and low-power cap of 0 or 8.
+Wire `optimization.lights?.apply(...)` after glow/crystal lights are registered. Start with a conservative desktop cap of 24 and low-power cap of 0 or 8.
 
 ## Step 6: Chunk manager
 
-Start by mirroring writes into `ChunkManager` while still reading from the old `Map`. After verify passes, switch read paths to `ChunkManager`. Finally, remove the old map.
+Start by mirroring writes into `LegacyChunkMirrorController` while still reading from the old `Map`. After verify passes, switch read paths to `ChunkManager`. Finally, remove the old map.
 
 ## Step 7: Terrain worker
 
@@ -92,6 +138,22 @@ Migration order:
 3. Use `buildGreedyQuads(...)` to estimate draw-call and vertex reduction.
 4. Use `#chunk-mesh-renderer=1` to render one or a few debug chunks.
 5. Only then expand the chunk mesh renderer to nearby opaque chunks.
+
+## Step 9: Per-frame coordinator
+
+Use `updateFrameOptimizations(...)` to centralize particle updates, light budgeting, and debug text formatting:
+
+```ts
+const optimizationFrame = updateFrameOptimizations(optimization, deltaSeconds, {
+  fps,
+  frameMs,
+  chunkCount,
+  dirtyChunkCount,
+  blockCount,
+  renderedChunkMeshCount,
+  pointLights,
+})
+```
 
 ## Merge checklist
 
