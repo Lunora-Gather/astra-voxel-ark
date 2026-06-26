@@ -1,9 +1,11 @@
 {
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build",
+    "smoke:optimization": "node scripts/optimization-static-smoke.mjs",
     "smoke:hud": "npm run build && node scripts/hud-smoke.mjs",
-    "verify": "npm run smoke:hud",
+    "verify": "npm run smoke:optimization && npm run smoke:hud",
     "preview": "vite preview --host 0.0.0.0",
     "electron:dev": "npm run build && electron .",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
