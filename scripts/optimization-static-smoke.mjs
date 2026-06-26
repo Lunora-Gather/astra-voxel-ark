@@ -24,6 +24,8 @@ const requiredFiles = [
   'docs/RENDERING_OPTIMIZATION.md',
   'docs/OPTIMIZATION_REVIEW_CHECKLIST.md',
   'docs/OPTIMIZATION_RISK_REGISTER.md',
+  'docs/OPTIMIZATION_PR_DESCRIPTION.md',
+  'docs/OPTIMIZATION_ROLLOUT_PLAYBOOK.md',
 ]
 
 const exportChecks = [
@@ -51,6 +53,8 @@ const contentChecks = [
   ['docs/MAIN_BOOTSTRAP_EXAMPLE.md', 'chunkRebuilds.nextBatch'],
   ['docs/OPTIMIZATION_REVIEW_CHECKLIST.md', 'npm run smoke:optimization'],
   ['docs/OPTIMIZATION_RISK_REGISTER.md', '#chunk-mesh-renderer=1'],
+  ['docs/OPTIMIZATION_PR_DESCRIPTION.md', 'Expected default behavior change: none.'],
+  ['docs/OPTIMIZATION_ROLLOUT_PLAYBOOK.md', 'Do not enable more than one risky path at a time.'],
 ]
 
 const absentChecks = [
