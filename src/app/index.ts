@@ -1,5 +1,7 @@
 export * from './ChunkMeshIntegration'
 export * from './FeatureFlags'
+export * from './LightBudgetPipeline'
 export * from './OptimizationDiagnostics'
 export * from './OptimizationRuntime'
+export * from './ParticleEffectsPipeline'
 export * from './TerrainPipeline'
