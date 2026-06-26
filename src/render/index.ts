@@ -1,6 +1,7 @@
 export * from './ChunkMeshBuilder'
 export * from './ChunkMeshDiagnostics'
 export * from './ChunkMeshRenderer'
+export * from './ChunkMeshSmoke'
 export * from './GreedyGeometry'
 export * from './GreedyMesher'
 export * from './lightBudget'
