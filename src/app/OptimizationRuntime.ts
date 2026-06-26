@@ -16,7 +16,7 @@ export type OptimizationRuntime = {
   dispose: () => void
 }
 
-export function createOptimizationRuntime({ hash = window.location.hash, terrainOptions, logger = console }: OptimizationRuntimeOptions): OptimizationRuntime {
+export function createOptimizationRuntime({ hash, terrainOptions, logger = console }: OptimizationRuntimeOptions): OptimizationRuntime {
   const flags = readOptimizationFeatureFlags(hash)
   const diagnostics = runOptimizationDiagnostics(flags)
   logOptimizationDiagnostics(diagnostics, logger)
