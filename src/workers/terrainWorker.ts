@@ -14,7 +14,12 @@ export type TerrainWorkerResponse = {
   chunk: TerrainChunk
 }
 
-const workerScope = self as DedicatedWorkerGlobalScope
+type TerrainWorkerScope = {
+  onmessage: ((event: MessageEvent<TerrainWorkerRequest>) => void) | null
+  postMessage: (message: TerrainWorkerResponse) => void
+}
+
+const workerScope = self as unknown as TerrainWorkerScope
 
 workerScope.onmessage = (event: MessageEvent<TerrainWorkerRequest>) => {
   const message = event.data
