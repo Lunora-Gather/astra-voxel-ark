@@ -1,3 +1,5 @@
+export * from './ChunkMeshBuilder'
+export * from './GreedyGeometry'
 export * from './GreedyMesher'
 export * from './lightBudget'
 export * from './ParticlePool'
