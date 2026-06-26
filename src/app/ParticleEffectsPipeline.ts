@@ -21,15 +21,20 @@ const BLOCK_COLOR_MAP = new Map<BlockId, number>(BLOCKS.map((block) => [block.id
 export class ParticleEffectsPipeline {
   private readonly enabled: boolean
   private readonly lowPowerMode: boolean
-  private readonly geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
-  private readonly shardGeometry = new THREE.IcosahedronGeometry(0.08, 0)
+  private readonly geometry: THREE.BoxGeometry | null = null
+  private readonly shardGeometry: THREE.IcosahedronGeometry | null = null
   private readonly blockPools = new Map<BlockId, MeshParticlePool>()
-  private readonly shardPool: MeshParticlePool
+  private readonly shardPool: MeshParticlePool | null = null
   private readonly tempOffset = new THREE.Vector3()
 
   constructor({ scene, flags, poolSize, lowPowerMode = false }: ParticleEffectsPipelineOptions) {
     this.enabled = flags.particlePool
     this.lowPowerMode = lowPowerMode
+
+    if (!this.enabled) return
+
+    this.geometry = new THREE.BoxGeometry(0.12, 0.12, 0.12)
+    this.shardGeometry = new THREE.IcosahedronGeometry(0.08, 0)
     this.shardPool = new MeshParticlePool(
       scene,
       this.shardGeometry,
@@ -65,7 +70,7 @@ export class ParticleEffectsPipeline {
   }
 
   createShardBurst(position: THREE.Vector3, count = this.lowPowerMode ? 8 : 16) {
-    if (!this.enabled) return 0
+    if (!this.enabled || !this.shardPool) return 0
     let spawned = 0
 
     for (let i = 0; i < count; i += 1) {
@@ -84,24 +89,24 @@ export class ParticleEffectsPipeline {
 
   update(deltaSeconds: number) {
     if (!this.enabled) return
-    this.shardPool.update(deltaSeconds)
+    this.shardPool?.update(deltaSeconds)
     for (const pool of this.blockPools.values()) {
       pool.update(deltaSeconds)
     }
   }
 
   dispose() {
-    this.shardPool.dispose()
+    this.shardPool?.dispose()
     for (const pool of this.blockPools.values()) {
       pool.dispose()
     }
-    this.geometry.dispose()
-    this.shardGeometry.dispose()
+    this.geometry?.dispose()
+    this.shardGeometry?.dispose()
     this.blockPools.clear()
   }
 
   get activeCount() {
-    let total = this.shardPool.activeCount
+    let total = this.shardPool?.activeCount ?? 0
     for (const pool of this.blockPools.values()) {
       total += pool.activeCount
     }
