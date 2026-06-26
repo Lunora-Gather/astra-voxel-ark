@@ -2,9 +2,29 @@
 
 The `src/app` layer is a thin integration facade for gradually wiring optimization modules into `src/main.ts` without replacing the active game entry point.
 
-## Entry point
+## Preferred entry point
 
-Use `createOptimizationRuntime(...)` from `src/app`:
+For `src/main.ts`, prefer `bootstrapMainOptimizations(...)`:
+
+```ts
+import { bootstrapMainOptimizations } from './app'
+
+const mainOptimization = bootstrapMainOptimizations({
+  blockData,
+  chunkSize: CHUNK_SIZE,
+  scene,
+  camera,
+  particlePoolSize: lowPowerMode ? 90 : 220,
+  maxActivePointLights: lowPowerMode ? 8 : 24,
+  lowPowerMode,
+})
+```
+
+This creates the runtime, mirrors the legacy world map, and runs chunk mesh diagnostics only when enabled by URL flags.
+
+## Lower-level runtime entry point
+
+Use `createOptimizationRuntime(...)` directly only when you do not need the legacy world mirror:
 
 ```ts
 import { createOptimizationRuntime } from './app'
@@ -43,7 +63,7 @@ Do not enable these by default until smoke tests pass.
 
 ## Legacy world bridge
 
-Use `diagnoseLegacyWorld(...)` first when connecting the current `main.ts` string-key block map. This lets the new chunk mesh pipeline inspect existing world data without replacing the active renderer:
+`bootstrapMainOptimizations(...)` already mirrors the current `blockData` map. If you wire lower-level APIs manually, use `diagnoseLegacyWorld(...)` first when connecting the current `main.ts` string-key block map. This lets the new chunk mesh pipeline inspect existing world data without replacing the active renderer:
 
 ```ts
 const diagnostics = diagnoseLegacyWorld(blockData, {
@@ -53,22 +73,19 @@ const diagnostics = diagnoseLegacyWorld(blockData, {
 console.info(formatLegacyWorldDiagnostics(diagnostics))
 ```
 
-For incremental mirroring, use:
+For incremental mirroring through the bootstrap facade, use:
 
 ```ts
-applyLegacyBlockSet(chunkManager, blockKey(x, y, z), id)
-applyLegacyBlockDelete(chunkManager, blockKey(x, y, z))
+mainOptimization.syncBlockSet(blockKey(x, y, z), id)
+mainOptimization.syncBlockDelete(blockKey(x, y, z))
 ```
 
 ## Dirty chunk mesh diagnostics
 
-Use `rebuildDirtyChunkMeshes(...)` to rebuild diagnostics without replacing the live renderer:
+Use `rebuildDirtyChunkMeshes(...)` or `mainOptimization.chunkMirror.diagnoseDirtyChunks(...)` to rebuild diagnostics without replacing the live renderer:
 
 ```ts
-const updates = rebuildDirtyChunkMeshes(chunkManager, null, {
-  render: false,
-  limit: 2,
-})
+const updates = mainOptimization.chunkMirror.diagnoseDirtyChunks({ limit: 2 })
 ```
 
 Switch `render` to `true` only for controlled debug chunks after diagnostics match the existing exposed-face counts.
@@ -78,26 +95,26 @@ Switch `render` to `true` only for controlled debug chunks after diagnostics mat
 Use the runtime terrain pipeline as the only call site:
 
 ```ts
-const chunk = await optimization.terrain.generateChunk(cx, cz)
+const chunk = await mainOptimization.optimization.terrain.generateChunk(cx, cz)
 ```
 
 Without `#terrain-worker=1`, this uses synchronous terrain generation. With the flag, it uses `TerrainWorkerClient` when `Worker` is available.
 
 ## Particle effects
 
-Use `optimization.particles` as an opt-in replacement for mesh-per-particle burst effects:
+Use `mainOptimization.optimization.particles` as an opt-in replacement for mesh-per-particle burst effects:
 
 ```ts
-optimization.particles?.createBreakBurst({ position, blockId })
-optimization.particles?.createShardBurst(position)
-optimization.particles?.update(deltaSeconds)
+mainOptimization.optimization.particles?.createBreakBurst({ position, blockId })
+mainOptimization.optimization.particles?.createShardBurst(position)
+mainOptimization.optimization.particles?.update(deltaSeconds)
 ```
 
 Without `#particle-pool=1`, the pipeline is inert and does not allocate pooled meshes.
 
 ## Light budget
 
-Use `optimization.lights?.apply(lights)` after point lights are registered. Without `#light-budget=1`, all provided lights remain visible and the pipeline behaves as a no-op fallback.
+Use `mainOptimization.optimization.lights?.apply(lights)` after point lights are registered. Without `#light-budget=1`, all provided lights remain visible and the pipeline behaves as a no-op fallback.
 
 ## Smoke checks
 
@@ -107,7 +124,9 @@ Use `optimization.lights?.apply(lights)` after point lights are registered. With
 - chunk mesh smoke;
 - render-layer smoke.
 
-This can be wired into a future test runner or a debug-only startup path.
+`assertMainBootstrapSmoke()` verifies the bootstrap facade and legacy mirror set/delete path.
+
+These can be wired into a future test runner or a debug-only startup path.
 
 ## Debug display
 
