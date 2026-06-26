@@ -59,9 +59,9 @@ This keeps the new `ChunkManager` mirror in sync while the old `Map` remains the
 Inside the existing animation loop:
 
 ```ts
+const performance = mainOptimization.performance.begin(time)
 const optimizationFrame = updateFrameOptimizations(mainOptimization.optimization, deltaSeconds, {
-  fps,
-  frameMs,
+  performance,
   chunkCount,
   dirtyChunkCount,
   blockCount,
@@ -70,7 +70,7 @@ const optimizationFrame = updateFrameOptimizations(mainOptimization.optimization
 })
 ```
 
-The result contains a debug text string plus active particle and light counts.
+The result contains debug text, active particle count, active/inactive light counts, average FPS and minimum FPS.
 
 ## Cleanup
 
