@@ -9,6 +9,29 @@
 - Avoid changing rendering, save format, and input handling in the same commit.
 - Keep old save data readable.
 
+## Step 0: Optimization runtime facade
+
+Create the runtime once near the existing terrain constants and smoke-test setup:
+
+```ts
+import { createOptimizationRuntime } from './app'
+
+const optimization = createOptimizationRuntime({
+  terrainOptions: { chunkSize: CHUNK_SIZE },
+})
+```
+
+Supported URL hash flags:
+
+- `#opt-diagnostics=1`
+- `#chunk-mesh-diagnostics=1`
+- `#chunk-mesh-renderer=1`
+- `#terrain-worker=1`
+- `#particle-pool=1`
+- `#light-budget=1`
+
+Keep all flags opt-in until smoke tests prove each path is stable.
+
 ## Step 1: Audio adapter
 
 Current target: replace the local `playSound(...)` implementation with `playGameSound(...)` from `src/systems/soundEffects.ts`.
@@ -58,20 +81,17 @@ Start by mirroring writes into `ChunkManager` while still reading from the old `
 
 ## Step 7: Terrain worker
 
-Start with an opt-in path:
-
-- generate one chunk through `TerrainWorkerClient`;
-- validate it matches the synchronous generator shape;
-- then move the terrain queue over to worker generation.
+Use `optimization.terrain.generateChunk(cx, cz)` instead of calling the synchronous generator directly. The runtime will fall back to synchronous generation unless `#terrain-worker=1` is present.
 
 ## Step 8: Visible faces and greedy meshing
 
 Migration order:
 
-1. Use `collectVisibleFaces(...)` for diagnostics only.
+1. Use `rebuildDirtyChunkMeshes(..., { render: false })` for diagnostics only.
 2. Compare face counts with current visible block counts.
 3. Use `buildGreedyQuads(...)` to estimate draw-call and vertex reduction.
-4. Only then build Three.js buffer geometry from quads.
+4. Use `#chunk-mesh-renderer=1` to render one or a few debug chunks.
+5. Only then expand the chunk mesh renderer to nearby opaque chunks.
 
 ## Merge checklist
 
