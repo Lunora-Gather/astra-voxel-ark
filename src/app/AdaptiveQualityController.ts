@@ -6,6 +6,7 @@ export type AdaptiveQualityDecision = {
   currentPreset: QualityPreset
   nextPreset: QualityPreset
   averageFps: number
+  averageFrameMs: number
   minFps: number
   reason: string
 }
@@ -33,23 +34,23 @@ export class AdaptiveQualityController {
       return this.decision('hold', this.preset, sample, 'cooldown')
     }
 
-    if (shouldDecreaseQuality(sample.averageFps)) {
+    if (shouldDecreaseQuality(sample.averageFps, sample.averageFrameMs)) {
       const next = stepPreset(this.preset, -1)
       if (next !== this.preset) {
         const previous = this.preset
         this.preset = next
         this.cooldownRemaining = this.cooldownFrames
-        return this.decision('decrease', previous, sample, 'average FPS below target')
+        return this.decision('decrease', previous, sample, 'average FPS/frame time below target')
       }
     }
 
-    if (shouldIncreaseQuality(sample.averageFps)) {
+    if (shouldIncreaseQuality(sample.averageFps, sample.averageFrameMs)) {
       const next = stepPreset(this.preset, 1)
       if (next !== this.preset) {
         const previous = this.preset
         this.preset = next
         this.cooldownRemaining = this.cooldownFrames
-        return this.decision('increase', previous, sample, 'average FPS above recovery target')
+        return this.decision('increase', previous, sample, 'average FPS/frame time above recovery target')
       }
     }
 
@@ -71,6 +72,7 @@ export class AdaptiveQualityController {
       currentPreset: previousPreset,
       nextPreset: this.preset,
       averageFps: sample.averageFps,
+      averageFrameMs: sample.averageFrameMs,
       minFps: sample.minFps,
       reason,
     }
