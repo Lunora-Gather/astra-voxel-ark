@@ -22,6 +22,8 @@ const requiredFiles = [
   'docs/MAIN_BOOTSTRAP_EXAMPLE.md',
   'docs/APP_RUNTIME_INTEGRATION.md',
   'docs/RENDERING_OPTIMIZATION.md',
+  'docs/OPTIMIZATION_REVIEW_CHECKLIST.md',
+  'docs/OPTIMIZATION_RISK_REGISTER.md',
 ]
 
 const exportChecks = [
@@ -47,6 +49,8 @@ const contentChecks = [
   ['src/app/AdaptiveQualityController.ts', 'averageFrameMs: sample.averageFrameMs'],
   ['src/app/ChunkRebuildScheduler.ts', 'nextBatch'],
   ['docs/MAIN_BOOTSTRAP_EXAMPLE.md', 'chunkRebuilds.nextBatch'],
+  ['docs/OPTIMIZATION_REVIEW_CHECKLIST.md', 'npm run smoke:optimization'],
+  ['docs/OPTIMIZATION_RISK_REGISTER.md', '#chunk-mesh-renderer=1'],
 ]
 
 const absentChecks = [
