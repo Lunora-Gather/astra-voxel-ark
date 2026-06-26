@@ -39,6 +39,7 @@ export class MeshParticlePool {
     particle.mesh.position.copy(options.position)
     particle.mesh.scale.setScalar(options.scale ?? 1)
     particle.mesh.visible = true
+    setMeshOpacity(particle.mesh, 1)
     particle.velocity.copy(options.velocity)
     particle.life = options.life
     particle.maxLife = Math.max(options.life, 0.001)
@@ -60,14 +61,13 @@ export class MeshParticlePool {
       particle.mesh.position.addScaledVector(particle.velocity, deltaSeconds)
       particle.mesh.rotation.x += deltaSeconds * 3
       particle.mesh.rotation.y += deltaSeconds * 2.4
-      particle.mesh.material.opacity = Math.max(0, particle.life / particle.maxLife)
+      setMeshOpacity(particle.mesh, Math.max(0, particle.life / particle.maxLife))
     }
   }
 
   dispose() {
     for (const particle of [...this.active, ...this.available]) {
       this.scene.remove(particle.mesh)
-      particle.mesh.geometry.dispose()
     }
     this.active.length = 0
     this.available.length = 0
@@ -81,5 +81,14 @@ export class MeshParticlePool {
     const [particle] = this.active.splice(index, 1)
     particle.mesh.visible = false
     this.available.push(particle)
+  }
+}
+
+function setMeshOpacity(mesh: THREE.Mesh, opacity: number) {
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+  for (const material of materials) {
+    material.transparent = opacity < 1
+    material.opacity = opacity
+    material.needsUpdate = true
   }
 }
