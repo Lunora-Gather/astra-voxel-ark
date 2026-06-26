@@ -15,7 +15,7 @@ WorldBlock[]
   -> collectVisibleFaces(...)
   -> buildGreedyQuads(...)
   -> buildGreedyGeometryGroups(...)
-  -> THREE.BufferGeometry per block type
+  -> ChunkMeshRenderer.upsertChunk(...)
 ```
 
 Implemented modules:
@@ -24,6 +24,7 @@ Implemented modules:
 - `src/render/GreedyMesher.ts` merges same-type, same-direction, same-plane faces into rectangular quads.
 - `src/render/GreedyGeometry.ts` converts greedy quads into `THREE.BufferGeometry`.
 - `src/render/ChunkMeshBuilder.ts` runs the complete data pipeline and returns useful stats.
+- `src/render/ChunkMeshRenderer.ts` owns chunk mesh groups, upserts rebuilt chunks, and disposes geometry when chunks unload.
 
 ## Integration strategy
 
@@ -48,6 +49,7 @@ Track these values per chunk:
 - triangle count
 - vertex count
 - build time
+- rendered chunk mesh count
 
 Expected direction:
 
@@ -62,4 +64,4 @@ Expected direction:
 - UVs are scaled by quad size; material tiling may need tuning per texture.
 - Transparent and animated materials should remain separate from opaque greedy geometry.
 - Face lighting and ambient occlusion are not implemented yet.
-- Geometry disposal must be handled by the future chunk renderer when chunks unload or rebuild.
+- Materials are reused from the existing material registry; material disposal must still be owned by the app-level renderer.
