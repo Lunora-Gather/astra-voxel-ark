@@ -33,6 +33,10 @@ export class ChunkManager {
     return this.blocks.size
   }
 
+  get chunkCount() {
+    return this.chunks.size
+  }
+
   getBlock(x: number, y: number, z: number) {
     return this.blocks.get(packBlockKey(x, y, z)) ?? null
   }
@@ -54,6 +58,7 @@ export class ChunkManager {
     const chunk = this.getOrCreateChunkForBlock(block.x, block.z)
     chunk.blocks.add(packedKey)
     this.markChunkDirty(chunk.key)
+    this.markBoundaryNeighborChunksDirty(block.x, block.z)
   }
 
   deleteBlock(x: number, y: number, z: number) {
@@ -65,6 +70,7 @@ export class ChunkManager {
     const chunkKey = this.getChunkKeyForBlock(existing.x, existing.z)
     this.chunks.get(chunkKey)?.blocks.delete(packedKey)
     this.markChunkDirty(chunkKey)
+    this.markBoundaryNeighborChunksDirty(existing.x, existing.z)
     return true
   }
 
@@ -78,6 +84,18 @@ export class ChunkManager {
     return this.chunks.get(chunkKey(cx, cz)) ?? null
   }
 
+  getChunkBlocks(cx: number, cz: number) {
+    const chunk = this.getChunk(cx, cz)
+    if (!chunk) return []
+
+    const blocks: WorldBlock[] = []
+    for (const packedKey of chunk.blocks) {
+      const block = this.blocks.get(packedKey)
+      if (block) blocks.push(block)
+    }
+    return blocks
+  }
+
   getDirtyChunks() {
     return [...this.dirtyChunks].map((key) => this.chunks.get(key)).filter((chunk): chunk is ChunkRecord => Boolean(chunk))
   }
@@ -86,6 +104,12 @@ export class ChunkManager {
     const chunk = this.chunks.get(key)
     if (chunk) chunk.dirty = false
     this.dirtyChunks.delete(key)
+  }
+
+  markAllChunksDirty() {
+    for (const key of this.chunks.keys()) {
+      this.markChunkDirty(key)
+    }
   }
 
   values() {
@@ -118,6 +142,17 @@ export class ChunkManager {
     chunk.dirty = true
     this.dirtyChunks.add(key)
   }
+
+  private markBoundaryNeighborChunksDirty(x: number, z: number) {
+    const localX = positiveModulo(x, this.chunkSize)
+    const localZ = positiveModulo(z, this.chunkSize)
+    const { cx, cz } = worldToChunkCoord(x, z, this.chunkSize)
+
+    if (localX === 0) this.markChunkDirty(chunkKey(cx - 1, cz))
+    if (localX === this.chunkSize - 1) this.markChunkDirty(chunkKey(cx + 1, cz))
+    if (localZ === 0) this.markChunkDirty(chunkKey(cx, cz - 1))
+    if (localZ === this.chunkSize - 1) this.markChunkDirty(chunkKey(cx, cz + 1))
+  }
 }
 
 export function chunkKey(cx: number, cz: number) {
@@ -129,4 +164,8 @@ export function worldToChunkCoord(x: number, z: number, chunkSize: number): Chun
     cx: Math.floor(x / chunkSize),
     cz: Math.floor(z / chunkSize),
   }
+}
+
+function positiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor
 }
