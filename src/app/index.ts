@@ -1,5 +1,6 @@
 export * from './ChunkMeshIntegration'
 export * from './FeatureFlags'
+export * from './FrameOptimizationCoordinator'
 export * from './LegacyChunkMirrorController'
 export * from './LegacyWorldBridge'
 export * from './LegacyWorldDiagnostics'
