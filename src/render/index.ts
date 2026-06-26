@@ -1,3 +1,4 @@
+export * from './BlockRenderLayers'
 export * from './ChunkMeshBuilder'
 export * from './ChunkMeshDiagnostics'
 export * from './ChunkMeshRenderer'
