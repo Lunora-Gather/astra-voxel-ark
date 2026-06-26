@@ -16,8 +16,9 @@ export const DEFAULT_OPTIMIZATION_FLAGS: OptimizationFeatureFlags = {
   lightBudget: false,
 }
 
-export function readOptimizationFeatureFlags(hash = window.location.hash): OptimizationFeatureFlags {
-  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+export function readOptimizationFeatureFlags(hash?: string): OptimizationFeatureFlags {
+  const resolvedHash = hash ?? resolveCurrentHash()
+  const params = new URLSearchParams(resolvedHash.startsWith('#') ? resolvedHash.slice(1) : resolvedHash)
   const diagnostics = hasFlag(params, 'opt-diagnostics')
 
   return {
@@ -37,4 +38,9 @@ export function hasAnyExperimentalRenderFlag(flags: OptimizationFeatureFlags) {
 function hasFlag(params: URLSearchParams, key: string) {
   const value = params.get(key)
   return params.has(key) && value !== '0' && value !== 'false'
+}
+
+function resolveCurrentHash() {
+  if (!globalThis.location) return ''
+  return globalThis.location.hash
 }
