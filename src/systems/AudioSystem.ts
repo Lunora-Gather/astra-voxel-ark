@@ -5,6 +5,10 @@ export type ToneOptions = {
   gain?: number
 }
 
+type BrowserWindowWithWebkitAudio = Window & typeof globalThis & {
+  webkitAudioContext?: typeof AudioContext
+}
+
 export class AudioSystem {
   private context: AudioContext | null = null
   private masterGain: GainNode | null = null
@@ -17,7 +21,7 @@ export class AudioSystem {
   unlock() {
     const context = this.getContext()
     if (context.state === 'suspended') {
-      void context.resume()
+      void context.resume().catch(() => undefined)
     }
   }
 
@@ -49,6 +53,14 @@ export class AudioSystem {
     this.playTone({ frequency: 260, durationSeconds: 0.055, type: 'square', gain: 0.018 })
   }
 
+  playJump() {
+    this.playTone({ frequency: 520, durationSeconds: 0.09, type: 'sine', gain: 0.018 })
+  }
+
+  playSelect() {
+    this.playTone({ frequency: 620, durationSeconds: 0.055, type: 'sine', gain: 0.014 })
+  }
+
   playShardCollect() {
     this.playTone({ frequency: 620, durationSeconds: 0.12, type: 'sine', gain: 0.028 })
     window.setTimeout(() => this.playTone({ frequency: 930, durationSeconds: 0.11, type: 'sine', gain: 0.022 }), 55)
@@ -56,7 +68,7 @@ export class AudioSystem {
 
   dispose() {
     if (this.context) {
-      void this.context.close()
+      void this.context.close().catch(() => undefined)
     }
     this.context = null
     this.masterGain = null
@@ -64,7 +76,11 @@ export class AudioSystem {
 
   private getContext() {
     if (!this.context) {
-      this.context = new AudioContext()
+      const AudioContextCtor = window.AudioContext || (window as BrowserWindowWithWebkitAudio).webkitAudioContext
+      if (!AudioContextCtor) {
+        throw new Error('Web Audio API is not available in this browser')
+      }
+      this.context = new AudioContextCtor()
     }
     return this.context
   }
