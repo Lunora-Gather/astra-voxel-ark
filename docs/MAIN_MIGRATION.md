@@ -9,22 +9,25 @@
 - Avoid changing rendering, save format, and input handling in the same commit.
 - Keep old save data readable.
 
-## Step 0: Optimization runtime facade
+## Step 0: Bootstrap facade
 
-Create the runtime once near the existing terrain constants and smoke-test setup:
+Prefer the one-call bootstrap when adding the first `main.ts` integration:
 
 ```ts
-import { createOptimizationRuntime } from './app'
+import { bootstrapMainOptimizations } from './app'
 
-const optimization = createOptimizationRuntime({
-  terrainOptions: { chunkSize: CHUNK_SIZE },
+const mainOptimization = bootstrapMainOptimizations({
+  blockData,
+  chunkSize: CHUNK_SIZE,
   scene,
   camera,
-  particlePoolSize: 160,
-  maxActivePointLights: 24,
+  particlePoolSize: lowPowerMode ? 90 : 220,
+  maxActivePointLights: lowPowerMode ? 8 : 24,
   lowPowerMode,
 })
 ```
+
+This creates the optimization runtime, mirrors the legacy block map, and runs the diagnostics hook only when enabled by URL flags.
 
 Supported URL hash flags:
 
@@ -39,10 +42,19 @@ Keep all flags opt-in until smoke tests prove each path is stable.
 
 ## Step 0.5: Legacy chunk diagnostics hook
 
-Before replacing any renderer path, connect diagnostics only:
+Before replacing any renderer path, connect diagnostics only. If you do not use the bootstrap facade, wire this manually:
 
 ```ts
-import { runMainDiagnosticsHook } from './app'
+import { createOptimizationRuntime, runMainDiagnosticsHook } from './app'
+
+const optimization = createOptimizationRuntime({
+  terrainOptions: { chunkSize: CHUNK_SIZE },
+  scene,
+  camera,
+  particlePoolSize: 160,
+  maxActivePointLights: 24,
+  lowPowerMode,
+})
 
 runMainDiagnosticsHook({
   flags: optimization.flags,
@@ -56,7 +68,7 @@ This is gated by `#chunk-mesh-diagnostics=1`, so it does nothing in normal play.
 
 ## Step 0.6: Legacy chunk mirror controller
 
-After diagnostics look correct, keep a mirror of the old `blockData` map:
+If you do not use the bootstrap facade, create the mirror manually:
 
 ```ts
 import { LegacyChunkMirrorController } from './app'
@@ -68,14 +80,14 @@ chunkMirror.syncFromLegacyMap(blockData)
 When old code places or removes a block, mirror the same operation:
 
 ```ts
-chunkMirror.setBlock(blockKey(x, y, z), id)
-chunkMirror.deleteBlock(blockKey(x, y, z))
+mainOptimization.syncBlockSet(blockKey(x, y, z), id)
+mainOptimization.syncBlockDelete(blockKey(x, y, z))
 ```
 
 Then run dirty chunk diagnostics without rendering:
 
 ```ts
-const updates = chunkMirror.diagnoseDirtyChunks({ limit: 2 })
+const updates = mainOptimization.chunkMirror.diagnoseDirtyChunks({ limit: 2 })
 ```
 
 ## Step 1: Audio adapter
@@ -115,19 +127,19 @@ Use `SaveSystem` only around the existing serialize/apply functions first:
 
 ## Step 4: Particle pool
 
-Use `optimization.particles?.createBreakBurst(...)`, `optimization.particles?.createShardBurst(...)`, and `optimization.particles?.update(deltaSeconds)` behind the `#particle-pool=1` flag. Do not change particle visuals and collision/placement logic in the same commit.
+Use `mainOptimization.optimization.particles?.createBreakBurst(...)`, `mainOptimization.optimization.particles?.createShardBurst(...)`, and `mainOptimization.optimization.particles?.update(deltaSeconds)` behind the `#particle-pool=1` flag. Do not change particle visuals and collision/placement logic in the same commit.
 
 ## Step 5: Light budget
 
-Wire `optimization.lights?.apply(...)` after glow/crystal lights are registered. Start with a conservative desktop cap of 24 and low-power cap of 0 or 8.
+Wire `mainOptimization.optimization.lights?.apply(...)` after glow/crystal lights are registered. Start with a conservative desktop cap of 24 and low-power cap of 0 or 8.
 
 ## Step 6: Chunk manager
 
-Start by mirroring writes into `LegacyChunkMirrorController` while still reading from the old `Map`. After verify passes, switch read paths to `ChunkManager`. Finally, remove the old map.
+Start by mirroring writes into `mainOptimization.syncBlockSet(...)` and `mainOptimization.syncBlockDelete(...)` while still reading from the old `Map`. After verify passes, switch read paths to `ChunkManager`. Finally, remove the old map.
 
 ## Step 7: Terrain worker
 
-Use `optimization.terrain.generateChunk(cx, cz)` instead of calling the synchronous generator directly. The runtime will fall back to synchronous generation unless `#terrain-worker=1` is present.
+Use `mainOptimization.optimization.terrain.generateChunk(cx, cz)` instead of calling the synchronous generator directly. The runtime will fall back to synchronous generation unless `#terrain-worker=1` is present.
 
 ## Step 8: Visible faces and greedy meshing
 
@@ -144,7 +156,7 @@ Migration order:
 Use `updateFrameOptimizations(...)` to centralize particle updates, light budgeting, and debug text formatting:
 
 ```ts
-const optimizationFrame = updateFrameOptimizations(optimization, deltaSeconds, {
+const optimizationFrame = updateFrameOptimizations(mainOptimization.optimization, deltaSeconds, {
   fps,
   frameMs,
   chunkCount,
