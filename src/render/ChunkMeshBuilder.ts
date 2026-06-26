@@ -1,8 +1,13 @@
 import type { BlockId } from '../blocks'
 import type { WorldBlock } from '../world/ChunkManager'
+import { filterGreedyMeshBlocks } from './BlockRenderLayers'
 import { buildGreedyGeometryGroups, type GreedyGeometryGroup } from './GreedyGeometry'
 import { buildGreedyQuads, type GreedyQuad } from './GreedyMesher'
 import { collectVisibleFaces, type BlockLookup, type VisibleVoxelFace } from './VoxelMesher'
+
+export type ChunkMeshBuildOptions = {
+  includeNonGreedyBlocks?: boolean
+}
 
 export type ChunkMeshBuildResult = {
   visibleFaces: VisibleVoxelFace[]
@@ -13,6 +18,8 @@ export type ChunkMeshBuildResult = {
 
 export type ChunkMeshStats = {
   blockCount: number
+  meshedBlockCount: number
+  skippedBlockCount: number
   visibleFaceCount: number
   greedyQuadCount: number
   triangleCount: number
@@ -20,9 +27,14 @@ export type ChunkMeshStats = {
   geometryGroupCount: number
 }
 
-export function buildChunkMeshData(blocks: Iterable<WorldBlock>, lookup: BlockLookup): ChunkMeshBuildResult {
+export function buildChunkMeshData(
+  blocks: Iterable<WorldBlock>,
+  lookup: BlockLookup,
+  { includeNonGreedyBlocks = false }: ChunkMeshBuildOptions = {},
+): ChunkMeshBuildResult {
   const blockList = [...blocks]
-  const visibleFaces = collectVisibleFaces(blockList, lookup)
+  const meshedBlocks = includeNonGreedyBlocks ? blockList : filterGreedyMeshBlocks(blockList)
+  const visibleFaces = collectVisibleFaces(meshedBlocks, lookup)
   const greedyQuads = buildGreedyQuads(visibleFaces)
   const geometryGroups = buildGreedyGeometryGroups(greedyQuads)
 
@@ -32,6 +44,8 @@ export function buildChunkMeshData(blocks: Iterable<WorldBlock>, lookup: BlockLo
     geometryGroups,
     stats: {
       blockCount: blockList.length,
+      meshedBlockCount: meshedBlocks.length,
+      skippedBlockCount: blockList.length - meshedBlocks.length,
       visibleFaceCount: visibleFaces.length,
       greedyQuadCount: greedyQuads.length,
       triangleCount: geometryGroups.reduce((sum, group) => sum + group.triangleCount, 0),
