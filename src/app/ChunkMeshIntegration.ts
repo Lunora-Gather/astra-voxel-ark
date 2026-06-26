@@ -22,9 +22,13 @@ export type DirtyChunkMeshUpdateOptions = {
 
 export function rebuildDirtyChunkMeshes(
   chunks: ChunkManager,
-  renderer: ChunkMeshRenderer,
+  renderer?: ChunkMeshRenderer | null,
   { limit = Number.POSITIVE_INFINITY, clearDirty = true, render = false }: DirtyChunkMeshUpdateOptions = {},
 ) {
+  if (render && !renderer) {
+    throw new Error('ChunkMeshRenderer is required when render=true')
+  }
+
   const worldLookup = buildChunkLookup(chunks.values())
   const updates: DirtyChunkMeshUpdate[] = []
 
@@ -34,7 +38,7 @@ export function rebuildDirtyChunkMeshes(
     const diagnostics = createChunkMeshDiagnostics(meshData.stats)
 
     if (render) {
-      renderer.upsertChunk(chunk.key, meshData.geometryGroups)
+      renderer?.upsertChunk(chunk.key, meshData.geometryGroups)
     }
 
     if (clearDirty) {
