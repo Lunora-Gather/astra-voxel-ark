@@ -15,7 +15,9 @@ The game is designed for landscape play. Phones show a rotate-device overlay in 
 
 ```bash
 npm install
+npm run typecheck
 npm run build
+npm run verify
 
 # Desktop app, local smoke test
 npm run electron:dev
@@ -39,3 +41,16 @@ npm run android:build
 - Android debug APK after build: `android/app/build/outputs/apk/debug/app-debug.apk`
 
 Generated outputs are ignored by git. GitHub Actions can build and upload them as workflow artifacts.
+
+## GitHub Actions
+
+- `Verify` runs typecheck, build and HUD smoke testing for pull requests and optimization branches.
+- `Deploy to GitHub Pages` builds and publishes the web app from `main`.
+- `Package Apps` can be run manually or from `v*` tags to produce Linux, Windows and Android artifacts.
+
+Recommended release flow:
+
+1. Merge a verified pull request into `main`.
+2. Confirm GitHub Pages deploy succeeds.
+3. Create a version tag such as `v1.4.1` when desktop/mobile artifacts are needed.
+4. Run or inspect the `Package Apps` workflow artifacts before publishing them externally.
