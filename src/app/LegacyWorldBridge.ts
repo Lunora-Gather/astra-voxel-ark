@@ -27,8 +27,12 @@ export function syncLegacyWorldIntoChunks(chunks: ChunkManager, legacyBlocks: Le
       continue
     }
 
-    chunks.setBlock({ ...position, id })
-    mirroredBlocks += 1
+    try {
+      chunks.setBlock({ ...position, id })
+      mirroredBlocks += 1
+    } catch {
+      skippedBlocks += 1
+    }
   }
 
   chunks.markAllChunksDirty()
@@ -48,12 +52,22 @@ export function legacyBlockToWorldBlock(key: string, id: BlockId): WorldBlock | 
 export function applyLegacyBlockSet(chunks: ChunkManager, key: string, id: BlockId) {
   const block = legacyBlockToWorldBlock(key, id)
   if (!block) return false
-  chunks.setBlock(block)
-  return true
+
+  try {
+    chunks.setBlock(block)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function applyLegacyBlockDelete(chunks: ChunkManager, key: string) {
   const position = coordinatesFromStringBlockKey(key)
   if (!position) return false
-  return chunks.deleteBlock(position.x, position.y, position.z)
+
+  try {
+    return chunks.deleteBlock(position.x, position.y, position.z)
+  } catch {
+    return false
+  }
 }
