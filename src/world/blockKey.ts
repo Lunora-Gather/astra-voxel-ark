@@ -1,8 +1,10 @@
 export type PackedBlockKey = number
 
-const COORDINATE_BITS = 20
-const COORDINATE_MASK = (1 << COORDINATE_BITS) - 1
-const COORDINATE_OFFSET = 1 << (COORDINATE_BITS - 1)
+// 17 bits per axis keeps the packed value within Number.MAX_SAFE_INTEGER.
+// Range per axis: -65,536 through 65,535, which is far beyond the current island scale.
+const COORDINATE_BITS = 17
+const COORDINATE_BASE = 2 ** COORDINATE_BITS
+const COORDINATE_OFFSET = 2 ** (COORDINATE_BITS - 1)
 const MAX_COORDINATE = COORDINATE_OFFSET - 1
 const MIN_COORDINATE = -COORDINATE_OFFSET
 
@@ -15,13 +17,17 @@ export function packBlockKey(x: number, y: number, z: number): PackedBlockKey {
   const py = y + COORDINATE_OFFSET
   const pz = z + COORDINATE_OFFSET
 
-  return px * 2 ** (COORDINATE_BITS * 2) + py * 2 ** COORDINATE_BITS + pz
+  return px * COORDINATE_BASE ** 2 + py * COORDINATE_BASE + pz
 }
 
 export function unpackBlockKey(key: PackedBlockKey) {
-  const px = Math.floor(key / 2 ** (COORDINATE_BITS * 2)) & COORDINATE_MASK
-  const py = Math.floor(key / 2 ** COORDINATE_BITS) & COORDINATE_MASK
-  const pz = key & COORDINATE_MASK
+  if (!Number.isSafeInteger(key) || key < 0) {
+    throw new RangeError('Packed block key must be a non-negative safe integer')
+  }
+
+  const px = Math.floor(key / COORDINATE_BASE ** 2)
+  const py = Math.floor(key / COORDINATE_BASE) % COORDINATE_BASE
+  const pz = key % COORDINATE_BASE
 
   return {
     x: px - COORDINATE_OFFSET,
