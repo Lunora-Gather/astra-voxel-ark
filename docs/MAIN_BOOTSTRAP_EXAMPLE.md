@@ -21,6 +21,7 @@ const mainOptimization = bootstrapMainOptimizations({
   particlePoolSize: lowPowerMode ? 90 : 220,
   maxActivePointLights: lowPowerMode ? 8 : 24,
   lowPowerMode,
+  initialQuality: settings.quality,
 })
 ```
 
@@ -62,6 +63,7 @@ Inside the existing animation loop:
 const performance = mainOptimization.performance.begin(time)
 const optimizationFrame = updateFrameOptimizations(mainOptimization.optimization, deltaSeconds, {
   performance,
+  quality: mainOptimization.quality,
   chunkCount,
   dirtyChunkCount,
   blockCount,
@@ -70,7 +72,21 @@ const optimizationFrame = updateFrameOptimizations(mainOptimization.optimization
 })
 ```
 
-The result contains debug text, active particle count, active/inactive light counts, average FPS and minimum FPS.
+The result contains debug text, active particle count, active/inactive light counts, average FPS, minimum FPS, and an adaptive quality decision.
+
+## Chunk rebuild throttling
+
+When chunks become dirty, enqueue them instead of rebuilding everything immediately:
+
+```ts
+for (const chunk of mainOptimization.chunkMirror.chunks.getDirtyChunks()) {
+  mainOptimization.chunkRebuilds.enqueue({ key: chunk.key, payload: chunk })
+}
+
+const batch = mainOptimization.chunkRebuilds.nextBatch(lowPowerMode ? 1 : 2)
+```
+
+Use the batch to drive diagnostics or renderer rebuilds a few chunks at a time.
 
 ## Cleanup
 
@@ -86,5 +102,6 @@ mainOptimization.dispose()
 2. Open with `#chunk-mesh-diagnostics=1` and compare logs.
 3. Mirror block set/delete operations.
 4. Add per-frame coordinator in debug mode.
-5. Only then test `#particle-pool=1` or `#light-budget=1`.
-6. Keep `#chunk-mesh-renderer=1` for a separate controlled test.
+5. Add chunk rebuild throttling for diagnostics only.
+6. Only then test `#particle-pool=1` or `#light-budget=1`.
+7. Keep `#chunk-mesh-renderer=1` for a separate controlled test.
