@@ -41,12 +41,31 @@ All experimental paths are opt-in through URL hash flags:
 
 Do not enable these by default until smoke tests pass.
 
+## Legacy world bridge
+
+Use `diagnoseLegacyWorld(...)` first when connecting the current `main.ts` string-key block map. This lets the new chunk mesh pipeline inspect existing world data without replacing the active renderer:
+
+```ts
+const diagnostics = diagnoseLegacyWorld(blockData, {
+  chunkSize: CHUNK_SIZE,
+  limit: 4,
+})
+console.info(formatLegacyWorldDiagnostics(diagnostics))
+```
+
+For incremental mirroring, use:
+
+```ts
+applyLegacyBlockSet(chunkManager, blockKey(x, y, z), id)
+applyLegacyBlockDelete(chunkManager, blockKey(x, y, z))
+```
+
 ## Dirty chunk mesh diagnostics
 
 Use `rebuildDirtyChunkMeshes(...)` to rebuild diagnostics without replacing the live renderer:
 
 ```ts
-const updates = rebuildDirtyChunkMeshes(chunkManager, chunkMeshRenderer, {
+const updates = rebuildDirtyChunkMeshes(chunkManager, null, {
   render: false,
   limit: 2,
 })
