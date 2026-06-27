@@ -66,6 +66,7 @@ const contentChecks = [
   ['src/textures.ts', 'generatedTextureCache'],
   ['src/textures.ts', 'clearGeneratedTextureCache'],
   ['src/textures.ts', 'getGeneratedTextureCacheSize'],
+  ['src/textures.ts', 'getBlockDef(blockId)'],
   ['src/blocks.ts', 'BLOCK_BY_ID'],
   ['src/blocks.ts', 'getBlockDef'],
   ['docs/MAIN_BOOTSTRAP_EXAMPLE.md', 'chunkRebuilds.nextBatch'],
@@ -79,6 +80,7 @@ const absentChecks = [
   ['src/app/MainBootstrapSmoke.ts', "import { blockKey } from '../world'"],
   ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality(sample.averageFps)'],
   ['src/app/AdaptiveQualityController.ts', 'shouldIncreaseQuality(sample.averageFps)'],
+  ['src/textures.ts', 'BLOCKS.find'],
 ]
 
 const errors = []
