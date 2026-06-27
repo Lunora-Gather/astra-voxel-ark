@@ -2,13 +2,13 @@ import type { MainOptimizationFrameOptions } from './MainOptimizationBootstrap'
 import type { MainRuntimeAdapter } from './MainRuntimeAdapter'
 import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainRuntimeFrameHistorySnapshot } from './MainRuntimeFrameHistory'
 import { formatMainRuntimeFrameSummary, isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
-import { runMainRuntimeFrame, type MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
-import type { MainRuntimeQueueTask } from './MainRuntimeWorkQueue'
+import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
+import { createMainRuntimeTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
 
 export type MainRuntimeOrchestratorOptions<TerrainTask = unknown, DirtyTask = unknown> = {
   adapter: MainRuntimeAdapter
-  terrainQueue?: TerrainTask[]
-  dirtyChunkSummaryQueue?: DirtyTask[]
+  terrainQueue?: TerrainTask[] | MainRuntimeTaskQueue<TerrainTask>
+  dirtyChunkSummaryQueue?: DirtyTask[] | MainRuntimeTaskQueue<DirtyTask>
   runTerrainTask: MainRuntimeQueueTask<TerrainTask>
   runDirtyChunkSummaryTask: MainRuntimeQueueTask<DirtyTask>
   diagnosticsEnabled?: boolean
@@ -32,8 +32,8 @@ export type MainRuntimeOrchestratorFrameResult = MainRuntimeFrameScheduleResult 
 
 export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> = {
   adapter: MainRuntimeAdapter
-  terrainQueue: TerrainTask[]
-  dirtyChunkSummaryQueue: DirtyTask[]
+  terrainQueue: MainRuntimeTaskQueue<TerrainTask>
+  dirtyChunkSummaryQueue: MainRuntimeTaskQueue<DirtyTask>
   stats: MainRuntimeOrchestratorStats
   history: MainRuntimeFrameHistory
   enqueueTerrainTask: (task: TerrainTask) => number
@@ -46,13 +46,15 @@ export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> 
 
 export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown>({
   adapter,
-  terrainQueue = [],
-  dirtyChunkSummaryQueue = [],
+  terrainQueue,
+  dirtyChunkSummaryQueue,
   runTerrainTask,
   runDirtyChunkSummaryTask,
   diagnosticsEnabled,
   historyLimit,
 }: MainRuntimeOrchestratorOptions<TerrainTask, DirtyTask>): MainRuntimeOrchestrator<TerrainTask, DirtyTask> {
+  const terrainTaskQueue = normalizeMainRuntimeTaskQueue(terrainQueue)
+  const dirtyTaskQueue = normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue)
   const history = createMainRuntimeFrameHistory(historyLimit)
   const stats: MainRuntimeOrchestratorStats = {
     frames: 0,
@@ -64,16 +66,18 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   }
 
   const runFrame = (frame?: MainOptimizationFrameOptions): MainRuntimeOrchestratorFrameResult => {
-    const scheduled = runMainRuntimeFrame(adapter, {
-      frame,
+    const adapterFrame = adapter.onFrame(frame)
+    const plan = adapter.planWork({
+      pendingTerrainChunks: terrainTaskQueue.pending,
+      pendingDirtyChunkSummaries: dirtyTaskQueue.pending,
       diagnosticsEnabled,
-      queues: {
-        terrainQueue,
-        dirtyChunkSummaryQueue,
-        runTerrainTask,
-        runDirtyChunkSummaryTask,
-      },
     })
+    const queues: MainRuntimeWorkQueueResult = {
+      terrain: runMainRuntimeTaskQueue(terrainTaskQueue, plan.terrainChunksToRun, runTerrainTask),
+      dirtyChunkSummaries: runMainRuntimeTaskQueue(dirtyTaskQueue, plan.dirtyChunkSummariesToRun, runDirtyChunkSummaryTask),
+      diagnosticsLimit: plan.dirtyChunkDiagnosticsLimit,
+    }
+    const scheduled = { frame: adapterFrame, plan, queues }
     const summary = summarizeMainRuntimeFrame(scheduled)
     const historySnapshot = history.record(summary)
     stats.frames += 1
@@ -93,18 +97,23 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
 
   return {
     adapter,
-    terrainQueue,
-    dirtyChunkSummaryQueue,
+    terrainQueue: terrainTaskQueue,
+    dirtyChunkSummaryQueue: dirtyTaskQueue,
     stats,
     history,
-    enqueueTerrainTask: (task) => terrainQueue.push(task),
-    enqueueDirtyChunkSummaryTask: (task) => dirtyChunkSummaryQueue.push(task),
+    enqueueTerrainTask: (task) => terrainTaskQueue.enqueue(task),
+    enqueueDirtyChunkSummaryTask: (task) => dirtyTaskQueue.enqueue(task),
     runFrame,
     getSummaryLabel: () => stats.lastSummary ? formatMainRuntimeFrameSummary(stats.lastSummary) : '',
     clearQueues: () => {
-      terrainQueue.length = 0
-      dirtyChunkSummaryQueue.length = 0
+      terrainTaskQueue.clear()
+      dirtyTaskQueue.clear()
     },
     dispose: () => adapter.dispose(),
   }
+}
+
+function normalizeMainRuntimeTaskQueue<T>(queue?: T[] | MainRuntimeTaskQueue<T>): MainRuntimeTaskQueue<T> {
+  if (queue && 'drain' in queue && 'enqueue' in queue) return queue
+  return createMainRuntimeTaskQueue(queue ?? [])
 }
