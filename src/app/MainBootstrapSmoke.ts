@@ -7,6 +7,11 @@ export type MainBootstrapSmokeResult = {
   diagnosticsEnabled: boolean
   setResult: boolean
   deleteResult: boolean
+  resyncedBlocks: number
+  frameSampleCount: number
+  frameAverageMs: number
+  qualityAction: string
+  scheduledChunkRebuilds: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -29,6 +34,10 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const deleteKey = stringBlockKey(1, 0, 0)
   blockData.delete(deleteKey)
   const deleteResult = bootstrap.syncBlockDelete(deleteKey)
+  const resync = bootstrap.syncAllBlocks()
+
+  bootstrap.recordFrame({ timestamp: 16 })
+  const frame = bootstrap.recordFrame({ timestamp: 32 })
 
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
@@ -36,6 +45,11 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     diagnosticsEnabled: bootstrap.optimization.flags.chunkMeshDiagnostics,
     setResult,
     deleteResult,
+    resyncedBlocks: resync.mirroredBlocks,
+    frameSampleCount: frame.sample.sampleCount,
+    frameAverageMs: frame.sample.averageFrameMs,
+    qualityAction: frame.qualityDecision.action,
+    scheduledChunkRebuilds: frame.scheduledChunkRebuilds,
   }
 
   bootstrap.dispose()
@@ -53,6 +67,18 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (!result.setResult || !result.deleteResult) {
     throw new Error('Main bootstrap smoke failed: set/delete mirror operations should succeed')
+  }
+
+  if (result.resyncedBlocks !== 3) {
+    throw new Error(`Main bootstrap smoke failed: expected 3 blocks after resync, got ${result.resyncedBlocks}`)
+  }
+
+  if (result.frameSampleCount <= 0 || result.frameAverageMs <= 0) {
+    throw new Error('Main bootstrap smoke failed: frame-level optimization sampling should be active')
+  }
+
+  if (result.qualityAction !== 'hold') {
+    throw new Error(`Main bootstrap smoke failed: expected stable quality hold decision, got ${result.qualityAction}`)
   }
 
   return result
