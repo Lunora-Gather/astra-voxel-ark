@@ -61,6 +61,8 @@ const contentChecks = [
   ['src/app/AdaptiveQualityController.ts', 'averageFrameMs: sample.averageFrameMs'],
   ['src/app/ChunkRebuildScheduler.ts', 'nextBatch'],
   ['src/worldMath.ts', 'terrainNoiseCache'],
+  ['src/worldMath.ts', 'terrainNoiseCacheSize'],
+  ['src/worldMath.ts', 'new Map<number, Map<number, number>>()'],
   ['src/worldMath.ts', 'TERRAIN_NOISE_CACHE_LIMIT'],
   ['src/worldMath.ts', 'getTerrainNoiseCacheSize'],
   ['src/textures.ts', 'generatedTextureCache'],
@@ -84,6 +86,7 @@ const absentChecks = [
   ['src/app/AdaptiveQualityController.ts', 'shouldDecreaseQuality(sample.averageFps)'],
   ['src/app/AdaptiveQualityController.ts', 'shouldIncreaseQuality(sample.averageFps)'],
   ['src/textures.ts', 'BLOCKS.find'],
+  ['src/worldMath.ts', "x + ',' + z"],
 ]
 
 const errors = []
