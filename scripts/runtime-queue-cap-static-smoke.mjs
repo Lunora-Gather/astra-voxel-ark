@@ -5,9 +5,15 @@ const root = process.cwd()
 
 const checks = [
   ['src/app/MainRuntimeWorkQueue.ts', 'MainRuntimeTaskQueueOptions'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'MainRuntimeQueueEnqueueResult'],
   ['src/app/MainRuntimeWorkQueue.ts', 'readonly maxPending'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'readonly dropped'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'tryEnqueue: (item: T) => MainRuntimeQueueEnqueueResult'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'tryEnqueueUnique'],
   ['src/app/MainRuntimeWorkQueue.ts', 'normalizeMainRuntimeQueueCapacity'],
-  ['src/app/MainRuntimeWorkQueue.ts', 'if (maxPending !== null && pending >= maxPending) return pending'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'dropped++'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'return { accepted: false, pending, dropped }'],
+  ['src/app/MainRuntimeWorkQueue.ts', 'if (result.accepted) queuedKeys.add(key)'],
   ['src/app/MainRuntimeWorkQueue.ts', 'createMainRuntimeUniqueTaskQueue<T>(\n  getKey: MainRuntimeQueueKeySelector<T>,\n  initialItems: T[] = [],\n  options: MainRuntimeTaskQueueOptions = {},'],
   ['src/app/MainRuntimeOrchestrator.ts', 'terrainQueueMaxPending'],
   ['src/app/MainRuntimeOrchestrator.ts', 'dirtyChunkSummaryQueueMaxPending'],
@@ -16,7 +22,13 @@ const checks = [
   ['src/app/MainRuntimeOrchestrator.ts', '{ maxPending: dirtyChunkSummaryQueueMaxPending }'],
   ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedPending'],
   ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedMaxPending'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedDropped'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedTryAccepted'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedTryDropped'],
   ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedUniquePending'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedUniqueDropped'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedUniqueTryAccepted'],
+  ['src/app/MainRuntimeWorkQueueSmoke.ts', 'cappedUniqueTryDropped'],
   ['src/app/MainRuntimeWorkQueueSmoke.ts', 'maxPending: 2'],
 ]
 
