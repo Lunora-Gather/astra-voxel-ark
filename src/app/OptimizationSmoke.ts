@@ -1,12 +1,14 @@
 import { assertChunkMeshSmoke, assertRenderLayerSmoke } from '../render'
 import { readOptimizationFeatureFlags } from './FeatureFlags'
 import { assertMainBootstrapSmoke } from './MainBootstrapSmoke'
+import { assertMainRuntimeWorkQueueSmoke } from './MainRuntimeWorkQueueSmoke'
 
 export type OptimizationSmokeResult = {
   flags: ReturnType<typeof readOptimizationFeatureFlags>
   chunkMesh: ReturnType<typeof assertChunkMeshSmoke>
   renderLayers: ReturnType<typeof assertRenderLayerSmoke>
   mainBootstrap: ReturnType<typeof assertMainBootstrapSmoke>
+  runtimeWorkQueue: ReturnType<typeof assertMainRuntimeWorkQueueSmoke>
 }
 
 export function runOptimizationSmoke(hash = '#opt-diagnostics=1'): OptimizationSmokeResult {
@@ -15,6 +17,7 @@ export function runOptimizationSmoke(hash = '#opt-diagnostics=1'): OptimizationS
     chunkMesh: assertChunkMeshSmoke(),
     renderLayers: assertRenderLayerSmoke(),
     mainBootstrap: assertMainBootstrapSmoke(),
+    runtimeWorkQueue: assertMainRuntimeWorkQueueSmoke(),
   }
 }
 
@@ -27,5 +30,6 @@ export function formatOptimizationSmokeResult(result: OptimizationSmokeResult) {
     `renderLayers=${result.renderLayers.layerCount}`,
     `bootstrapMirrored=${result.mainBootstrap.mirroredBlocks}`,
     `bootstrapChunks=${result.mainBootstrap.chunkCount}`,
+    `runtimeQueueProcessed=${result.runtimeWorkQueue.processedItems.length}`,
   ].join(' | ')
 }
