@@ -1,4 +1,3 @@
-import type * as THREE from 'three'
 import type { BlockId } from '../blocks'
 import type { QualityPreset } from '../game'
 import type { TerrainGeneratorOptions } from '../world'
@@ -13,6 +12,35 @@ import type { LegacyBlockMap } from './LegacyWorldBridge'
 
 export type MainRuntimeAdapterOptions = Omit<MainOptimizationBootstrapOptions, 'initialQuality'> & {
   initialQuality: QualityPreset
+  budget?: Partial<MainRuntimeBudgetConfig>
+}
+
+export type MainRuntimePressure = 'nominal' | 'moderate' | 'high'
+
+export type MainRuntimeBudgetConfig = {
+  nominalTerrainChunksPerFrame: number
+  moderateTerrainChunksPerFrame: number
+  highTerrainChunksPerFrame: number
+  nominalDirtyChunkSummariesPerFrame: number
+  moderateDirtyChunkSummariesPerFrame: number
+  highDirtyChunkSummariesPerFrame: number
+  nominalDiagnosticsLimit: number
+  moderateDiagnosticsLimit: number
+  highDiagnosticsLimit: number
+}
+
+export type MainRuntimeBudgetDecision = {
+  pressure: MainRuntimePressure
+  terrainChunksPerFrame: number
+  dirtyChunkSummariesPerFrame: number
+  dirtyChunkDiagnosticsLimit: number
+  shouldRunTerrainQueue: boolean
+  shouldRunDirtyChunkSummaries: boolean
+  shouldRunDiagnostics: boolean
+}
+
+export type MainRuntimeAdapterFrameResult = MainOptimizationFrameResult & {
+  budget: MainRuntimeBudgetDecision
 }
 
 export type MainRuntimeAdapterStats = {
@@ -20,7 +48,9 @@ export type MainRuntimeAdapterStats = {
   blockSetCount: number
   blockDeleteCount: number
   resyncCount: number
-  lastFrame: MainOptimizationFrameResult | null
+  pressureFrames: Record<MainRuntimePressure, number>
+  lastFrame: MainRuntimeAdapterFrameResult | null
+  lastBudget: MainRuntimeBudgetDecision | null
 }
 
 export type MainRuntimeAdapter = {
@@ -30,8 +60,21 @@ export type MainRuntimeAdapter = {
   onBlockDelete: (key: string) => boolean
   resync: () => number
   markAllChunksDirty: () => void
-  onFrame: (options?: MainOptimizationFrameOptions) => MainOptimizationFrameResult
+  onFrame: (options?: MainOptimizationFrameOptions) => MainRuntimeAdapterFrameResult
+  getBudgetForFrame: (frame: MainOptimizationFrameResult) => MainRuntimeBudgetDecision
   dispose: () => void
+}
+
+const DEFAULT_RUNTIME_BUDGET: MainRuntimeBudgetConfig = {
+  nominalTerrainChunksPerFrame: 1,
+  moderateTerrainChunksPerFrame: 1,
+  highTerrainChunksPerFrame: 0,
+  nominalDirtyChunkSummariesPerFrame: 12,
+  moderateDirtyChunkSummariesPerFrame: 6,
+  highDirtyChunkSummariesPerFrame: 3,
+  nominalDiagnosticsLimit: 4,
+  moderateDiagnosticsLimit: 2,
+  highDiagnosticsLimit: 1,
 }
 
 export function createMainRuntimeAdapter({
@@ -45,6 +88,7 @@ export function createMainRuntimeAdapter({
   lowPowerMode,
   initialQuality,
   logger,
+  budget,
 }: MainRuntimeAdapterOptions): MainRuntimeAdapter {
   const bootstrap = bootstrapMainOptimizations({
     blockData,
@@ -58,14 +102,19 @@ export function createMainRuntimeAdapter({
     initialQuality,
     logger,
   })
+  const budgetConfig = { ...DEFAULT_RUNTIME_BUDGET, ...budget }
 
   const stats: MainRuntimeAdapterStats = {
     frameCount: 0,
     blockSetCount: 0,
     blockDeleteCount: 0,
     resyncCount: 0,
+    pressureFrames: { nominal: 0, moderate: 0, high: 0 },
     lastFrame: null,
+    lastBudget: null,
   }
+
+  const getBudgetForFrame = (frame: MainOptimizationFrameResult) => deriveMainRuntimeBudget(frame, budgetConfig)
 
   return {
     bootstrap,
@@ -87,11 +136,66 @@ export function createMainRuntimeAdapter({
     markAllChunksDirty: () => bootstrap.markAllChunksDirty(),
     onFrame: (options) => {
       const frame = bootstrap.recordFrame(options)
+      const budget = getBudgetForFrame(frame)
+      const adapterFrame = { ...frame, budget }
       stats.frameCount += 1
-      stats.lastFrame = frame
-      return frame
+      stats.pressureFrames[budget.pressure] += 1
+      stats.lastFrame = adapterFrame
+      stats.lastBudget = budget
+      return adapterFrame
     },
+    getBudgetForFrame,
     dispose: () => bootstrap.dispose(),
+  }
+}
+
+export function deriveMainRuntimeBudget(
+  frame: MainOptimizationFrameResult,
+  config: MainRuntimeBudgetConfig = DEFAULT_RUNTIME_BUDGET,
+): MainRuntimeBudgetDecision {
+  const averageFps = frame.sample.averageFps
+  const averageFrameMs = frame.sample.averageFrameMs
+  const pressure = getMainRuntimePressure(averageFps, averageFrameMs)
+
+  if (pressure === 'high') {
+    return buildBudgetDecision(pressure, {
+      terrainChunksPerFrame: config.highTerrainChunksPerFrame,
+      dirtyChunkSummariesPerFrame: config.highDirtyChunkSummariesPerFrame,
+      dirtyChunkDiagnosticsLimit: config.highDiagnosticsLimit,
+    })
+  }
+
+  if (pressure === 'moderate') {
+    return buildBudgetDecision(pressure, {
+      terrainChunksPerFrame: config.moderateTerrainChunksPerFrame,
+      dirtyChunkSummariesPerFrame: config.moderateDirtyChunkSummariesPerFrame,
+      dirtyChunkDiagnosticsLimit: config.moderateDiagnosticsLimit,
+    })
+  }
+
+  return buildBudgetDecision(pressure, {
+    terrainChunksPerFrame: config.nominalTerrainChunksPerFrame,
+    dirtyChunkSummariesPerFrame: config.nominalDirtyChunkSummariesPerFrame,
+    dirtyChunkDiagnosticsLimit: config.nominalDiagnosticsLimit,
+  })
+}
+
+export function getMainRuntimePressure(averageFps: number, averageFrameMs: number): MainRuntimePressure {
+  if ((averageFps > 0 && averageFps < 30) || averageFrameMs > 32) return 'high'
+  if ((averageFps > 0 && averageFps < 45) || averageFrameMs > 24) return 'moderate'
+  return 'nominal'
+}
+
+function buildBudgetDecision(
+  pressure: MainRuntimePressure,
+  budget: Pick<MainRuntimeBudgetDecision, 'terrainChunksPerFrame' | 'dirtyChunkSummariesPerFrame' | 'dirtyChunkDiagnosticsLimit'>,
+): MainRuntimeBudgetDecision {
+  return {
+    pressure,
+    ...budget,
+    shouldRunTerrainQueue: budget.terrainChunksPerFrame > 0,
+    shouldRunDirtyChunkSummaries: budget.dirtyChunkSummariesPerFrame > 0,
+    shouldRunDiagnostics: budget.dirtyChunkDiagnosticsLimit > 0,
   }
 }
 
