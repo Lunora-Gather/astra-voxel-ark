@@ -2,6 +2,7 @@ import type { BlockId } from '../blocks'
 import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
 import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
 import { runMainRuntimeFrame } from './MainRuntimeFrameScheduler'
+import { formatMainRuntimeFrameSummary, isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame } from './MainRuntimeFrameSummary'
 import { runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainBootstrapSmokeResult = {
@@ -32,6 +33,8 @@ export type MainBootstrapSmokeResult = {
   scheduledFrameTerrainProcessed: number
   scheduledFrameDirtyProcessed: number
   scheduledFrameDirtyRemaining: number
+  scheduledFrameBacklogged: boolean
+  scheduledFrameSummaryLabel: string
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -100,6 +103,8 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
       runDirtyChunkSummaryTask: () => undefined,
     },
   })
+  const scheduledFrameSummary = summarizeMainRuntimeFrame(scheduledFrame)
+  const scheduledFrameSummaryLabel = formatMainRuntimeFrameSummary(scheduledFrameSummary)
 
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
@@ -129,6 +134,8 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     scheduledFrameTerrainProcessed: scheduledFrame.queues.terrain.processed,
     scheduledFrameDirtyProcessed: scheduledFrame.queues.dirtyChunkSummaries.processed,
     scheduledFrameDirtyRemaining: scheduledFrame.queues.dirtyChunkSummaries.remaining,
+    scheduledFrameBacklogged: isMainRuntimeFrameBacklogged(scheduledFrameSummary),
+    scheduledFrameSummaryLabel,
   }
 
   scheduledAdapter.dispose()
@@ -184,6 +191,10 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (result.scheduledFrameTerrainProcessed !== 0 || result.scheduledFrameDirtyProcessed !== 3 || result.scheduledFrameDirtyRemaining !== 1) {
     throw new Error('Main bootstrap smoke failed: runtime frame scheduler should sample, plan, and run budgeted queues')
+  }
+
+  if (!result.scheduledFrameBacklogged || !result.scheduledFrameSummaryLabel.includes('pressure=high') || !result.scheduledFrameSummaryLabel.includes('dirty=3/4')) {
+    throw new Error('Main bootstrap smoke failed: runtime frame summary should expose pressure and queue backlog')
   }
 
   return result
