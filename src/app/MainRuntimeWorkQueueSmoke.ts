@@ -11,8 +11,14 @@ export type MainRuntimeWorkQueueSmokeResult = {
   consumeRemaining: number
   cappedPending: number
   cappedMaxPending: number | null
+  cappedDropped: number
+  cappedTryAccepted: boolean
+  cappedTryDropped: number
   cappedUniquePending: number
   cappedUniqueKeys: number
+  cappedUniqueDropped: number
+  cappedUniqueTryAccepted: boolean
+  cappedUniqueTryDropped: number
   queueLikeDirtyProcessed: number
   queueLikeDirtyRemaining: number
   processedItems: string[]
@@ -40,8 +46,10 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
 
   const cappedQueue = createMainRuntimeTaskQueue(['cap-a', 'cap-b', 'cap-c'], { maxPending: 2 })
   const cappedPending = cappedQueue.enqueue('cap-d')
+  const cappedTry = cappedQueue.tryEnqueue('cap-e')
   const cappedUniqueQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['unique-a', 'unique-b', 'unique-c'], { maxPending: 2 })
   const cappedUniquePending = cappedUniqueQueue.enqueueUnique('unique-d')
+  const cappedUniqueTry = cappedUniqueQueue.tryEnqueueUnique('unique-e')
 
   const queueLikeDirtyQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['dirty-a', 'dirty-a', 'dirty-b', 'dirty-c'])
   const queueLikeProcessedItems: string[] = []
@@ -64,8 +72,14 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
     consumeRemaining: consumeResult.remaining,
     cappedPending,
     cappedMaxPending: cappedQueue.maxPending,
+    cappedDropped: cappedQueue.dropped,
+    cappedTryAccepted: cappedTry.accepted,
+    cappedTryDropped: cappedTry.dropped,
     cappedUniquePending,
     cappedUniqueKeys: cappedUniqueQueue.uniqueKeys,
+    cappedUniqueDropped: cappedUniqueQueue.dropped,
+    cappedUniqueTryAccepted: cappedUniqueTry.accepted,
+    cappedUniqueTryDropped: cappedUniqueTry.dropped,
     queueLikeDirtyProcessed: queueLikeResult.dirtyChunkSummaries.processed,
     queueLikeDirtyRemaining: queueLikeResult.dirtyChunkSummaries.remaining,
     processedItems,
@@ -95,8 +109,12 @@ export function assertMainRuntimeWorkQueueSmoke(result = runMainRuntimeWorkQueue
     throw new Error('Main runtime work queue smoke failed: task queues should consume items without materializing drain arrays')
   }
 
-  if (result.cappedPending !== 2 || result.cappedMaxPending !== 2 || result.cappedUniquePending !== 2 || result.cappedUniqueKeys !== 2) {
-    throw new Error('Main runtime work queue smoke failed: capped queues should reject excess pending work')
+  if (result.cappedPending !== 2 || result.cappedMaxPending !== 2 || result.cappedDropped !== 2 || result.cappedTryAccepted || result.cappedTryDropped !== 2) {
+    throw new Error('Main runtime work queue smoke failed: capped queues should reject and count excess pending work')
+  }
+
+  if (result.cappedUniquePending !== 2 || result.cappedUniqueKeys !== 2 || result.cappedUniqueDropped !== 2 || result.cappedUniqueTryAccepted || result.cappedUniqueTryDropped !== 2) {
+    throw new Error('Main runtime work queue smoke failed: capped unique queues should reject and count excess unique work')
   }
 
   if (result.queueLikeDirtyProcessed !== 2 || result.queueLikeDirtyRemaining !== 1 || result.queueLikeProcessedItems.join(',') !== 'dirty-a,dirty-b') {
