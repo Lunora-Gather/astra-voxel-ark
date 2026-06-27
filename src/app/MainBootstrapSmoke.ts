@@ -1,6 +1,7 @@
 import type { BlockId } from '../blocks'
 import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
 import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
+import { runMainRuntimeFrame } from './MainRuntimeFrameScheduler'
 import { runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainBootstrapSmokeResult = {
@@ -28,6 +29,9 @@ export type MainBootstrapSmokeResult = {
   adapterQueueTerrainProcessed: number
   adapterQueueDirtyProcessed: number
   adapterQueueDirtyRemaining: number
+  scheduledFrameTerrainProcessed: number
+  scheduledFrameDirtyProcessed: number
+  scheduledFrameDirtyRemaining: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -83,6 +87,20 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     runDirtyChunkSummaryTask: (task) => dirtyProcessed.push(task),
   })
 
+  const scheduledAdapter = createHeadlessMainRuntimeAdapter(new Map<string, BlockId>(), 'balanced', { info: () => undefined })
+  scheduledAdapter.onFrame({ timestamp: 16 })
+  const scheduledTerrainQueue = ['terrain-scheduled-a', 'terrain-scheduled-b']
+  const scheduledDirtyQueue = ['dirty-scheduled-a', 'dirty-scheduled-b', 'dirty-scheduled-c', 'dirty-scheduled-d']
+  const scheduledFrame = runMainRuntimeFrame(scheduledAdapter, {
+    frame: { timestamp: 132 },
+    queues: {
+      terrainQueue: scheduledTerrainQueue,
+      dirtyChunkSummaryQueue: scheduledDirtyQueue,
+      runTerrainTask: () => undefined,
+      runDirtyChunkSummaryTask: () => undefined,
+    },
+  })
+
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
     chunkCount: bootstrap.chunkMirror.chunkCount,
@@ -108,8 +126,12 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     adapterQueueTerrainProcessed: queueResult.terrain.processed,
     adapterQueueDirtyProcessed: queueResult.dirtyChunkSummaries.processed,
     adapterQueueDirtyRemaining: queueResult.dirtyChunkSummaries.remaining,
+    scheduledFrameTerrainProcessed: scheduledFrame.queues.terrain.processed,
+    scheduledFrameDirtyProcessed: scheduledFrame.queues.dirtyChunkSummaries.processed,
+    scheduledFrameDirtyRemaining: scheduledFrame.queues.dirtyChunkSummaries.remaining,
   }
 
+  scheduledAdapter.dispose()
   adapter.dispose()
   bootstrap.dispose()
   return result
@@ -158,6 +180,10 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (result.adapterQueueTerrainProcessed !== 0 || result.adapterQueueDirtyProcessed !== 3 || result.adapterQueueDirtyRemaining !== 2) {
     throw new Error('Main bootstrap smoke failed: runtime queue runner should execute only budgeted work')
+  }
+
+  if (result.scheduledFrameTerrainProcessed !== 0 || result.scheduledFrameDirtyProcessed !== 3 || result.scheduledFrameDirtyRemaining !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime frame scheduler should sample, plan, and run budgeted queues')
   }
 
   return result
