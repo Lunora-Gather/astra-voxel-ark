@@ -132,7 +132,7 @@ export function createMainRuntimeAdapter({
       stats.resyncCount += 1
       return bootstrap.syncAllBlocks().mirroredBlocks
     },
-    markAllChunksDirty: () => bootstrap.markAllDirty(),
+    markAllChunksDirty: () => bootstrap.markAllChunksDirty(),
     onFrame: (options) => {
       const frame = bootstrap.recordFrame(options)
       const budget = getBudgetForFrame(frame)
