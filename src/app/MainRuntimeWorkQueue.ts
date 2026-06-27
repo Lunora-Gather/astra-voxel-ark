@@ -29,20 +29,21 @@ export type MainRuntimeWorkQueueResult = {
 
 export function runMainRuntimeQueue<T>({ queue, limit, run }: MainRuntimeQueueRunOptions<T>): MainRuntimeQueueRunResult {
   const requested = clampQueueLimit(limit)
-  let processed = 0
+  const items = drainMainRuntimeQueue(queue, requested)
 
-  while (processed < requested && queue.length > 0) {
-    const item = queue.shift()
-    if (item === undefined) break
-    run(item)
-    processed++
-  }
+  for (const item of items) run(item)
 
   return {
     requested,
-    processed,
+    processed: items.length,
     remaining: queue.length,
   }
+}
+
+export function drainMainRuntimeQueue<T>(queue: T[], limit: number) {
+  const requested = clampQueueLimit(limit)
+  if (requested <= 0 || queue.length === 0) return []
+  return queue.splice(0, Math.min(requested, queue.length))
 }
 
 export function runMainRuntimeWorkQueues<TerrainTask, DirtyTask>(
