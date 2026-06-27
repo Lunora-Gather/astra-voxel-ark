@@ -1,6 +1,7 @@
 import type { BlockId } from '../blocks'
 import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
 import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
+import { createMainRuntimeFrameReporter } from './MainRuntimeFrameReporter'
 import { runMainRuntimeFrame } from './MainRuntimeFrameScheduler'
 import { formatMainRuntimeFrameSummary, isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame } from './MainRuntimeFrameSummary'
 import { createMainRuntimeOrchestrator } from './MainRuntimeOrchestrator'
@@ -36,11 +37,14 @@ export type MainBootstrapSmokeResult = {
   scheduledFrameDirtyRemaining: number
   scheduledFrameBacklogged: boolean
   scheduledFrameSummaryLabel: string
+  runtimeReporterFirstPublished: boolean
+  runtimeReporterSecondSuppressed: boolean
   orchestratorFrameCount: number
   orchestratorDirtyProcessed: number
   orchestratorBacklogFrames: number
   orchestratorHistoryFrames: number
   orchestratorHighPressureFrames: number
+  orchestratorReportPublished: boolean
   orchestratorSummaryLabel: string
 }
 
@@ -112,6 +116,9 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   })
   const scheduledFrameSummary = summarizeMainRuntimeFrame(scheduledFrame)
   const scheduledFrameSummaryLabel = formatMainRuntimeFrameSummary(scheduledFrameSummary)
+  const runtimeReporter = createMainRuntimeFrameReporter({ minIntervalMs: 250 })
+  const runtimeReporterFirst = runtimeReporter.report(scheduledFrameSummary, 1000)
+  const runtimeReporterSecond = runtimeReporter.report({ ...scheduledFrameSummary, dirtyChunkSummariesRemaining: 0 }, 1100)
 
   const orchestrator = createMainRuntimeOrchestrator({
     adapter: createHeadlessMainRuntimeAdapter(new Map<string, BlockId>(), 'balanced', { info: () => undefined }),
@@ -120,6 +127,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     runTerrainTask: () => undefined,
     runDirtyChunkSummaryTask: () => undefined,
     historyLimit: 4,
+    summaryReportIntervalMs: 250,
   })
   orchestrator.adapter.onFrame({ timestamp: 16 })
   const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
@@ -155,11 +163,14 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     scheduledFrameDirtyRemaining: scheduledFrame.queues.dirtyChunkSummaries.remaining,
     scheduledFrameBacklogged: isMainRuntimeFrameBacklogged(scheduledFrameSummary),
     scheduledFrameSummaryLabel,
+    runtimeReporterFirstPublished: runtimeReporterFirst.shouldPublish,
+    runtimeReporterSecondSuppressed: !runtimeReporterSecond.shouldPublish,
     orchestratorFrameCount: orchestrator.stats.frames,
     orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
     orchestratorBacklogFrames: orchestrator.stats.backlogFrames,
     orchestratorHistoryFrames: orchestratedFrame.history.frameCount,
     orchestratorHighPressureFrames: orchestrator.stats.pressureFrames.high,
+    orchestratorReportPublished: orchestratedFrame.report.shouldPublish,
     orchestratorSummaryLabel,
   }
 
@@ -223,12 +234,16 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame summary should expose pressure and queue backlog')
   }
 
+  if (!result.runtimeReporterFirstPublished || !result.runtimeReporterSecondSuppressed) {
+    throw new Error('Main bootstrap smoke failed: runtime frame reporter should publish once and throttle rapid label updates')
+  }
+
   if (result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
     throw new Error('Main bootstrap smoke failed: runtime orchestrator should run frames, record history, and track high pressure backlog')
   }
 
-  if (!result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
-    throw new Error('Main bootstrap smoke failed: runtime orchestrator should expose a HUD-ready summary label')
+  if (!result.orchestratorReportPublished || !result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should expose a throttled HUD-ready summary label')
   }
 
   return result
