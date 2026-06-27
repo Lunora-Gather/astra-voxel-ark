@@ -23,25 +23,50 @@
     "vite": "^8.0.16"
   },
   "devDependencies": {
-    "@vitejs/plugin-basic-ssl": "^2.1.0",
-    "electron": "^39.2.7",
+    "@capacitor/cli": "^7.4.4",
+    "electron": "^39.2.4",
     "electron-builder": "^26.0.12"
   },
+  "name": "astra-voxel-ark",
+  "version": "1.4.0",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "description": "A landscape-first voxel sandbox app for web, Android, Ubuntu Linux and Windows",
+  "private": false,
   "main": "electron/main.cjs",
   "build": {
     "appId": "com.lunoragather.astravoxelark",
     "productName": "AstraVoxel Ark",
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "dist/**/*",
       "electron/**/*",
       "package.json"
     ],
-    "directories": {
-      "buildResources": "electron/assets",
-      "output": "release"
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
     }
   },
-  "overrides": {
-    "@rollup/rollup-linux-x64-gnu": "latest"
+  "author": {
+    "name": "Lunora-Gather",
+    "email": "info@example.com"
   }
 }
