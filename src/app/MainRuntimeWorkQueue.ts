@@ -14,6 +14,15 @@ export type MainRuntimeQueueRunResult = {
   remaining: number
 }
 
+export type MainRuntimeTaskQueue<T = unknown> = {
+  readonly length: number
+  readonly pending: number
+  enqueue: (item: T) => number
+  drain: (limit: number) => T[]
+  clear: () => void
+  compact: () => void
+}
+
 export type MainRuntimeWorkQueues<TerrainTask = unknown, DirtyTask = unknown> = {
   terrainQueue?: TerrainTask[]
   dirtyChunkSummaryQueue?: DirtyTask[]
@@ -27,6 +36,52 @@ export type MainRuntimeWorkQueueResult = {
   diagnosticsLimit: number
 }
 
+const QUEUE_COMPACTION_THRESHOLD = 256
+
+export function createMainRuntimeTaskQueue<T>(initialItems: T[] = []): MainRuntimeTaskQueue<T> {
+  let items = [...initialItems]
+  let cursor = 0
+
+  const compact = () => {
+    if (cursor <= 0) return
+    items = items.slice(cursor)
+    cursor = 0
+  }
+
+  return {
+    get length() {
+      return items.length - cursor
+    },
+    get pending() {
+      return items.length - cursor
+    },
+    enqueue: (item) => {
+      items.push(item)
+      return items.length - cursor
+    },
+    drain: (limit) => {
+      const requested = clampQueueLimit(limit)
+      const available = items.length - cursor
+      if (requested <= 0 || available <= 0) return []
+      const count = Math.min(requested, available)
+      const drained = items.slice(cursor, cursor + count)
+      cursor += count
+      if (cursor >= items.length) {
+        items.length = 0
+        cursor = 0
+      } else if (cursor >= QUEUE_COMPACTION_THRESHOLD && cursor > items.length / 2) {
+        compact()
+      }
+      return drained
+    },
+    clear: () => {
+      items.length = 0
+      cursor = 0
+    },
+    compact,
+  }
+}
+
 export function runMainRuntimeQueue<T>({ queue, limit, run }: MainRuntimeQueueRunOptions<T>): MainRuntimeQueueRunResult {
   const requested = clampQueueLimit(limit)
   const items = drainMainRuntimeQueue(queue, requested)
@@ -37,6 +92,21 @@ export function runMainRuntimeQueue<T>({ queue, limit, run }: MainRuntimeQueueRu
     requested,
     processed: items.length,
     remaining: queue.length,
+  }
+}
+
+export function runMainRuntimeTaskQueue<T>(
+  queue: MainRuntimeTaskQueue<T>,
+  limit: number,
+  run: MainRuntimeQueueTask<T>,
+): MainRuntimeQueueRunResult {
+  const requested = clampQueueLimit(limit)
+  const items = queue.drain(requested)
+  for (const item of items) run(item)
+  return {
+    requested,
+    processed: items.length,
+    remaining: queue.pending,
   }
 }
 
