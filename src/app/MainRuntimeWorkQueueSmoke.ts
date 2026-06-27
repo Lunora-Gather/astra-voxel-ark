@@ -1,4 +1,5 @@
-import { createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue } from './MainRuntimeWorkQueue'
+import { planMainRuntimeWork } from './MainRuntimeAdapter'
+import { createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainRuntimeWorkQueueSmokeResult = {
   initialPending: number
@@ -6,7 +7,10 @@ export type MainRuntimeWorkQueueSmokeResult = {
   processedFirstBatch: number
   remainingAfterFirstBatch: number
   requeuedAfterDrain: number
+  queueLikeDirtyProcessed: number
+  queueLikeDirtyRemaining: number
   processedItems: string[]
+  queueLikeProcessedItems: string[]
 }
 
 export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult {
@@ -19,13 +23,27 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
   const requeuedAfterDrain = queue.enqueueUnique('chunk-a')
   runMainRuntimeTaskQueue(queue, 4, (task) => processedItems.push(task))
 
+  const queueLikeDirtyQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['dirty-a', 'dirty-a', 'dirty-b', 'dirty-c'])
+  const queueLikeProcessedItems: string[] = []
+  const queueLikePlan = planMainRuntimeWork(
+    { pressure: 'high', terrainChunksPerFrame: 0, dirtyChunkSummariesPerFrame: 2, dirtyChunkDiagnosticsLimit: 1 },
+    { pendingTerrainChunks: 0, pendingDirtyChunkSummaries: queueLikeDirtyQueue.pending },
+  )
+  const queueLikeResult = runMainRuntimeWorkQueues(queueLikePlan, {
+    dirtyChunkSummaryQueue: queueLikeDirtyQueue,
+    runDirtyChunkSummaryTask: (task) => queueLikeProcessedItems.push(task),
+  })
+
   return {
     initialPending,
     initialUniqueKeys,
     processedFirstBatch: firstBatch.processed,
     remainingAfterFirstBatch: firstBatch.remaining,
     requeuedAfterDrain,
+    queueLikeDirtyProcessed: queueLikeResult.dirtyChunkSummaries.processed,
+    queueLikeDirtyRemaining: queueLikeResult.dirtyChunkSummaries.remaining,
     processedItems,
+    queueLikeProcessedItems,
   }
 }
 
@@ -44,6 +62,10 @@ export function assertMainRuntimeWorkQueueSmoke(result = runMainRuntimeWorkQueue
 
   if (result.processedItems.join(',') !== 'chunk-a,chunk-b,chunk-a') {
     throw new Error(`Main runtime work queue smoke failed: unexpected processing order ${result.processedItems.join(',')}`)
+  }
+
+  if (result.queueLikeDirtyProcessed !== 2 || result.queueLikeDirtyRemaining !== 1 || result.queueLikeProcessedItems.join(',') !== 'dirty-a,dirty-b') {
+    throw new Error('Main runtime work queue smoke failed: work queue runner should accept queue-like dirty queues')
   }
 
   return result
