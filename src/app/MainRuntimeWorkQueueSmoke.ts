@@ -1,5 +1,5 @@
 import { planMainRuntimeWork } from './MainRuntimeAdapter'
-import { createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
+import { createMainRuntimeTaskQueue, createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainRuntimeWorkQueueSmokeResult = {
   initialPending: number
@@ -7,9 +7,12 @@ export type MainRuntimeWorkQueueSmokeResult = {
   processedFirstBatch: number
   remainingAfterFirstBatch: number
   requeuedAfterDrain: number
+  consumeProcessed: number
+  consumeRemaining: number
   queueLikeDirtyProcessed: number
   queueLikeDirtyRemaining: number
   processedItems: string[]
+  consumeProcessedItems: string[]
   queueLikeProcessedItems: string[]
 }
 
@@ -22,6 +25,14 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
   const firstBatch = runMainRuntimeTaskQueue(queue, 1, (task) => processedItems.push(task))
   const requeuedAfterDrain = queue.enqueueUnique('chunk-a')
   runMainRuntimeTaskQueue(queue, 4, (task) => processedItems.push(task))
+
+  const consumeQueue = createMainRuntimeTaskQueue(['consume-a', 'consume-b', 'consume-c'])
+  const consumeProcessedItems: string[] = []
+  const consumeResult = consumeQueue.consume?.(2, (task) => consumeProcessedItems.push(task)) ?? {
+    requested: 0,
+    processed: 0,
+    remaining: consumeQueue.pending,
+  }
 
   const queueLikeDirtyQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['dirty-a', 'dirty-a', 'dirty-b', 'dirty-c'])
   const queueLikeProcessedItems: string[] = []
@@ -40,9 +51,12 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
     processedFirstBatch: firstBatch.processed,
     remainingAfterFirstBatch: firstBatch.remaining,
     requeuedAfterDrain,
+    consumeProcessed: consumeResult.processed,
+    consumeRemaining: consumeResult.remaining,
     queueLikeDirtyProcessed: queueLikeResult.dirtyChunkSummaries.processed,
     queueLikeDirtyRemaining: queueLikeResult.dirtyChunkSummaries.remaining,
     processedItems,
+    consumeProcessedItems,
     queueLikeProcessedItems,
   }
 }
@@ -62,6 +76,10 @@ export function assertMainRuntimeWorkQueueSmoke(result = runMainRuntimeWorkQueue
 
   if (result.processedItems.join(',') !== 'chunk-a,chunk-b,chunk-a') {
     throw new Error(`Main runtime work queue smoke failed: unexpected processing order ${result.processedItems.join(',')}`)
+  }
+
+  if (result.consumeProcessed !== 2 || result.consumeRemaining !== 1 || result.consumeProcessedItems.join(',') !== 'consume-a,consume-b') {
+    throw new Error('Main runtime work queue smoke failed: task queues should consume items without materializing drain arrays')
   }
 
   if (result.queueLikeDirtyProcessed !== 2 || result.queueLikeDirtyRemaining !== 1 || result.queueLikeProcessedItems.join(',') !== 'dirty-a,dirty-b') {
