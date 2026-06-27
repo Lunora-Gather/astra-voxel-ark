@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import { getBlockDef, type BlockId } from './blocks'
 
 const TEXTURE_SIZE = 96
+const MATERIAL_ANIMATION_FPS = 30
 type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
 const generatedTextureCache = new Map<string, THREE.CanvasTexture>()
 const generatedMaterialCache = new Map<string, THREE.MeshStandardMaterial>()
+let materialAnimationFrames = new WeakMap<THREE.Texture, number>()
 
 function hashSeed(seed: string) {
   let h = 2166136261
@@ -47,6 +49,7 @@ export function clearGeneratedTextureCache() {
   generatedTextureCache.forEach((texture) => texture.dispose())
   generatedTextureCache.clear()
   clearGeneratedMaterialCache()
+  resetMaterialAnimationThrottle()
 }
 
 export function getGeneratedTextureCacheSize() {
@@ -60,6 +63,10 @@ export function clearGeneratedMaterialCache() {
 
 export function getGeneratedMaterialCacheSize() {
   return generatedMaterialCache.size
+}
+
+export function resetMaterialAnimationThrottle() {
+  materialAnimationFrames = new WeakMap<THREE.Texture, number>()
 }
 
 function fill(ctx: CanvasRenderingContext2D, color: string) {
@@ -486,7 +493,13 @@ export function createBlockMaterials() {
 export function animateBlockMaterials(materials: Map<BlockId, BlockMaterial>, elapsedTime: number) {
   const water = materials.get('water')
   const waterMaterial = Array.isArray(water) ? water[0] : water
-  if (!waterMaterial?.map) return
-  waterMaterial.map.offset.x = (elapsedTime * 0.018) % 1
-  waterMaterial.map.offset.y = (Math.sin(elapsedTime * 0.28) * 0.015 + elapsedTime * 0.012) % 1
+  const waterMap = waterMaterial?.map
+  if (!waterMap) return
+
+  const animationFrame = Math.floor(elapsedTime * MATERIAL_ANIMATION_FPS)
+  if (materialAnimationFrames.get(waterMap) === animationFrame) return
+  materialAnimationFrames.set(waterMap, animationFrame)
+
+  waterMap.offset.x = (elapsedTime * 0.018) % 1
+  waterMap.offset.y = (Math.sin(elapsedTime * 0.28) * 0.015 + elapsedTime * 0.012) % 1
 }
