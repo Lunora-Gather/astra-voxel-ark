@@ -3,6 +3,7 @@ import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
 import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
 import { runMainRuntimeFrame } from './MainRuntimeFrameScheduler'
 import { formatMainRuntimeFrameSummary, isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame } from './MainRuntimeFrameSummary'
+import { createMainRuntimeOrchestrator } from './MainRuntimeOrchestrator'
 import { runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainBootstrapSmokeResult = {
@@ -35,6 +36,12 @@ export type MainBootstrapSmokeResult = {
   scheduledFrameDirtyRemaining: number
   scheduledFrameBacklogged: boolean
   scheduledFrameSummaryLabel: string
+  orchestratorFrameCount: number
+  orchestratorDirtyProcessed: number
+  orchestratorBacklogFrames: number
+  orchestratorHistoryFrames: number
+  orchestratorHighPressureFrames: number
+  orchestratorSummaryLabel: string
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -106,6 +113,18 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const scheduledFrameSummary = summarizeMainRuntimeFrame(scheduledFrame)
   const scheduledFrameSummaryLabel = formatMainRuntimeFrameSummary(scheduledFrameSummary)
 
+  const orchestrator = createMainRuntimeOrchestrator({
+    adapter: createHeadlessMainRuntimeAdapter(new Map<string, BlockId>(), 'balanced', { info: () => undefined }),
+    terrainQueue: ['terrain-orchestrated-a', 'terrain-orchestrated-b'],
+    dirtyChunkSummaryQueue: ['dirty-orchestrated-a', 'dirty-orchestrated-b', 'dirty-orchestrated-c', 'dirty-orchestrated-d'],
+    runTerrainTask: () => undefined,
+    runDirtyChunkSummaryTask: () => undefined,
+    historyLimit: 4,
+  })
+  orchestrator.adapter.onFrame({ timestamp: 16 })
+  const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
+  const orchestratorSummaryLabel = orchestrator.getSummaryLabel()
+
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
     chunkCount: bootstrap.chunkMirror.chunkCount,
@@ -136,8 +155,15 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     scheduledFrameDirtyRemaining: scheduledFrame.queues.dirtyChunkSummaries.remaining,
     scheduledFrameBacklogged: isMainRuntimeFrameBacklogged(scheduledFrameSummary),
     scheduledFrameSummaryLabel,
+    orchestratorFrameCount: orchestrator.stats.frames,
+    orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
+    orchestratorBacklogFrames: orchestrator.stats.backlogFrames,
+    orchestratorHistoryFrames: orchestratedFrame.history.frameCount,
+    orchestratorHighPressureFrames: orchestrator.stats.pressureFrames.high,
+    orchestratorSummaryLabel,
   }
 
+  orchestrator.dispose()
   scheduledAdapter.dispose()
   adapter.dispose()
   bootstrap.dispose()
@@ -195,6 +221,14 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (!result.scheduledFrameBacklogged || !result.scheduledFrameSummaryLabel.includes('pressure=high') || !result.scheduledFrameSummaryLabel.includes('dirty=3/4')) {
     throw new Error('Main bootstrap smoke failed: runtime frame summary should expose pressure and queue backlog')
+  }
+
+  if (result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should run frames, record history, and track high pressure backlog')
+  }
+
+  if (!result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should expose a HUD-ready summary label')
   }
 
   return result
