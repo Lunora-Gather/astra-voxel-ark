@@ -68,5 +68,8 @@
   "author": {
     "name": "Lunora-Gather",
     "email": "info@example.com"
+  },
+  "overrides": {
+    "@rollup/rollup-linux-x64-gnu": "latest"
   }
 }
