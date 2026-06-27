@@ -17,28 +17,33 @@ export type MainRuntimeFrameReporter = {
 }
 
 const DEFAULT_SUMMARY_REPORT_INTERVAL_MS = 250
+const SECONDS_TIMESTAMP_MAX = 10000
 
 export function createMainRuntimeFrameReporter({
   minIntervalMs = DEFAULT_SUMMARY_REPORT_INTERVAL_MS,
 }: MainRuntimeFrameReporterOptions = {}): MainRuntimeFrameReporter {
   const interval = clampMainRuntimeFrameReportInterval(minIntervalMs)
   let lastLabel = ''
+  let lastSourceKey = ''
   let lastPublishedAt = -Infinity
 
   return {
     report: (summary, timestampMs = Date.now()) => {
-      const label = formatMainRuntimeFrameSummary(summary)
+      const sourceKey = getMainRuntimeFrameSummaryKey(summary)
+      const label = sourceKey === lastSourceKey && lastLabel ? lastLabel : formatMainRuntimeFrameSummary(summary)
+      const normalizedTimestampMs = normalizeMainRuntimeFrameTimestamp(timestampMs)
       const shouldPublish = shouldPublishMainRuntimeFrameSummary({
         label,
         lastLabel,
-        timestampMs,
+        timestampMs: normalizedTimestampMs,
         lastPublishedAt,
         minIntervalMs: interval,
       })
 
       if (shouldPublish) {
         lastLabel = label
-        lastPublishedAt = timestampMs
+        lastSourceKey = sourceKey
+        lastPublishedAt = normalizedTimestampMs
       }
 
       return {
@@ -50,6 +55,7 @@ export function createMainRuntimeFrameReporter({
     peek: () => lastLabel,
     reset: () => {
       lastLabel = ''
+      lastSourceKey = ''
       lastPublishedAt = -Infinity
     },
   }
@@ -70,7 +76,26 @@ export function shouldPublishMainRuntimeFrameSummary({
 }) {
   if (!label) return false
   if (label === lastLabel) return false
-  return timestampMs - lastPublishedAt >= clampMainRuntimeFrameReportInterval(minIntervalMs)
+  return normalizeMainRuntimeFrameTimestamp(timestampMs) - lastPublishedAt >= clampMainRuntimeFrameReportInterval(minIntervalMs)
+}
+
+export function getMainRuntimeFrameSummaryKey(summary: MainRuntimeFrameSummary) {
+  return [
+    summary.pressure,
+    Math.round(summary.averageFps),
+    summary.averageFrameMs.toFixed(1),
+    summary.terrainProcessed,
+    summary.terrainRemaining,
+    summary.dirtyChunkSummariesProcessed,
+    summary.dirtyChunkSummariesRemaining,
+    summary.diagnosticsLimit,
+  ].join('|')
+}
+
+export function normalizeMainRuntimeFrameTimestamp(timestamp: number) {
+  if (!Number.isFinite(timestamp)) return Date.now()
+  if (timestamp >= 0 && timestamp < SECONDS_TIMESTAMP_MAX) return Math.floor(timestamp * 1000)
+  return Math.floor(timestamp)
 }
 
 export function clampMainRuntimeFrameReportInterval(value: number) {
