@@ -2,12 +2,13 @@ import type * as THREE from 'three'
 import type { BlockId } from '../blocks'
 import type { QualityPreset } from '../game'
 import type { ChunkRecord, TerrainGeneratorOptions } from '../world'
-import { AdaptiveQualityController } from './AdaptiveQualityController'
+import { AdaptiveQualityController, type AdaptiveQualityDecision } from './AdaptiveQualityController'
+import type { DirtyChunkMeshUpdate } from './ChunkMeshIntegration'
 import { ChunkRebuildScheduler } from './ChunkRebuildScheduler'
 import { LegacyChunkMirrorController } from './LegacyChunkMirrorController'
-import type { LegacyBlockMap } from './LegacyWorldBridge'
+import type { LegacyBlockMap, LegacyWorldMirrorResult } from './LegacyWorldBridge'
 import { createOptimizationRuntime, type OptimizationRuntime } from './OptimizationRuntime'
-import { PerformanceSampler } from './PerformanceSampler'
+import { PerformanceSampler, type PerformanceSample } from './PerformanceSampler'
 import { runMainDiagnosticsHook } from './MainDiagnosticsHook'
 
 export type MainOptimizationBootstrapOptions = {
@@ -23,6 +24,21 @@ export type MainOptimizationBootstrapOptions = {
   logger?: Pick<Console, 'info'>
 }
 
+export type MainOptimizationFrameOptions = {
+  timestamp?: number
+  dirtyChunkLimit?: number
+  clearDirtyDiagnostics?: boolean
+}
+
+export type MainOptimizationFrameResult = {
+  sample: PerformanceSample
+  qualityDecision: AdaptiveQualityDecision
+  dirtyChunkDiagnostics: DirtyChunkMeshUpdate[]
+  mirroredBlocks: number
+  mirroredChunks: number
+  scheduledChunkRebuilds: number
+}
+
 export type MainOptimizationBootstrap = {
   optimization: OptimizationRuntime
   chunkMirror: LegacyChunkMirrorController
@@ -31,6 +47,10 @@ export type MainOptimizationBootstrap = {
   chunkRebuilds: ChunkRebuildScheduler<ChunkRecord>
   syncBlockSet: (key: string, id: BlockId) => boolean
   syncBlockDelete: (key: string) => boolean
+  syncAllBlocks: () => LegacyWorldMirrorResult
+  markAllChunksDirty: () => void
+  diagnoseDirtyChunks: (options?: MainOptimizationFrameOptions) => DirtyChunkMeshUpdate[]
+  recordFrame: (options?: MainOptimizationFrameOptions) => MainOptimizationFrameResult
   dispose: () => void
 }
 
@@ -69,6 +89,26 @@ export function bootstrapMainOptimizations({
     logger,
   })
 
+  const diagnoseDirtyChunks = ({ dirtyChunkLimit = 4, clearDirtyDiagnostics = false }: MainOptimizationFrameOptions = {}) => {
+    if (!optimization.flags.chunkMeshDiagnostics) return []
+    return chunkMirror.diagnoseDirtyChunks({ limit: dirtyChunkLimit, clearDirty: clearDirtyDiagnostics })
+  }
+
+  const recordFrame = (options: MainOptimizationFrameOptions = {}): MainOptimizationFrameResult => {
+    const sample = performance.begin(options.timestamp)
+    const qualityDecision = quality.evaluate(sample)
+    const dirtyChunkDiagnostics = diagnoseDirtyChunks(options)
+
+    return {
+      sample,
+      qualityDecision,
+      dirtyChunkDiagnostics,
+      mirroredBlocks: chunkMirror.blockCount,
+      mirroredChunks: chunkMirror.chunkCount,
+      scheduledChunkRebuilds: chunkRebuilds.size,
+    }
+  }
+
   return {
     optimization,
     chunkMirror,
@@ -77,6 +117,10 @@ export function bootstrapMainOptimizations({
     chunkRebuilds,
     syncBlockSet: (key, id) => chunkMirror.setBlock(key, id),
     syncBlockDelete: (key) => chunkMirror.deleteBlock(key),
+    syncAllBlocks: () => chunkMirror.syncFromLegacyMap(blockData),
+    markAllChunksDirty: () => chunkMirror.markAllDirty(),
+    diagnoseDirtyChunks,
+    recordFrame,
     dispose: () => {
       chunkRebuilds.clear()
       optimization.dispose()
