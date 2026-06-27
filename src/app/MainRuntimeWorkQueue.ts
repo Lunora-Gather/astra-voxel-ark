@@ -21,6 +21,7 @@ export type MainRuntimeTaskQueue<T = unknown> = {
   readonly pending: number
   enqueue: (item: T) => number
   drain: (limit: number) => T[]
+  consume?: (limit: number, run: MainRuntimeQueueTask<T>) => MainRuntimeQueueRunResult
   clear: () => void
   compact: () => void
 }
@@ -58,6 +59,15 @@ export function createMainRuntimeTaskQueue<T>(initialItems: T[] = []): MainRunti
     cursor = 0
   }
 
+  const compactAfterRead = () => {
+    if (cursor >= items.length) {
+      items.length = 0
+      cursor = 0
+    } else if (cursor >= QUEUE_COMPACTION_THRESHOLD && cursor > items.length / 2) {
+      compact()
+    }
+  }
+
   return {
     get length() {
       return items.length - cursor
@@ -76,13 +86,27 @@ export function createMainRuntimeTaskQueue<T>(initialItems: T[] = []): MainRunti
       const count = Math.min(requested, available)
       const drained = items.slice(cursor, cursor + count)
       cursor += count
-      if (cursor >= items.length) {
-        items.length = 0
-        cursor = 0
-      } else if (cursor >= QUEUE_COMPACTION_THRESHOLD && cursor > items.length / 2) {
-        compact()
-      }
+      compactAfterRead()
       return drained
+    },
+    consume: (limit, run) => {
+      const requested = clampQueueLimit(limit)
+      const available = items.length - cursor
+      if (requested <= 0 || available <= 0) return { requested, processed: 0, remaining: available }
+
+      const count = Math.min(requested, available)
+      let processed = 0
+      while (processed < count) {
+        run(items[cursor])
+        cursor++
+        processed++
+      }
+      compactAfterRead()
+      return {
+        requested,
+        processed,
+        remaining: items.length - cursor,
+      }
     },
     clear: () => {
       items.length = 0
@@ -125,6 +149,15 @@ export function createMainRuntimeUniqueTaskQueue<T>(
       for (const item of drained) queuedKeys.delete(getKey(item))
       return drained
     },
+    consume: (limit, run) => queue.consume
+      ? queue.consume(limit, (item) => {
+          queuedKeys.delete(getKey(item))
+          run(item)
+        })
+      : runMainRuntimeTaskQueue(queue, limit, (item) => {
+          queuedKeys.delete(getKey(item))
+          run(item)
+        }),
     clear: () => {
       queue.clear()
       queuedKeys.clear()
@@ -152,6 +185,8 @@ export function runMainRuntimeTaskQueue<T>(
   limit: number,
   run: MainRuntimeQueueTask<T>,
 ): MainRuntimeQueueRunResult {
+  if (queue.consume) return queue.consume(limit, run)
+
   const requested = clampQueueLimit(limit)
   const items = queue.drain(requested)
   for (const item of items) run(item)
