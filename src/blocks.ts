@@ -31,3 +31,11 @@ export const BLOCKS: BlockDef[] = [
   { id: 'copper', name: 'Copper', color: 0xb67d40, roughness: 0.65, metalness: 0.8 },
   { id: 'gold', name: 'Gold', color: 0xefd521, roughness: 0.4, metalness: 0.9 },
 ]
+
+export const BLOCK_BY_ID = new Map<BlockId, BlockDef>(BLOCKS.map((block) => [block.id, block]))
+
+export function getBlockDef(id: BlockId): BlockDef {
+  const block = BLOCK_BY_ID.get(id)
+  if (!block) throw new Error(`Unknown block id: ${id}`)
+  return block
+}
