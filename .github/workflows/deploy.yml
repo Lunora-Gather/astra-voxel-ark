@@ -46,11 +46,11 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          name: astra-voxel-pages
+          name: astra-voxel-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: './dist'
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          artifact_name: astra-voxel-pages
+          artifact_name: astra-voxel-pages-${{ github.run_id }}-${{ github.run_attempt }}
