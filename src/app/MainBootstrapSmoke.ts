@@ -1,6 +1,7 @@
 import type { BlockId } from '../blocks'
 import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
 import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
+import { runMainRuntimeWorkQueues } from './MainRuntimeWorkQueue'
 
 export type MainBootstrapSmokeResult = {
   mirroredBlocks: number
@@ -24,6 +25,9 @@ export type MainBootstrapSmokeResult = {
   adapterHighWorkTerrain: number
   adapterHighWorkDirtySummaries: number
   adapterHighWorkDiagnosticsLimit: number
+  adapterQueueTerrainProcessed: number
+  adapterQueueDirtyProcessed: number
+  adapterQueueDirtyRemaining: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -68,6 +72,17 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const highPressureAdapterFrame = adapter.onFrame({ timestamp: 132 })
   const highPressureWorkPlan = adapter.planWork({ pendingTerrainChunks: 4, pendingDirtyChunkSummaries: 8 })
 
+  const terrainQueue = ['terrain-a', 'terrain-b', 'terrain-c']
+  const dirtyQueue = ['dirty-a', 'dirty-b', 'dirty-c', 'dirty-d', 'dirty-e']
+  const terrainProcessed: string[] = []
+  const dirtyProcessed: string[] = []
+  const queueResult = runMainRuntimeWorkQueues(highPressureWorkPlan, {
+    terrainQueue,
+    dirtyChunkSummaryQueue: dirtyQueue,
+    runTerrainTask: (task) => terrainProcessed.push(task),
+    runDirtyChunkSummaryTask: (task) => dirtyProcessed.push(task),
+  })
+
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
     chunkCount: bootstrap.chunkMirror.chunkCount,
@@ -90,6 +105,9 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     adapterHighWorkTerrain: highPressureWorkPlan.terrainChunksToRun,
     adapterHighWorkDirtySummaries: highPressureWorkPlan.dirtyChunkSummariesToRun,
     adapterHighWorkDiagnosticsLimit: highPressureWorkPlan.dirtyChunkDiagnosticsLimit,
+    adapterQueueTerrainProcessed: queueResult.terrain.processed,
+    adapterQueueDirtyProcessed: queueResult.dirtyChunkSummaries.processed,
+    adapterQueueDirtyRemaining: queueResult.dirtyChunkSummaries.remaining,
   }
 
   adapter.dispose()
@@ -136,6 +154,10 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (result.adapterHighWorkDirtySummaries !== 3 || result.adapterHighWorkDiagnosticsLimit !== 1) {
     throw new Error('Main bootstrap smoke failed: runtime work plan should clamp dirty summaries and diagnostics under high pressure')
+  }
+
+  if (result.adapterQueueTerrainProcessed !== 0 || result.adapterQueueDirtyProcessed !== 3 || result.adapterQueueDirtyRemaining !== 2) {
+    throw new Error('Main bootstrap smoke failed: runtime queue runner should execute only budgeted work')
   }
 
   return result
