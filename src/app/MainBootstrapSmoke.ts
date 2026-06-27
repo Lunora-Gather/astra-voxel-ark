@@ -42,6 +42,7 @@ export type MainBootstrapSmokeResult = {
   runtimeReporterSecondTimestampMs: number
   runtimeReporterMillisecondTimestampMs: number
   runtimeReporterSummaryKeyStable: boolean
+  orchestratorInitialDirtyPending: number
   orchestratorFrameCount: number
   orchestratorDirtyProcessed: number
   orchestratorBacklogFrames: number
@@ -126,13 +127,16 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const orchestrator = createMainRuntimeOrchestrator({
     adapter: createHeadlessMainRuntimeAdapter(new Map<string, BlockId>(), 'balanced', { info: () => undefined }),
     terrainQueue: ['terrain-orchestrated-a', 'terrain-orchestrated-b'],
-    dirtyChunkSummaryQueue: ['dirty-orchestrated-a', 'dirty-orchestrated-b', 'dirty-orchestrated-c', 'dirty-orchestrated-d'],
+    dirtyChunkSummaryQueue: ['dirty-orchestrated-a', 'dirty-orchestrated-a', 'dirty-orchestrated-b', 'dirty-orchestrated-c', 'dirty-orchestrated-d'],
+    terrainTaskKey: (task) => task,
+    dirtyChunkSummaryTaskKey: (task) => task,
     runTerrainTask: () => undefined,
     runDirtyChunkSummaryTask: () => undefined,
     historyLimit: 4,
     summaryReportIntervalMs: 250,
     summaryReportTimestampUnit: 'milliseconds',
   })
+  const orchestratorInitialDirtyPending = orchestrator.dirtyChunkSummaryQueue.pending
   orchestrator.adapter.onFrame({ timestamp: 16 })
   const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
   const orchestratorSummaryLabel = orchestrator.getSummaryLabel()
@@ -172,6 +176,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     runtimeReporterSecondTimestampMs: normalizeMainRuntimeFrameTimestamp(1.1, 'seconds'),
     runtimeReporterMillisecondTimestampMs: normalizeMainRuntimeFrameTimestamp(132, 'milliseconds'),
     runtimeReporterSummaryKeyStable: getMainRuntimeFrameSummaryKey(scheduledFrameSummary) === getMainRuntimeFrameSummaryKey({ ...scheduledFrameSummary }),
+    orchestratorInitialDirtyPending,
     orchestratorFrameCount: orchestrator.stats.frames,
     orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
     orchestratorBacklogFrames: orchestrator.stats.backlogFrames,
@@ -245,8 +250,8 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize explicit units, and throttle rapid updates')
   }
 
-  if (result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
-    throw new Error('Main bootstrap smoke failed: runtime orchestrator should run frames, record history, and track high pressure backlog')
+  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, run frames, record history, and track high pressure backlog')
   }
 
   if (!result.orchestratorReportPublished || !result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
