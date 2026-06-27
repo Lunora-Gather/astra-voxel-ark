@@ -1,7 +1,10 @@
 import { formatMainRuntimeFrameSummary, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 
+export type MainRuntimeFrameTimestampUnit = 'milliseconds' | 'seconds'
+
 export type MainRuntimeFrameReporterOptions = {
   minIntervalMs?: number
+  timestampUnit?: MainRuntimeFrameTimestampUnit
 }
 
 export type MainRuntimeFrameReport = {
@@ -17,10 +20,11 @@ export type MainRuntimeFrameReporter = {
 }
 
 const DEFAULT_SUMMARY_REPORT_INTERVAL_MS = 250
-const SECONDS_TIMESTAMP_MAX = 10000
+const MILLISECONDS_PER_SECOND = 1000
 
 export function createMainRuntimeFrameReporter({
   minIntervalMs = DEFAULT_SUMMARY_REPORT_INTERVAL_MS,
+  timestampUnit = 'milliseconds',
 }: MainRuntimeFrameReporterOptions = {}): MainRuntimeFrameReporter {
   const interval = clampMainRuntimeFrameReportInterval(minIntervalMs)
   let lastLabel = ''
@@ -28,10 +32,10 @@ export function createMainRuntimeFrameReporter({
   let lastPublishedAt = -Infinity
 
   return {
-    report: (summary, timestampMs = Date.now()) => {
+    report: (summary, timestamp = Date.now()) => {
       const sourceKey = getMainRuntimeFrameSummaryKey(summary)
       const label = sourceKey === lastSourceKey && lastLabel ? lastLabel : formatMainRuntimeFrameSummary(summary)
-      const normalizedTimestampMs = normalizeMainRuntimeFrameTimestamp(timestampMs)
+      const normalizedTimestampMs = normalizeMainRuntimeFrameTimestamp(timestamp, timestampUnit)
       const shouldPublish = shouldPublishMainRuntimeFrameSummary({
         label,
         lastLabel,
@@ -76,7 +80,7 @@ export function shouldPublishMainRuntimeFrameSummary({
 }) {
   if (!label) return false
   if (label === lastLabel) return false
-  return normalizeMainRuntimeFrameTimestamp(timestampMs) - lastPublishedAt >= clampMainRuntimeFrameReportInterval(minIntervalMs)
+  return normalizeMainRuntimeFrameTimestamp(timestampMs, 'milliseconds') - lastPublishedAt >= clampMainRuntimeFrameReportInterval(minIntervalMs)
 }
 
 export function getMainRuntimeFrameSummaryKey(summary: MainRuntimeFrameSummary) {
@@ -92,10 +96,12 @@ export function getMainRuntimeFrameSummaryKey(summary: MainRuntimeFrameSummary) 
   ].join('|')
 }
 
-export function normalizeMainRuntimeFrameTimestamp(timestamp: number) {
+export function normalizeMainRuntimeFrameTimestamp(
+  timestamp: number,
+  unit: MainRuntimeFrameTimestampUnit = 'milliseconds',
+) {
   if (!Number.isFinite(timestamp)) return Date.now()
-  if (timestamp >= 0 && timestamp < SECONDS_TIMESTAMP_MAX) return Math.floor(timestamp * 1000)
-  return Math.floor(timestamp)
+  return unit === 'seconds' ? Math.floor(timestamp * MILLISECONDS_PER_SECOND) : Math.floor(timestamp)
 }
 
 export function clampMainRuntimeFrameReportInterval(value: number) {
