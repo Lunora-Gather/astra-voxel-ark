@@ -16,6 +16,12 @@ export type MainRuntimeQueueRunResult = {
   remaining: number
 }
 
+export type MainRuntimeQueueEnqueueResult = {
+  accepted: boolean
+  pending: number
+  dropped: number
+}
+
 export type MainRuntimeTaskQueueOptions = {
   maxPending?: number
 }
@@ -24,7 +30,9 @@ export type MainRuntimeTaskQueue<T = unknown> = {
   readonly length: number
   readonly pending: number
   readonly maxPending: number | null
+  readonly dropped: number
   enqueue: (item: T) => number
+  tryEnqueue: (item: T) => MainRuntimeQueueEnqueueResult
   drain: (limit: number) => T[]
   consume?: (limit: number, run: MainRuntimeQueueTask<T>) => MainRuntimeQueueRunResult
   clear: () => void
@@ -36,6 +44,7 @@ export type MainRuntimeQueueLike<T = unknown> = T[] | MainRuntimeTaskQueue<T>
 export type MainRuntimeUniqueTaskQueue<T = unknown> = MainRuntimeTaskQueue<T> & {
   readonly uniqueKeys: number
   enqueueUnique: (item: T) => number
+  tryEnqueueUnique: (item: T) => MainRuntimeQueueEnqueueResult
   isQueued: (key: MainRuntimeQueueKey) => boolean
 }
 
@@ -61,6 +70,7 @@ export function createMainRuntimeTaskQueue<T>(
   const maxPending = normalizeMainRuntimeQueueCapacity(options.maxPending)
   let items: T[] = []
   let cursor = 0
+  let dropped = 0
 
   const compact = () => {
     if (cursor <= 0) return
@@ -77,12 +87,17 @@ export function createMainRuntimeTaskQueue<T>(
     }
   }
 
-  const enqueue = (item: T) => {
+  const tryEnqueue = (item: T): MainRuntimeQueueEnqueueResult => {
     const pending = items.length - cursor
-    if (maxPending !== null && pending >= maxPending) return pending
+    if (maxPending !== null && pending >= maxPending) {
+      dropped++
+      return { accepted: false, pending, dropped }
+    }
     items.push(item)
-    return items.length - cursor
+    return { accepted: true, pending: items.length - cursor, dropped }
   }
+
+  const enqueue = (item: T) => tryEnqueue(item).pending
 
   for (const item of initialItems) enqueue(item)
 
@@ -94,7 +109,11 @@ export function createMainRuntimeTaskQueue<T>(
       return items.length - cursor
     },
     maxPending,
+    get dropped() {
+      return dropped
+    },
     enqueue,
+    tryEnqueue,
     drain: (limit) => {
       const requested = clampQueueLimit(limit)
       const available = items.length - cursor
@@ -140,14 +159,15 @@ export function createMainRuntimeUniqueTaskQueue<T>(
   const queue = createMainRuntimeTaskQueue<T>([], options)
   const queuedKeys = new Set<MainRuntimeQueueKey>()
 
-  const enqueueUnique = (item: T) => {
+  const tryEnqueueUnique = (item: T): MainRuntimeQueueEnqueueResult => {
     const key = getKey(item)
-    if (queuedKeys.has(key)) return queue.pending
-    const before = queue.pending
-    const after = queue.enqueue(item)
-    if (after > before) queuedKeys.add(key)
-    return after
+    if (queuedKeys.has(key)) return { accepted: false, pending: queue.pending, dropped: queue.dropped }
+    const result = queue.tryEnqueue(item)
+    if (result.accepted) queuedKeys.add(key)
+    return result
   }
+
+  const enqueueUnique = (item: T) => tryEnqueueUnique(item).pending
 
   for (const item of initialItems) enqueueUnique(item)
 
@@ -161,11 +181,16 @@ export function createMainRuntimeUniqueTaskQueue<T>(
     get maxPending() {
       return queue.maxPending
     },
+    get dropped() {
+      return queue.dropped
+    },
     get uniqueKeys() {
       return queuedKeys.size
     },
     enqueue: enqueueUnique,
+    tryEnqueue: tryEnqueueUnique,
     enqueueUnique,
+    tryEnqueueUnique,
     drain: (limit) => {
       const drained = queue.drain(limit)
       for (const item of drained) queuedKeys.delete(getKey(item))
