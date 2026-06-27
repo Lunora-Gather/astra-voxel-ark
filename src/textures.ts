@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { BLOCKS, type BlockId } from './blocks'
+import { getBlockDef, type BlockId } from './blocks'
 
 const TEXTURE_SIZE = 96
 type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
@@ -76,7 +76,7 @@ function pixelNoise(ctx: CanvasRenderingContext2D, rand: () => number, colors: s
 }
 
 function blockMaterial(blockId: BlockId, map: THREE.Texture, options: Partial<THREE.MeshStandardMaterialParameters> = {}) {
-  const block = BLOCKS.find((b) => b.id === blockId)!
+  const block = getBlockDef(blockId)
   return new THREE.MeshStandardMaterial({
     color: block.color,
     map,
