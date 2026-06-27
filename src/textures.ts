@@ -4,6 +4,7 @@ import { getBlockDef, type BlockId } from './blocks'
 const TEXTURE_SIZE = 96
 type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
 const generatedTextureCache = new Map<string, THREE.CanvasTexture>()
+const generatedMaterialCache = new Map<string, THREE.MeshStandardMaterial>()
 
 function hashSeed(seed: string) {
   let h = 2166136261
@@ -45,10 +46,20 @@ function makeTexture(seed: string, draw: (ctx: CanvasRenderingContext2D, rand: (
 export function clearGeneratedTextureCache() {
   generatedTextureCache.forEach((texture) => texture.dispose())
   generatedTextureCache.clear()
+  clearGeneratedMaterialCache()
 }
 
 export function getGeneratedTextureCacheSize() {
   return generatedTextureCache.size
+}
+
+export function clearGeneratedMaterialCache() {
+  generatedMaterialCache.forEach((material) => material.dispose())
+  generatedMaterialCache.clear()
+}
+
+export function getGeneratedMaterialCacheSize() {
+  return generatedMaterialCache.size
 }
 
 function fill(ctx: CanvasRenderingContext2D, color: string) {
@@ -75,9 +86,21 @@ function pixelNoise(ctx: CanvasRenderingContext2D, rand: () => number, colors: s
   ctx.globalAlpha = 1
 }
 
+function materialCacheKey(blockId: BlockId, map: THREE.Texture, options: Partial<THREE.MeshStandardMaterialParameters>) {
+  const optionKey = Object.entries(options)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}:${String(value)}`)
+    .join('|')
+  return `${blockId}:${map.uuid}:${optionKey}`
+}
+
 function blockMaterial(blockId: BlockId, map: THREE.Texture, options: Partial<THREE.MeshStandardMaterialParameters> = {}) {
+  const cacheKey = materialCacheKey(blockId, map, options)
+  const cached = generatedMaterialCache.get(cacheKey)
+  if (cached) return cached
+
   const block = getBlockDef(blockId)
-  return new THREE.MeshStandardMaterial({
+  const material = new THREE.MeshStandardMaterial({
     color: block.color,
     map,
     emissive: block.emissive ?? 0x000000,
@@ -88,6 +111,8 @@ function blockMaterial(blockId: BlockId, map: THREE.Texture, options: Partial<TH
     metalness: block.metalness ?? 0,
     ...options,
   })
+  generatedMaterialCache.set(cacheKey, material)
+  return material
 }
 
 function dirtTexture(seedName = 'dirt') {
