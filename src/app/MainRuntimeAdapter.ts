@@ -1,6 +1,5 @@
 import type { BlockId } from '../blocks'
 import type { QualityPreset } from '../game'
-import type { TerrainGeneratorOptions } from '../world'
 import {
   bootstrapMainOptimizations,
   type MainOptimizationBootstrap,
@@ -133,7 +132,7 @@ export function createMainRuntimeAdapter({
       stats.resyncCount += 1
       return bootstrap.syncAllBlocks().mirroredBlocks
     },
-    markAllChunksDirty: () => bootstrap.markAllChunksDirty(),
+    markAllChunksDirty: () => bootstrap.markAllDirty(),
     onFrame: (options) => {
       const frame = bootstrap.recordFrame(options)
       const budget = getBudgetForFrame(frame)
