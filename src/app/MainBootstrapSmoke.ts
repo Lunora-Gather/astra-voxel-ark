@@ -17,6 +17,9 @@ export type MainBootstrapSmokeResult = {
   adapterSetCount: number
   adapterDeleteCount: number
   adapterResyncedBlocks: number
+  adapterNominalBudget: number
+  adapterHighPressureBudget: number
+  adapterHighPressureFrames: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -56,7 +59,8 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   adapter.onBlockDelete(stringBlockKey(1, 0, 0))
   const adapterResyncedBlocks = adapter.resync()
   adapter.onFrame({ timestamp: 16 })
-  adapter.onFrame({ timestamp: 32 })
+  const nominalAdapterFrame = adapter.onFrame({ timestamp: 32 })
+  const highPressureAdapterFrame = adapter.onFrame({ timestamp: 132 })
 
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
@@ -73,6 +77,9 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     adapterSetCount: adapter.stats.blockSetCount,
     adapterDeleteCount: adapter.stats.blockDeleteCount,
     adapterResyncedBlocks,
+    adapterNominalBudget: nominalAdapterFrame.budget.terrainChunksPerFrame,
+    adapterHighPressureBudget: highPressureAdapterFrame.budget.terrainChunksPerFrame,
+    adapterHighPressureFrames: adapter.stats.pressureFrames.high,
   }
 
   adapter.dispose()
@@ -105,8 +112,12 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error(`Main bootstrap smoke failed: expected stable quality hold decision, got ${result.qualityAction}`)
   }
 
-  if (result.adapterFrameCount !== 2 || result.adapterSetCount !== 1 || result.adapterDeleteCount !== 1 || result.adapterResyncedBlocks !== 2) {
+  if (result.adapterFrameCount !== 3 || result.adapterSetCount !== 1 || result.adapterDeleteCount !== 1 || result.adapterResyncedBlocks !== 2) {
     throw new Error('Main bootstrap smoke failed: runtime adapter should track frame, set/delete, and resync operations')
+  }
+
+  if (result.adapterNominalBudget <= 0 || result.adapterHighPressureBudget !== 0 || result.adapterHighPressureFrames <= 0) {
+    throw new Error('Main bootstrap smoke failed: runtime adapter should reduce terrain budget under high pressure')
   }
 
   return result
