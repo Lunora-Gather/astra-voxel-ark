@@ -40,6 +40,7 @@ export type MainBootstrapSmokeResult = {
   runtimeReporterFirstPublished: boolean
   runtimeReporterSecondSuppressed: boolean
   runtimeReporterSecondTimestampMs: number
+  runtimeReporterMillisecondTimestampMs: number
   runtimeReporterSummaryKeyStable: boolean
   orchestratorFrameCount: number
   orchestratorDirtyProcessed: number
@@ -118,7 +119,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   })
   const scheduledFrameSummary = summarizeMainRuntimeFrame(scheduledFrame)
   const scheduledFrameSummaryLabel = formatMainRuntimeFrameSummary(scheduledFrameSummary)
-  const runtimeReporter = createMainRuntimeFrameReporter({ minIntervalMs: 250 })
+  const runtimeReporter = createMainRuntimeFrameReporter({ minIntervalMs: 250, timestampUnit: 'seconds' })
   const runtimeReporterFirst = runtimeReporter.report(scheduledFrameSummary, 1)
   const runtimeReporterSecond = runtimeReporter.report({ ...scheduledFrameSummary, dirtyChunkSummariesRemaining: 0 }, 1.1)
 
@@ -130,6 +131,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     runDirtyChunkSummaryTask: () => undefined,
     historyLimit: 4,
     summaryReportIntervalMs: 250,
+    summaryReportTimestampUnit: 'milliseconds',
   })
   orchestrator.adapter.onFrame({ timestamp: 16 })
   const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
@@ -167,7 +169,8 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     scheduledFrameSummaryLabel,
     runtimeReporterFirstPublished: runtimeReporterFirst.shouldPublish,
     runtimeReporterSecondSuppressed: !runtimeReporterSecond.shouldPublish,
-    runtimeReporterSecondTimestampMs: normalizeMainRuntimeFrameTimestamp(1.1),
+    runtimeReporterSecondTimestampMs: normalizeMainRuntimeFrameTimestamp(1.1, 'seconds'),
+    runtimeReporterMillisecondTimestampMs: normalizeMainRuntimeFrameTimestamp(132, 'milliseconds'),
     runtimeReporterSummaryKeyStable: getMainRuntimeFrameSummaryKey(scheduledFrameSummary) === getMainRuntimeFrameSummaryKey({ ...scheduledFrameSummary }),
     orchestratorFrameCount: orchestrator.stats.frames,
     orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
@@ -238,8 +241,8 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame summary should expose pressure and queue backlog')
   }
 
-  if (!result.runtimeReporterFirstPublished || !result.runtimeReporterSecondSuppressed || result.runtimeReporterSecondTimestampMs !== 1100 || !result.runtimeReporterSummaryKeyStable) {
-    throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize seconds, and throttle rapid updates')
+  if (!result.runtimeReporterFirstPublished || !result.runtimeReporterSecondSuppressed || result.runtimeReporterSecondTimestampMs !== 1100 || result.runtimeReporterMillisecondTimestampMs !== 132 || !result.runtimeReporterSummaryKeyStable) {
+    throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize explicit units, and throttle rapid updates')
   }
 
   if (result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
