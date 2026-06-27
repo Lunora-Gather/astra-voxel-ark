@@ -4,7 +4,7 @@ import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainR
 import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter, type MainRuntimeFrameTimestampUnit } from './MainRuntimeFrameReporter'
 import { isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
-import { createMainRuntimeTaskQueue, createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueKeySelector, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeTaskQueueOptions, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
+import { createMainRuntimeTaskQueue, createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueEnqueueResult, type MainRuntimeQueueKeySelector, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeTaskQueueOptions, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
 
 export type MainRuntimeOrchestratorOptions<TerrainTask = unknown, DirtyTask = unknown> = {
   adapter: MainRuntimeAdapter
@@ -26,6 +26,8 @@ export type MainRuntimeOrchestratorStats = {
   frames: number
   terrainProcessed: number
   dirtyChunkSummariesProcessed: number
+  terrainDropped: number
+  dirtyChunkSummariesDropped: number
   backlogFrames: number
   pressureFrames: MainRuntimeFrameHistorySnapshot['pressureFrames']
   lastSummary: MainRuntimeFrameSummary | null
@@ -48,6 +50,8 @@ export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> 
   reporter: MainRuntimeFrameReporter
   enqueueTerrainTask: (task: TerrainTask) => number
   enqueueDirtyChunkSummaryTask: (task: DirtyTask) => number
+  tryEnqueueTerrainTask: (task: TerrainTask) => MainRuntimeQueueEnqueueResult
+  tryEnqueueDirtyChunkSummaryTask: (task: DirtyTask) => MainRuntimeQueueEnqueueResult
   runFrame: (frame?: MainOptimizationFrameOptions) => MainRuntimeOrchestratorFrameResult
   getSummaryLabel: () => string
   clearQueues: () => void
@@ -77,10 +81,29 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     frames: 0,
     terrainProcessed: 0,
     dirtyChunkSummariesProcessed: 0,
+    terrainDropped: terrainTaskQueue.dropped,
+    dirtyChunkSummariesDropped: dirtyTaskQueue.dropped,
     backlogFrames: 0,
     pressureFrames: { nominal: 0, moderate: 0, high: 0 },
     lastSummary: null,
     lastReport: null,
+  }
+
+  const syncDroppedStats = () => {
+    stats.terrainDropped = terrainTaskQueue.dropped
+    stats.dirtyChunkSummariesDropped = dirtyTaskQueue.dropped
+  }
+
+  const tryEnqueueTerrainTask = (task: TerrainTask) => {
+    const result = terrainTaskQueue.tryEnqueue(task)
+    syncDroppedStats()
+    return result
+  }
+
+  const tryEnqueueDirtyChunkSummaryTask = (task: DirtyTask) => {
+    const result = dirtyTaskQueue.tryEnqueue(task)
+    syncDroppedStats()
+    return result
   }
 
   const runFrame = (frame?: MainOptimizationFrameOptions): MainRuntimeOrchestratorFrameResult => {
@@ -106,6 +129,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     if (isMainRuntimeFrameBacklogged(summary)) stats.backlogFrames += 1
     stats.lastSummary = summary
     stats.lastReport = report
+    syncDroppedStats()
 
     return {
       ...scheduled,
@@ -123,13 +147,16 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     stats,
     history,
     reporter,
-    enqueueTerrainTask: (task) => terrainTaskQueue.enqueue(task),
-    enqueueDirtyChunkSummaryTask: (task) => dirtyTaskQueue.enqueue(task),
+    enqueueTerrainTask: (task) => tryEnqueueTerrainTask(task).pending,
+    enqueueDirtyChunkSummaryTask: (task) => tryEnqueueDirtyChunkSummaryTask(task).pending,
+    tryEnqueueTerrainTask,
+    tryEnqueueDirtyChunkSummaryTask,
     runFrame,
     getSummaryLabel: () => reporter.peek(),
     clearQueues: () => {
       terrainTaskQueue.clear()
       dirtyTaskQueue.clear()
+      syncDroppedStats()
     },
     dispose: () => adapter.dispose(),
   }
