@@ -1,5 +1,6 @@
 import type { BlockId } from '../blocks'
 import { bootstrapMainOptimizations } from './MainOptimizationBootstrap'
+import { createHeadlessMainRuntimeAdapter } from './MainRuntimeAdapter'
 
 export type MainBootstrapSmokeResult = {
   mirroredBlocks: number
@@ -12,6 +13,10 @@ export type MainBootstrapSmokeResult = {
   frameAverageMs: number
   qualityAction: string
   scheduledChunkRebuilds: number
+  adapterFrameCount: number
+  adapterSetCount: number
+  adapterDeleteCount: number
+  adapterResyncedBlocks: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -39,6 +44,20 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   bootstrap.recordFrame({ timestamp: 16 })
   const frame = bootstrap.recordFrame({ timestamp: 32 })
 
+  const adapterBlockData = new Map<string, BlockId>([
+    [stringBlockKey(0, 0, 0), 'grass'],
+    [stringBlockKey(1, 0, 0), 'stone'],
+  ])
+  const adapter = createHeadlessMainRuntimeAdapter(adapterBlockData, 'balanced', { info: () => undefined })
+  const adapterSetKey = stringBlockKey(2, 0, 0)
+  adapterBlockData.set(adapterSetKey, 'dirt')
+  adapter.onBlockSet(adapterSetKey, 'dirt')
+  adapterBlockData.delete(stringBlockKey(1, 0, 0))
+  adapter.onBlockDelete(stringBlockKey(1, 0, 0))
+  const adapterResyncedBlocks = adapter.resync()
+  adapter.onFrame({ timestamp: 16 })
+  adapter.onFrame({ timestamp: 32 })
+
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
     chunkCount: bootstrap.chunkMirror.chunkCount,
@@ -50,8 +69,13 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     frameAverageMs: frame.sample.averageFrameMs,
     qualityAction: frame.qualityDecision.action,
     scheduledChunkRebuilds: frame.scheduledChunkRebuilds,
+    adapterFrameCount: adapter.stats.frameCount,
+    adapterSetCount: adapter.stats.blockSetCount,
+    adapterDeleteCount: adapter.stats.blockDeleteCount,
+    adapterResyncedBlocks,
   }
 
+  adapter.dispose()
   bootstrap.dispose()
   return result
 }
@@ -79,6 +103,10 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (result.qualityAction !== 'hold') {
     throw new Error(`Main bootstrap smoke failed: expected stable quality hold decision, got ${result.qualityAction}`)
+  }
+
+  if (result.adapterFrameCount !== 2 || result.adapterSetCount !== 1 || result.adapterDeleteCount !== 1 || result.adapterResyncedBlocks !== 2) {
+    throw new Error('Main bootstrap smoke failed: runtime adapter should track frame, set/delete, and resync operations')
   }
 
   return result
