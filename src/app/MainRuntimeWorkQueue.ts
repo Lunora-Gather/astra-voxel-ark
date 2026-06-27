@@ -1,6 +1,8 @@
 import type { MainRuntimeWorkPlan } from './MainRuntimeAdapter'
 
 export type MainRuntimeQueueTask<T = unknown> = (item: T) => void
+export type MainRuntimeQueueKey = string | number
+export type MainRuntimeQueueKeySelector<T = unknown> = (item: T) => MainRuntimeQueueKey
 
 export type MainRuntimeQueueRunOptions<T = unknown> = {
   queue: T[]
@@ -21,6 +23,12 @@ export type MainRuntimeTaskQueue<T = unknown> = {
   drain: (limit: number) => T[]
   clear: () => void
   compact: () => void
+}
+
+export type MainRuntimeUniqueTaskQueue<T = unknown> = MainRuntimeTaskQueue<T> & {
+  readonly uniqueKeys: number
+  enqueueUnique: (item: T) => number
+  isQueued: (key: MainRuntimeQueueKey) => boolean
 }
 
 export type MainRuntimeWorkQueues<TerrainTask = unknown, DirtyTask = unknown> = {
@@ -79,6 +87,48 @@ export function createMainRuntimeTaskQueue<T>(initialItems: T[] = []): MainRunti
       cursor = 0
     },
     compact,
+  }
+}
+
+export function createMainRuntimeUniqueTaskQueue<T>(
+  getKey: MainRuntimeQueueKeySelector<T>,
+  initialItems: T[] = [],
+): MainRuntimeUniqueTaskQueue<T> {
+  const queue = createMainRuntimeTaskQueue<T>()
+  const queuedKeys = new Set<MainRuntimeQueueKey>()
+
+  const enqueueUnique = (item: T) => {
+    const key = getKey(item)
+    if (queuedKeys.has(key)) return queue.pending
+    queuedKeys.add(key)
+    return queue.enqueue(item)
+  }
+
+  for (const item of initialItems) enqueueUnique(item)
+
+  return {
+    get length() {
+      return queue.length
+    },
+    get pending() {
+      return queue.pending
+    },
+    get uniqueKeys() {
+      return queuedKeys.size
+    },
+    enqueue: enqueueUnique,
+    enqueueUnique,
+    drain: (limit) => {
+      const drained = queue.drain(limit)
+      for (const item of drained) queuedKeys.delete(getKey(item))
+      return drained
+    },
+    clear: () => {
+      queue.clear()
+      queuedKeys.clear()
+    },
+    compact: () => queue.compact(),
+    isQueued: (key) => queuedKeys.has(key),
   }
 }
 
