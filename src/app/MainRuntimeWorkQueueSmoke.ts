@@ -9,6 +9,10 @@ export type MainRuntimeWorkQueueSmokeResult = {
   requeuedAfterDrain: number
   consumeProcessed: number
   consumeRemaining: number
+  cappedPending: number
+  cappedMaxPending: number | null
+  cappedUniquePending: number
+  cappedUniqueKeys: number
   queueLikeDirtyProcessed: number
   queueLikeDirtyRemaining: number
   processedItems: string[]
@@ -34,6 +38,11 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
     remaining: consumeQueue.pending,
   }
 
+  const cappedQueue = createMainRuntimeTaskQueue(['cap-a', 'cap-b', 'cap-c'], { maxPending: 2 })
+  const cappedPending = cappedQueue.enqueue('cap-d')
+  const cappedUniqueQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['unique-a', 'unique-b', 'unique-c'], { maxPending: 2 })
+  const cappedUniquePending = cappedUniqueQueue.enqueueUnique('unique-d')
+
   const queueLikeDirtyQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['dirty-a', 'dirty-a', 'dirty-b', 'dirty-c'])
   const queueLikeProcessedItems: string[] = []
   const queueLikePlan = planMainRuntimeWork(
@@ -53,6 +62,10 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
     requeuedAfterDrain,
     consumeProcessed: consumeResult.processed,
     consumeRemaining: consumeResult.remaining,
+    cappedPending,
+    cappedMaxPending: cappedQueue.maxPending,
+    cappedUniquePending,
+    cappedUniqueKeys: cappedUniqueQueue.uniqueKeys,
     queueLikeDirtyProcessed: queueLikeResult.dirtyChunkSummaries.processed,
     queueLikeDirtyRemaining: queueLikeResult.dirtyChunkSummaries.remaining,
     processedItems,
@@ -80,6 +93,10 @@ export function assertMainRuntimeWorkQueueSmoke(result = runMainRuntimeWorkQueue
 
   if (result.consumeProcessed !== 2 || result.consumeRemaining !== 1 || result.consumeProcessedItems.join(',') !== 'consume-a,consume-b') {
     throw new Error('Main runtime work queue smoke failed: task queues should consume items without materializing drain arrays')
+  }
+
+  if (result.cappedPending !== 2 || result.cappedMaxPending !== 2 || result.cappedUniquePending !== 2 || result.cappedUniqueKeys !== 2) {
+    throw new Error('Main runtime work queue smoke failed: capped queues should reject excess pending work')
   }
 
   if (result.queueLikeDirtyProcessed !== 2 || result.queueLikeDirtyRemaining !== 1 || result.queueLikeProcessedItems.join(',') !== 'dirty-a,dirty-b') {
