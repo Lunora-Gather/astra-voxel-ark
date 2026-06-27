@@ -25,6 +25,8 @@ export type MainRuntimeTaskQueue<T = unknown> = {
   compact: () => void
 }
 
+export type MainRuntimeQueueLike<T = unknown> = T[] | MainRuntimeTaskQueue<T>
+
 export type MainRuntimeUniqueTaskQueue<T = unknown> = MainRuntimeTaskQueue<T> & {
   readonly uniqueKeys: number
   enqueueUnique: (item: T) => number
@@ -32,8 +34,8 @@ export type MainRuntimeUniqueTaskQueue<T = unknown> = MainRuntimeTaskQueue<T> & 
 }
 
 export type MainRuntimeWorkQueues<TerrainTask = unknown, DirtyTask = unknown> = {
-  terrainQueue?: TerrainTask[]
-  dirtyChunkSummaryQueue?: DirtyTask[]
+  terrainQueue?: MainRuntimeQueueLike<TerrainTask>
+  dirtyChunkSummaryQueue?: MainRuntimeQueueLike<DirtyTask>
   runTerrainTask?: MainRuntimeQueueTask<TerrainTask>
   runDirtyChunkSummaryTask?: MainRuntimeQueueTask<DirtyTask>
 }
@@ -160,6 +162,25 @@ export function runMainRuntimeTaskQueue<T>(
   }
 }
 
+export function runMainRuntimeQueueLike<T>(
+  queue: MainRuntimeQueueLike<T>,
+  limit: number,
+  run: MainRuntimeQueueTask<T>,
+): MainRuntimeQueueRunResult {
+  return isMainRuntimeTaskQueue(queue)
+    ? runMainRuntimeTaskQueue(queue, limit, run)
+    : runMainRuntimeQueue({ queue, limit, run })
+}
+
+export function getMainRuntimeQueuePending<T>(queue?: MainRuntimeQueueLike<T>) {
+  if (!queue) return 0
+  return isMainRuntimeTaskQueue(queue) ? queue.pending : queue.length
+}
+
+export function isMainRuntimeTaskQueue<T>(queue: MainRuntimeQueueLike<T>): queue is MainRuntimeTaskQueue<T> {
+  return !Array.isArray(queue) && 'drain' in queue && 'enqueue' in queue
+}
+
 export function drainMainRuntimeQueue<T>(queue: T[], limit: number) {
   const requested = clampQueueLimit(limit)
   if (requested <= 0 || queue.length === 0) return []
@@ -171,20 +192,12 @@ export function runMainRuntimeWorkQueues<TerrainTask, DirtyTask>(
   queues: MainRuntimeWorkQueues<TerrainTask, DirtyTask>,
 ): MainRuntimeWorkQueueResult {
   const terrain = queues.terrainQueue && queues.runTerrainTask
-    ? runMainRuntimeQueue({
-        queue: queues.terrainQueue,
-        limit: plan.terrainChunksToRun,
-        run: queues.runTerrainTask,
-      })
-    : emptyQueueRunResult(plan.terrainChunksToRun, queues.terrainQueue?.length ?? 0)
+    ? runMainRuntimeQueueLike(queues.terrainQueue, plan.terrainChunksToRun, queues.runTerrainTask)
+    : emptyQueueRunResult(plan.terrainChunksToRun, getMainRuntimeQueuePending(queues.terrainQueue))
 
   const dirtyChunkSummaries = queues.dirtyChunkSummaryQueue && queues.runDirtyChunkSummaryTask
-    ? runMainRuntimeQueue({
-        queue: queues.dirtyChunkSummaryQueue,
-        limit: plan.dirtyChunkSummariesToRun,
-        run: queues.runDirtyChunkSummaryTask,
-      })
-    : emptyQueueRunResult(plan.dirtyChunkSummariesToRun, queues.dirtyChunkSummaryQueue?.length ?? 0)
+    ? runMainRuntimeQueueLike(queues.dirtyChunkSummaryQueue, plan.dirtyChunkSummariesToRun, queues.runDirtyChunkSummaryTask)
+    : emptyQueueRunResult(plan.dirtyChunkSummariesToRun, getMainRuntimeQueuePending(queues.dirtyChunkSummaryQueue))
 
   return {
     terrain,
