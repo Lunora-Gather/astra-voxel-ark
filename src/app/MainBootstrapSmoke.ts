@@ -20,6 +20,10 @@ export type MainBootstrapSmokeResult = {
   adapterNominalBudget: number
   adapterHighPressureBudget: number
   adapterHighPressureFrames: number
+  adapterNominalWorkTerrain: number
+  adapterHighWorkTerrain: number
+  adapterHighWorkDirtySummaries: number
+  adapterHighWorkDiagnosticsLimit: number
 }
 
 export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
@@ -60,7 +64,9 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const adapterResyncedBlocks = adapter.resync()
   adapter.onFrame({ timestamp: 16 })
   const nominalAdapterFrame = adapter.onFrame({ timestamp: 32 })
+  const nominalWorkPlan = adapter.planWork({ pendingTerrainChunks: 4, pendingDirtyChunkSummaries: 8 })
   const highPressureAdapterFrame = adapter.onFrame({ timestamp: 132 })
+  const highPressureWorkPlan = adapter.planWork({ pendingTerrainChunks: 4, pendingDirtyChunkSummaries: 8 })
 
   const result: MainBootstrapSmokeResult = {
     mirroredBlocks: bootstrap.chunkMirror.lastSync?.mirroredBlocks ?? 0,
@@ -80,6 +86,10 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     adapterNominalBudget: nominalAdapterFrame.budget.terrainChunksPerFrame,
     adapterHighPressureBudget: highPressureAdapterFrame.budget.terrainChunksPerFrame,
     adapterHighPressureFrames: adapter.stats.pressureFrames.high,
+    adapterNominalWorkTerrain: nominalWorkPlan.terrainChunksToRun,
+    adapterHighWorkTerrain: highPressureWorkPlan.terrainChunksToRun,
+    adapterHighWorkDirtySummaries: highPressureWorkPlan.dirtyChunkSummariesToRun,
+    adapterHighWorkDiagnosticsLimit: highPressureWorkPlan.dirtyChunkDiagnosticsLimit,
   }
 
   adapter.dispose()
@@ -118,6 +128,14 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
 
   if (result.adapterNominalBudget <= 0 || result.adapterHighPressureBudget !== 0 || result.adapterHighPressureFrames <= 0) {
     throw new Error('Main bootstrap smoke failed: runtime adapter should reduce terrain budget under high pressure')
+  }
+
+  if (result.adapterNominalWorkTerrain <= 0 || result.adapterHighWorkTerrain !== 0) {
+    throw new Error('Main bootstrap smoke failed: runtime work plan should pause terrain queue under high pressure')
+  }
+
+  if (result.adapterHighWorkDirtySummaries !== 3 || result.adapterHighWorkDiagnosticsLimit !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime work plan should clamp dirty summaries and diagnostics under high pressure')
   }
 
   return result
