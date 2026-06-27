@@ -4,12 +4,14 @@ import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainR
 import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter, type MainRuntimeFrameTimestampUnit } from './MainRuntimeFrameReporter'
 import { isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
-import { createMainRuntimeTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
+import { createMainRuntimeTaskQueue, createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueKeySelector, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
 
 export type MainRuntimeOrchestratorOptions<TerrainTask = unknown, DirtyTask = unknown> = {
   adapter: MainRuntimeAdapter
   terrainQueue?: TerrainTask[] | MainRuntimeTaskQueue<TerrainTask>
   dirtyChunkSummaryQueue?: DirtyTask[] | MainRuntimeTaskQueue<DirtyTask>
+  terrainTaskKey?: MainRuntimeQueueKeySelector<TerrainTask>
+  dirtyChunkSummaryTaskKey?: MainRuntimeQueueKeySelector<DirtyTask>
   runTerrainTask: MainRuntimeQueueTask<TerrainTask>
   runDirtyChunkSummaryTask: MainRuntimeQueueTask<DirtyTask>
   diagnosticsEnabled?: boolean
@@ -54,6 +56,8 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   adapter,
   terrainQueue,
   dirtyChunkSummaryQueue,
+  terrainTaskKey,
+  dirtyChunkSummaryTaskKey,
   runTerrainTask,
   runDirtyChunkSummaryTask,
   diagnosticsEnabled,
@@ -61,8 +65,8 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   summaryReportIntervalMs,
   summaryReportTimestampUnit = 'milliseconds',
 }: MainRuntimeOrchestratorOptions<TerrainTask, DirtyTask>): MainRuntimeOrchestrator<TerrainTask, DirtyTask> {
-  const terrainTaskQueue = normalizeMainRuntimeTaskQueue(terrainQueue)
-  const dirtyTaskQueue = normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue)
+  const terrainTaskQueue = normalizeMainRuntimeTaskQueue(terrainQueue, terrainTaskKey)
+  const dirtyTaskQueue = normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue, dirtyChunkSummaryTaskKey)
   const history = createMainRuntimeFrameHistory(historyLimit)
   const reporter = createMainRuntimeFrameReporter({ minIntervalMs: summaryReportIntervalMs, timestampUnit: summaryReportTimestampUnit })
   const stats: MainRuntimeOrchestratorStats = {
@@ -127,7 +131,10 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   }
 }
 
-function normalizeMainRuntimeTaskQueue<T>(queue?: T[] | MainRuntimeTaskQueue<T>): MainRuntimeTaskQueue<T> {
+function normalizeMainRuntimeTaskQueue<T>(
+  queue?: T[] | MainRuntimeTaskQueue<T>,
+  getKey?: MainRuntimeQueueKeySelector<T>,
+): MainRuntimeTaskQueue<T> {
   if (queue && 'drain' in queue && 'enqueue' in queue) return queue
-  return createMainRuntimeTaskQueue(queue ?? [])
+  return getKey ? createMainRuntimeUniqueTaskQueue(getKey, queue ?? []) : createMainRuntimeTaskQueue(queue ?? [])
 }
