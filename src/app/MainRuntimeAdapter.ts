@@ -38,6 +38,21 @@ export type MainRuntimeBudgetDecision = {
   shouldRunDiagnostics: boolean
 }
 
+export type MainRuntimeWorkRequest = {
+  pendingTerrainChunks: number
+  pendingDirtyChunkSummaries: number
+  diagnosticsEnabled?: boolean
+}
+
+export type MainRuntimeWorkPlan = {
+  terrainChunksToRun: number
+  dirtyChunkSummariesToRun: number
+  dirtyChunkDiagnosticsLimit: number
+  runTerrainQueue: boolean
+  runDirtyChunkSummaries: boolean
+  runDiagnostics: boolean
+}
+
 export type MainRuntimeAdapterFrameResult = MainOptimizationFrameResult & {
   budget: MainRuntimeBudgetDecision
 }
@@ -50,6 +65,7 @@ export type MainRuntimeAdapterStats = {
   pressureFrames: Record<MainRuntimePressure, number>
   lastFrame: MainRuntimeAdapterFrameResult | null
   lastBudget: MainRuntimeBudgetDecision | null
+  lastWorkPlan: MainRuntimeWorkPlan | null
 }
 
 export type MainRuntimeAdapter = {
@@ -61,6 +77,7 @@ export type MainRuntimeAdapter = {
   markAllChunksDirty: () => void
   onFrame: (options?: MainOptimizationFrameOptions) => MainRuntimeAdapterFrameResult
   getBudgetForFrame: (frame: MainOptimizationFrameResult) => MainRuntimeBudgetDecision
+  planWork: (request: MainRuntimeWorkRequest) => MainRuntimeWorkPlan
   dispose: () => void
 }
 
@@ -111,9 +128,11 @@ export function createMainRuntimeAdapter({
     pressureFrames: { nominal: 0, moderate: 0, high: 0 },
     lastFrame: null,
     lastBudget: null,
+    lastWorkPlan: null,
   }
 
   const getBudgetForFrame = (frame: MainOptimizationFrameResult) => deriveMainRuntimeBudget(frame, budgetConfig)
+  const getCurrentBudget = () => stats.lastBudget ?? getMainRuntimeBudgetForPressure('nominal', budgetConfig)
 
   return {
     bootstrap,
@@ -144,6 +163,11 @@ export function createMainRuntimeAdapter({
       return adapterFrame
     },
     getBudgetForFrame,
+    planWork: (request) => {
+      const plan = planMainRuntimeWork(getCurrentBudget(), request)
+      stats.lastWorkPlan = plan
+      return plan
+    },
     dispose: () => bootstrap.dispose(),
   }
 }
@@ -154,8 +178,13 @@ export function deriveMainRuntimeBudget(
 ): MainRuntimeBudgetDecision {
   const averageFps = frame.sample.averageFps
   const averageFrameMs = frame.sample.averageFrameMs
-  const pressure = getMainRuntimePressure(averageFps, averageFrameMs)
+  return getMainRuntimeBudgetForPressure(getMainRuntimePressure(averageFps, averageFrameMs), config)
+}
 
+export function getMainRuntimeBudgetForPressure(
+  pressure: MainRuntimePressure,
+  config: MainRuntimeBudgetConfig = DEFAULT_RUNTIME_BUDGET,
+): MainRuntimeBudgetDecision {
   if (pressure === 'high') {
     return buildBudgetDecision(pressure, {
       terrainChunksPerFrame: config.highTerrainChunksPerFrame,
@@ -177,6 +206,29 @@ export function deriveMainRuntimeBudget(
     dirtyChunkSummariesPerFrame: config.nominalDirtyChunkSummariesPerFrame,
     dirtyChunkDiagnosticsLimit: config.nominalDiagnosticsLimit,
   })
+}
+
+export function planMainRuntimeWork(
+  budget: MainRuntimeBudgetDecision,
+  request: MainRuntimeWorkRequest,
+): MainRuntimeWorkPlan {
+  const terrainChunksToRun = Math.min(clampWorkBudget(request.pendingTerrainChunks), clampWorkBudget(budget.terrainChunksPerFrame))
+  const dirtyChunkSummariesToRun = Math.min(clampWorkBudget(request.pendingDirtyChunkSummaries), clampWorkBudget(budget.dirtyChunkSummariesPerFrame))
+  const dirtyChunkDiagnosticsLimit = request.diagnosticsEnabled === false ? 0 : clampWorkBudget(budget.dirtyChunkDiagnosticsLimit)
+
+  return {
+    terrainChunksToRun,
+    dirtyChunkSummariesToRun,
+    dirtyChunkDiagnosticsLimit,
+    runTerrainQueue: terrainChunksToRun > 0,
+    runDirtyChunkSummaries: dirtyChunkSummariesToRun > 0,
+    runDiagnostics: dirtyChunkDiagnosticsLimit > 0,
+  }
+}
+
+export function clampWorkBudget(value: number) {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }
 
 export function getMainRuntimePressure(averageFps: number, averageFrameMs: number): MainRuntimePressure {
