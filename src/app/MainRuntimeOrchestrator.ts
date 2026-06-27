@@ -1,7 +1,7 @@
 import type { MainOptimizationFrameOptions } from './MainOptimizationBootstrap'
 import type { MainRuntimeAdapter } from './MainRuntimeAdapter'
 import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainRuntimeFrameHistorySnapshot } from './MainRuntimeFrameHistory'
-import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter } from './MainRuntimeFrameReporter'
+import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter, type MainRuntimeFrameTimestampUnit } from './MainRuntimeFrameReporter'
 import { isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
 import { createMainRuntimeTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
@@ -15,6 +15,7 @@ export type MainRuntimeOrchestratorOptions<TerrainTask = unknown, DirtyTask = un
   diagnosticsEnabled?: boolean
   historyLimit?: number
   summaryReportIntervalMs?: number
+  summaryReportTimestampUnit?: MainRuntimeFrameTimestampUnit
 }
 
 export type MainRuntimeOrchestratorStats = {
@@ -58,11 +59,12 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   diagnosticsEnabled,
   historyLimit,
   summaryReportIntervalMs,
+  summaryReportTimestampUnit = 'milliseconds',
 }: MainRuntimeOrchestratorOptions<TerrainTask, DirtyTask>): MainRuntimeOrchestrator<TerrainTask, DirtyTask> {
   const terrainTaskQueue = normalizeMainRuntimeTaskQueue(terrainQueue)
   const dirtyTaskQueue = normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue)
   const history = createMainRuntimeFrameHistory(historyLimit)
-  const reporter = createMainRuntimeFrameReporter({ minIntervalMs: summaryReportIntervalMs })
+  const reporter = createMainRuntimeFrameReporter({ minIntervalMs: summaryReportIntervalMs, timestampUnit: summaryReportTimestampUnit })
   const stats: MainRuntimeOrchestratorStats = {
     frames: 0,
     terrainProcessed: 0,
