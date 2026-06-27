@@ -3,6 +3,7 @@ import { BLOCKS, type BlockId } from './blocks'
 
 const TEXTURE_SIZE = 96
 type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
+const generatedTextureCache = new Map<string, THREE.CanvasTexture>()
 
 function hashSeed(seed: string) {
   let h = 2166136261
@@ -22,6 +23,9 @@ function seeded(seed: string) {
 }
 
 function makeTexture(seed: string, draw: (ctx: CanvasRenderingContext2D, rand: () => number) => void) {
+  const cached = generatedTextureCache.get(seed)
+  if (cached) return cached
+
   const canvas = document.createElement('canvas')
   canvas.width = TEXTURE_SIZE
   canvas.height = TEXTURE_SIZE
@@ -34,7 +38,17 @@ function makeTexture(seed: string, draw: (ctx: CanvasRenderingContext2D, rand: (
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
   texture.generateMipmaps = true
+  generatedTextureCache.set(seed, texture)
   return texture
+}
+
+export function clearGeneratedTextureCache() {
+  generatedTextureCache.forEach((texture) => texture.dispose())
+  generatedTextureCache.clear()
+}
+
+export function getGeneratedTextureCacheSize() {
+  return generatedTextureCache.size
 }
 
 function fill(ctx: CanvasRenderingContext2D, color: string) {
