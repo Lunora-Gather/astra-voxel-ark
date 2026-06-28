@@ -1,6 +1,7 @@
 import { assertChunkMeshSmoke, assertRenderLayerSmoke } from '../render'
 import { readOptimizationFeatureFlags } from './FeatureFlags'
 import { assertMainBootstrapSmoke } from './MainBootstrapSmoke'
+import { assertMainRuntimeHealthReportSmoke } from './MainRuntimeHealthReportSmoke'
 import { assertMainRuntimeWorkQueueSmoke } from './MainRuntimeWorkQueueSmoke'
 
 export type OptimizationSmokeResult = {
@@ -8,6 +9,7 @@ export type OptimizationSmokeResult = {
   chunkMesh: ReturnType<typeof assertChunkMeshSmoke>
   renderLayers: ReturnType<typeof assertRenderLayerSmoke>
   mainBootstrap: ReturnType<typeof assertMainBootstrapSmoke>
+  runtimeHealthReport: ReturnType<typeof assertMainRuntimeHealthReportSmoke>
   runtimeWorkQueue: ReturnType<typeof assertMainRuntimeWorkQueueSmoke>
 }
 
@@ -17,6 +19,7 @@ export function runOptimizationSmoke(hash = '#opt-diagnostics=1'): OptimizationS
     chunkMesh: assertChunkMeshSmoke(),
     renderLayers: assertRenderLayerSmoke(),
     mainBootstrap: assertMainBootstrapSmoke(),
+    runtimeHealthReport: assertMainRuntimeHealthReportSmoke(),
     runtimeWorkQueue: assertMainRuntimeWorkQueueSmoke(),
   }
 }
@@ -30,6 +33,7 @@ export function formatOptimizationSmokeResult(result: OptimizationSmokeResult) {
     `renderLayers=${result.renderLayers.layerCount}`,
     `bootstrapMirrored=${result.mainBootstrap.mirroredBlocks}`,
     `bootstrapChunks=${result.mainBootstrap.chunkCount}`,
+    `runtimeHealth=${result.runtimeHealthReport.critical}`,
     `runtimeQueueProcessed=${result.runtimeWorkQueue.processedItems.length}`,
   ].join(' | ')
 }
