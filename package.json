@@ -9,15 +9,22 @@
     "preview": "vite preview --host 0.0.0.0",
     "electron:dev": "npm run build && electron .",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
-    "dist:windows": "npm run build && electron-builder --win nsis portable --publish never",
+    "dist:linux:publish": "npm run build && electron-builder --linux AppImage deb --publish always",
+    "dist:windows": "npm run dist:windows:all",
+    "dist:windows:all": "npm run build && electron-builder --win nsis portable --x64 --ia32 --arm64 --publish never",
+    "dist:windows:x64": "npm run build && electron-builder --win nsis portable --x64 --publish never",
+    "dist:windows:x86": "npm run build && electron-builder --win nsis portable --ia32 --publish never",
+    "dist:windows:arm64": "npm run build && electron-builder --win nsis portable --arm64 --publish never",
+    "dist:windows:publish": "npm run build && electron-builder --win nsis portable --x64 --ia32 --arm64 --publish always",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug"
+    "android:build": "npm run android:sync && node scripts/build-android.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
     "@capacitor/core": "^7.4.4",
     "@types/three": "^0.176.0",
+    "electron-updater": "^6.8.9",
     "three": "^0.176.0",
     "typescript": "^5.8.3",
     "vite": "^8.0.16"
@@ -28,7 +35,7 @@
     "electron-builder": "^26.0.12"
   },
   "name": "astra-voxel-ark",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -39,6 +46,15 @@
   "build": {
     "appId": "com.lunoragather.astravoxelark",
     "productName": "AstraVoxel Ark",
+    "artifactName": "AstraVoxel-Ark-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Lunora-Gather",
+        "repo": "astra-voxel-ark",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -61,8 +77,12 @@
       ]
     },
     "nsis": {
+      "artifactName": "AstraVoxel-Ark-Setup-${version}-win-${arch}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "AstraVoxel-Ark-Portable-${version}-win-${arch}.${ext}"
     }
   },
   "author": {

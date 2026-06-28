@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v1.4 Beacon Trail'
+const GAME_VERSION_LABEL = 'v1.4.1 Beacon Trail'
 const smokeParams = new URLSearchParams(window.location.hash.slice(1))
 const isSmokeTest = smokeParams.has('smoke')
 const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
