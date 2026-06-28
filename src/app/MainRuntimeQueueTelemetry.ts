@@ -55,6 +55,21 @@ export function getMainRuntimeWorkQueueTelemetry<TerrainTask = unknown, DirtyTas
   }
 }
 
+export function formatMainRuntimeQueueTelemetry(name: string, telemetry: MainRuntimeQueueTelemetry) {
+  const capacity = telemetry.maxPending === null ? `${telemetry.pending}/uncapped` : `${telemetry.pending}/${telemetry.maxPending}`
+  const saturation = telemetry.saturation === null ? 'uncapped' : `${Math.round(telemetry.saturation * 100)}%`
+  const fullness = telemetry.isFull ? 'full' : 'ok'
+  const dropped = telemetry.hasDropped ? `dropped=${telemetry.dropped}` : 'dropped=0'
+  return `${name}=${capacity} sat=${saturation} ${fullness} ${dropped}`
+}
+
+export function formatMainRuntimeWorkQueueTelemetry(telemetry: MainRuntimeWorkQueueTelemetry) {
+  return [
+    formatMainRuntimeQueueTelemetry('terrain', telemetry.terrain),
+    formatMainRuntimeQueueTelemetry('dirty', telemetry.dirtyChunkSummaries),
+  ].join(' | ')
+}
+
 export function getMainRuntimeQueueSaturation(pending: number, maxPending: number | null) {
   if (maxPending === null) return null
   if (maxPending <= 0) return pending > 0 ? 1 : 0
