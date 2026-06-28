@@ -50,6 +50,8 @@ export type MainBootstrapSmokeResult = {
   orchestratorDirtyTelemetryDropped: number
   orchestratorFrameDirtyTelemetryPending: number
   orchestratorFrameDirtyTelemetrySaturation: number | null
+  orchestratorOverflowTelemetryLabel: string
+  orchestratorFrameQueueTelemetryLabel: string
   orchestratorFrameCount: number
   orchestratorDirtyProcessed: number
   orchestratorBacklogFrames: number
@@ -147,6 +149,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   const orchestratorInitialDirtyPending = orchestrator.dirtyChunkSummaryQueue.pending
   const orchestratorOverflow = orchestrator.tryEnqueueDirtyChunkSummaryTask('dirty-orchestrated-e')
   const orchestratorOverflowTelemetry = orchestrator.getQueueTelemetry()
+  const orchestratorOverflowTelemetryLabel = orchestrator.getQueueTelemetryLabel()
   orchestrator.adapter.onFrame({ timestamp: 16 })
   const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
   const orchestratorSummaryLabel = orchestrator.getSummaryLabel()
@@ -194,6 +197,8 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     orchestratorDirtyTelemetryDropped: orchestratorOverflowTelemetry.dirtyChunkSummaries.dropped,
     orchestratorFrameDirtyTelemetryPending: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.pending,
     orchestratorFrameDirtyTelemetrySaturation: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.saturation,
+    orchestratorOverflowTelemetryLabel,
+    orchestratorFrameQueueTelemetryLabel: orchestratedFrame.queueTelemetryLabel,
     orchestratorFrameCount: orchestrator.stats.frames,
     orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
     orchestratorBacklogFrames: orchestrator.stats.backlogFrames,
@@ -267,8 +272,8 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize explicit units, and throttle rapid updates')
   }
 
-  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || !result.orchestratorDirtyTelemetryFull || result.orchestratorDirtyTelemetryDropped !== 1 || result.orchestratorFrameDirtyTelemetryPending !== 1 || result.orchestratorFrameDirtyTelemetrySaturation !== 0.25 || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
-    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, expose telemetry, run frames, record history, and track high pressure backlog')
+  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || !result.orchestratorDirtyTelemetryFull || result.orchestratorDirtyTelemetryDropped !== 1 || result.orchestratorFrameDirtyTelemetryPending !== 1 || result.orchestratorFrameDirtyTelemetrySaturation !== 0.25 || !result.orchestratorOverflowTelemetryLabel.includes('dirty=4/4') || !result.orchestratorOverflowTelemetryLabel.includes('full') || !result.orchestratorOverflowTelemetryLabel.includes('dropped=1') || !result.orchestratorFrameQueueTelemetryLabel.includes('dirty=1/4') || !result.orchestratorFrameQueueTelemetryLabel.includes('sat=25%') || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, expose telemetry labels, run frames, record history, and track high pressure backlog')
   }
 
   if (!result.orchestratorReportPublished || !result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
