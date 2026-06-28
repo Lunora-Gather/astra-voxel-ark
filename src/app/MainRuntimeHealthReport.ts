@@ -19,7 +19,7 @@ export type MainRuntimeHealthReportInput = {
 export function createMainRuntimeHealthReport({ frame, queues }: MainRuntimeHealthReportInput): MainRuntimeHealthReport {
   const isBacklogged = isMainRuntimeFrameBacklogged(frame)
   const health = getMainRuntimeHealthLevel(frame, queues)
-  const label = formatMainRuntimeHealthReport({ health, isBacklogged, frame, queues, label: '' })
+  const label = formatMainRuntimeHealthReport({ health, isBacklogged, frame, queues })
 
   return {
     health,

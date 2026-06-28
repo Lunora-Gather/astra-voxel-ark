@@ -54,7 +54,15 @@ export function runMainRuntimeWorkQueueSmoke(): MainRuntimeWorkQueueSmokeResult 
   const queueLikeDirtyQueue = createMainRuntimeUniqueTaskQueue<string>((task) => task, ['dirty-a', 'dirty-a', 'dirty-b', 'dirty-c'])
   const queueLikeProcessedItems: string[] = []
   const queueLikePlan = planMainRuntimeWork(
-    { pressure: 'high', terrainChunksPerFrame: 0, dirtyChunkSummariesPerFrame: 2, dirtyChunkDiagnosticsLimit: 1 },
+    {
+      pressure: 'high',
+      terrainChunksPerFrame: 0,
+      dirtyChunkSummariesPerFrame: 2,
+      dirtyChunkDiagnosticsLimit: 1,
+      shouldRunTerrainQueue: false,
+      shouldRunDirtyChunkSummaries: true,
+      shouldRunDiagnostics: true,
+    },
     { pendingTerrainChunks: 0, pendingDirtyChunkSummaries: queueLikeDirtyQueue.pending },
   )
   const queueLikeResult = runMainRuntimeWorkQueues(queueLikePlan, {

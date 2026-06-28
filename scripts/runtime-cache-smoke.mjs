@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const worldMath = readFileSync(resolve(process.cwd(), 'src/worldMath.ts'), 'utf8')
+const worldMath = readFileSync(resolve(process.cwd(), 'src/worldMath.ts'), 'utf8').replace(/\r\n/g, '\n')
 
 const terrainNoiseBody = worldMath.match(/export function terrainNoise\(x: number, z: number\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
 const clearBody = worldMath.match(/export function clearTerrainNoiseCache\(\) \{([\s\S]*?)\n\}/)?.[1] ?? ''

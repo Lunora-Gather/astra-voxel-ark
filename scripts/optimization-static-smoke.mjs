@@ -3,6 +3,10 @@ import { resolve } from 'node:path'
 
 const root = process.cwd()
 
+function readNormalizedFile(path) {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+}
+
 const requiredFiles = [
   'src/app/MainOptimizationBootstrap.ts',
   'src/app/MainBootstrapSmoke.ts',
@@ -107,8 +111,8 @@ const contentChecks = [
   ['src/app/MainRuntimeOrchestrator.ts', 'terrainTaskKey'],
   ['src/app/MainRuntimeOrchestrator.ts', 'dirtyChunkSummaryTaskKey'],
   ['src/app/MainRuntimeOrchestrator.ts', 'createMainRuntimeUniqueTaskQueue'],
-  ['src/app/MainRuntimeOrchestrator.ts', 'normalizeMainRuntimeTaskQueue(terrainQueue, terrainTaskKey)'],
-  ['src/app/MainRuntimeOrchestrator.ts', 'normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue, dirtyChunkSummaryTaskKey)'],
+  ['src/app/MainRuntimeOrchestrator.ts', 'normalizeMainRuntimeTaskQueue(terrainQueue, terrainTaskKey,'],
+  ['src/app/MainRuntimeOrchestrator.ts', 'normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue, dirtyChunkSummaryTaskKey,'],
   ['src/app/MainRuntimeOrchestrator.ts', 'timestampUnit: summaryReportTimestampUnit'],
   ['src/app/MainRuntimeOrchestrator.ts', 'reporter.report'],
   ['src/app/MainRuntimeOrchestrator.ts', 'lastReport'],
@@ -244,7 +248,7 @@ for (const [file, token] of [...exportChecks, ...contentChecks]) {
     continue
   }
 
-  const content = readFileSync(path, 'utf8')
+  const content = readNormalizedFile(path)
   if (!content.includes(token)) {
     errors.push(`Expected ${file} to include ${token}`)
   }
@@ -254,7 +258,7 @@ for (const [file, token] of absentChecks) {
   const path = resolve(root, file)
   if (!existsSync(path)) continue
 
-  const content = readFileSync(path, 'utf8')
+  const content = readNormalizedFile(path)
   if (content.includes(token)) {
     errors.push(`Unexpected token in ${file}: ${token}`)
   }

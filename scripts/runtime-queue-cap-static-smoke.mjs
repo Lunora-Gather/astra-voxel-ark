@@ -3,6 +3,10 @@ import { resolve } from 'node:path'
 
 const root = process.cwd()
 
+function readNormalizedFile(path) {
+  return readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+}
+
 const checks = [
   ['src/app/index.ts', 'MainRuntimeHealthReport'],
   ['src/app/index.ts', 'MainRuntimeHealthReportSmoke'],
@@ -113,7 +117,7 @@ const checks = [
 const errors = []
 
 for (const [file, token] of checks) {
-  const content = readFileSync(resolve(root, file), 'utf8')
+  const content = readNormalizedFile(resolve(root, file))
   if (!content.includes(token)) errors.push(`Expected ${file} to include ${token}`)
 }
 
