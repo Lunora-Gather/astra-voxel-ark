@@ -52,6 +52,9 @@ export type MainBootstrapSmokeResult = {
   orchestratorFrameDirtyTelemetryPending: number
   orchestratorFrameDirtyTelemetrySaturation: number | null
   orchestratorFrameQueueTelemetryPressure: string
+  orchestratorFrameHealth: string
+  orchestratorHealthLabel: string
+  orchestratorStatsHealthLabel: string
   orchestratorOverflowTelemetryLabel: string
   orchestratorFrameQueueTelemetryLabel: string
   orchestratorFrameCount: number
@@ -201,6 +204,9 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     orchestratorFrameDirtyTelemetryPending: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.pending,
     orchestratorFrameDirtyTelemetrySaturation: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.saturation,
     orchestratorFrameQueueTelemetryPressure: orchestratedFrame.queueTelemetry.pressure,
+    orchestratorFrameHealth: orchestratedFrame.healthReport.health,
+    orchestratorHealthLabel: orchestratedFrame.healthLabel,
+    orchestratorStatsHealthLabel: orchestrator.getHealthLabel(),
     orchestratorOverflowTelemetryLabel,
     orchestratorFrameQueueTelemetryLabel: orchestratedFrame.queueTelemetryLabel,
     orchestratorFrameCount: orchestrator.stats.frames,
@@ -276,8 +282,8 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize explicit units, and throttle rapid updates')
   }
 
-  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || !result.orchestratorDirtyTelemetryFull || result.orchestratorDirtyTelemetryDropped !== 1 || result.orchestratorOverflowTelemetryPressure !== 'dropping' || result.orchestratorFrameDirtyTelemetryPending !== 1 || result.orchestratorFrameDirtyTelemetrySaturation !== 0.25 || result.orchestratorFrameQueueTelemetryPressure !== 'dropping' || !result.orchestratorOverflowTelemetryLabel.includes('queues=dropping') || !result.orchestratorOverflowTelemetryLabel.includes('dirty=4/4') || !result.orchestratorOverflowTelemetryLabel.includes('full') || !result.orchestratorOverflowTelemetryLabel.includes('pressure=dropping') || !result.orchestratorOverflowTelemetryLabel.includes('dropped=1') || !result.orchestratorFrameQueueTelemetryLabel.includes('queues=dropping') || !result.orchestratorFrameQueueTelemetryLabel.includes('dirty=1/4') || !result.orchestratorFrameQueueTelemetryLabel.includes('sat=25%') || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
-    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, classify queue pressure, expose telemetry labels, run frames, record history, and track high pressure backlog')
+  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || !result.orchestratorDirtyTelemetryFull || result.orchestratorDirtyTelemetryDropped !== 1 || result.orchestratorOverflowTelemetryPressure !== 'dropping' || result.orchestratorFrameDirtyTelemetryPending !== 1 || result.orchestratorFrameDirtyTelemetrySaturation !== 0.25 || result.orchestratorFrameQueueTelemetryPressure !== 'dropping' || result.orchestratorFrameHealth !== 'critical' || !result.orchestratorHealthLabel.includes('health=critical') || !result.orchestratorHealthLabel.includes('queues=dropping') || !result.orchestratorHealthLabel.includes('pressure=high') || result.orchestratorStatsHealthLabel !== result.orchestratorHealthLabel || !result.orchestratorOverflowTelemetryLabel.includes('queues=dropping') || !result.orchestratorOverflowTelemetryLabel.includes('dirty=4/4') || !result.orchestratorOverflowTelemetryLabel.includes('full') || !result.orchestratorOverflowTelemetryLabel.includes('pressure=dropping') || !result.orchestratorOverflowTelemetryLabel.includes('dropped=1') || !result.orchestratorFrameQueueTelemetryLabel.includes('queues=dropping') || !result.orchestratorFrameQueueTelemetryLabel.includes('dirty=1/4') || !result.orchestratorFrameQueueTelemetryLabel.includes('sat=25%') || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, classify queue pressure, expose health labels, run frames, record history, and track high pressure backlog')
   }
 
   if (!result.orchestratorReportPublished || !result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
