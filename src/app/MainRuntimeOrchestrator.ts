@@ -2,6 +2,7 @@ import type { MainOptimizationFrameOptions } from './MainOptimizationBootstrap'
 import type { MainRuntimeAdapter } from './MainRuntimeAdapter'
 import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainRuntimeFrameHistorySnapshot } from './MainRuntimeFrameHistory'
 import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter, type MainRuntimeFrameTimestampUnit } from './MainRuntimeFrameReporter'
+import { createMainRuntimeHealthReport, type MainRuntimeHealthReport } from './MainRuntimeHealthReport'
 import { formatMainRuntimeWorkQueueTelemetry, getMainRuntimeWorkQueueTelemetry, type MainRuntimeWorkQueueTelemetry } from './MainRuntimeQueueTelemetry'
 import { isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
@@ -35,6 +36,8 @@ export type MainRuntimeOrchestratorStats = {
   lastReport: MainRuntimeFrameReport | null
   lastQueueTelemetry: MainRuntimeWorkQueueTelemetry | null
   lastQueueTelemetryLabel: string
+  lastHealthReport: MainRuntimeHealthReport | null
+  lastHealthLabel: string
 }
 
 export type MainRuntimeOrchestratorFrameResult = MainRuntimeFrameScheduleResult & {
@@ -44,6 +47,8 @@ export type MainRuntimeOrchestratorFrameResult = MainRuntimeFrameScheduleResult 
   history: MainRuntimeFrameHistorySnapshot
   queueTelemetry: MainRuntimeWorkQueueTelemetry
   queueTelemetryLabel: string
+  healthReport: MainRuntimeHealthReport
+  healthLabel: string
 }
 
 export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> = {
@@ -61,6 +66,7 @@ export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> 
   getSummaryLabel: () => string
   getQueueTelemetry: () => MainRuntimeWorkQueueTelemetry
   getQueueTelemetryLabel: () => string
+  getHealthLabel: () => string
   clearQueues: () => void
   dispose: () => void
 }
@@ -102,6 +108,8 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     lastReport: null,
     lastQueueTelemetry: initialQueueTelemetry,
     lastQueueTelemetryLabel: formatMainRuntimeWorkQueueTelemetry(initialQueueTelemetry),
+    lastHealthReport: null,
+    lastHealthLabel: '',
   }
 
   const syncDroppedStats = () => {
@@ -142,6 +150,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     const historySnapshot = history.record(summary)
     const queueTelemetry = getQueueTelemetry()
     const queueTelemetryLabel = formatMainRuntimeWorkQueueTelemetry(queueTelemetry)
+    const healthReport = createMainRuntimeHealthReport({ frame: summary, queues: queueTelemetry })
     stats.frames += 1
     stats.terrainProcessed += summary.terrainProcessed
     stats.dirtyChunkSummariesProcessed += summary.dirtyChunkSummariesProcessed
@@ -150,6 +159,8 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     stats.lastSummary = summary
     stats.lastReport = report
     syncDroppedStats()
+    stats.lastHealthReport = healthReport
+    stats.lastHealthLabel = healthReport.label
 
     return {
       ...scheduled,
@@ -159,6 +170,8 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
       history: historySnapshot,
       queueTelemetry,
       queueTelemetryLabel,
+      healthReport,
+      healthLabel: healthReport.label,
     }
   }
 
@@ -177,6 +190,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     getSummaryLabel: () => reporter.peek(),
     getQueueTelemetry,
     getQueueTelemetryLabel,
+    getHealthLabel: () => stats.lastHealthLabel,
     clearQueues: () => {
       terrainTaskQueue.clear()
       dirtyTaskQueue.clear()
