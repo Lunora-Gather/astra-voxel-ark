@@ -46,6 +46,10 @@ export type MainBootstrapSmokeResult = {
   orchestratorOverflowAccepted: boolean
   orchestratorOverflowPending: number
   orchestratorDirtyDropped: number
+  orchestratorDirtyTelemetryFull: boolean
+  orchestratorDirtyTelemetryDropped: number
+  orchestratorFrameDirtyTelemetryPending: number
+  orchestratorFrameDirtyTelemetrySaturation: number | null
   orchestratorFrameCount: number
   orchestratorDirtyProcessed: number
   orchestratorBacklogFrames: number
@@ -142,6 +146,7 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
   })
   const orchestratorInitialDirtyPending = orchestrator.dirtyChunkSummaryQueue.pending
   const orchestratorOverflow = orchestrator.tryEnqueueDirtyChunkSummaryTask('dirty-orchestrated-e')
+  const orchestratorOverflowTelemetry = orchestrator.getQueueTelemetry()
   orchestrator.adapter.onFrame({ timestamp: 16 })
   const orchestratedFrame = orchestrator.runFrame({ timestamp: 132 })
   const orchestratorSummaryLabel = orchestrator.getSummaryLabel()
@@ -185,6 +190,10 @@ export function runMainBootstrapSmoke(): MainBootstrapSmokeResult {
     orchestratorOverflowAccepted: orchestratorOverflow.accepted,
     orchestratorOverflowPending: orchestratorOverflow.pending,
     orchestratorDirtyDropped: orchestrator.stats.dirtyChunkSummariesDropped,
+    orchestratorDirtyTelemetryFull: orchestratorOverflowTelemetry.dirtyChunkSummaries.isFull,
+    orchestratorDirtyTelemetryDropped: orchestratorOverflowTelemetry.dirtyChunkSummaries.dropped,
+    orchestratorFrameDirtyTelemetryPending: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.pending,
+    orchestratorFrameDirtyTelemetrySaturation: orchestratedFrame.queueTelemetry.dirtyChunkSummaries.saturation,
     orchestratorFrameCount: orchestrator.stats.frames,
     orchestratorDirtyProcessed: orchestratedFrame.summary.dirtyChunkSummariesProcessed,
     orchestratorBacklogFrames: orchestrator.stats.backlogFrames,
@@ -258,8 +267,8 @@ export function assertMainBootstrapSmoke(result = runMainBootstrapSmoke()) {
     throw new Error('Main bootstrap smoke failed: runtime frame reporter should cache labels, normalize explicit units, and throttle rapid updates')
   }
 
-  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
-    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, run frames, record history, and track high pressure backlog')
+  if (result.orchestratorInitialDirtyPending !== 4 || result.orchestratorOverflowAccepted || result.orchestratorOverflowPending !== 4 || result.orchestratorDirtyDropped !== 1 || !result.orchestratorDirtyTelemetryFull || result.orchestratorDirtyTelemetryDropped !== 1 || result.orchestratorFrameDirtyTelemetryPending !== 1 || result.orchestratorFrameDirtyTelemetrySaturation !== 0.25 || result.orchestratorFrameCount !== 1 || result.orchestratorDirtyProcessed !== 3 || result.orchestratorBacklogFrames !== 1 || result.orchestratorHistoryFrames !== 1 || result.orchestratorHighPressureFrames !== 1) {
+    throw new Error('Main bootstrap smoke failed: runtime orchestrator should dedupe, cap, report dropped work, expose telemetry, run frames, record history, and track high pressure backlog')
   }
 
   if (!result.orchestratorReportPublished || !result.orchestratorSummaryLabel.includes('pressure=high') || !result.orchestratorSummaryLabel.includes('dirty=3/4')) {
