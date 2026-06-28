@@ -12,10 +12,14 @@ const isSmokeTest = smokeParams.has('smoke')
 const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
 const smokeTouchMode = smokeTouchParam === '1'
 const smokeDesktopMode = smokeTouchParam === '0'
-const isTouchDevice = smokeTouchMode || (!smokeDesktopMode && (window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0))
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
+const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches
+const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+const hasTouchCapability = hasCoarsePointer || navigator.maxTouchPoints > 0
+const isTouchPrimaryDevice = hasCoarsePointer && (isSmallScreen || isMobileUserAgent)
+const isTouchDevice = smokeTouchMode || (!smokeDesktopMode && isTouchPrimaryDevice)
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const lowPowerMode = isTouchDevice || isSmallScreen || prefersReducedMotion
+const lowPowerMode = isTouchDevice || hasTouchCapability || isSmallScreen || prefersReducedMotion
 
 app.innerHTML = `
   <div class="hud">
@@ -2123,6 +2127,7 @@ start.querySelector('button')!.addEventListener('click', () => {
     start.classList.add('hidden')
     return
   }
+  start.classList.add('hidden')
   controls.lock()
 })
 controls.addEventListener('lock', () => start.classList.add('hidden'))
