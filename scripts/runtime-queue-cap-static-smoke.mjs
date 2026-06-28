@@ -4,7 +4,23 @@ import { resolve } from 'node:path'
 const root = process.cwd()
 
 const checks = [
+  ['src/app/index.ts', 'MainRuntimeHealthReport'],
+  ['src/app/index.ts', 'MainRuntimeHealthReportSmoke'],
   ['src/app/index.ts', 'MainRuntimeQueueTelemetry'],
+  ['src/app/MainRuntimeHealthReport.ts', 'MainRuntimeHealthLevel'],
+  ['src/app/MainRuntimeHealthReport.ts', 'createMainRuntimeHealthReport'],
+  ['src/app/MainRuntimeHealthReport.ts', 'getMainRuntimeHealthLevel'],
+  ['src/app/MainRuntimeHealthReport.ts', 'formatMainRuntimeHealthReport'],
+  ['src/app/MainRuntimeHealthReport.ts', "'nominal' | 'busy' | 'strained' | 'critical'"],
+  ['src/app/MainRuntimeHealthReport.ts', "health=${report.health}"],
+  ['src/app/MainRuntimeHealthReport.ts', 'formatMainRuntimeFrameSummary'],
+  ['src/app/MainRuntimeHealthReport.ts', 'formatMainRuntimeWorkQueueTelemetry'],
+  ['src/app/MainRuntimeHealthReportSmoke.ts', 'assertMainRuntimeHealthReportSmoke'],
+  ['src/app/MainRuntimeHealthReportSmoke.ts', 'health=critical'],
+  ['src/app/MainRuntimeHealthReportSmoke.ts', 'queues=dropping'],
+  ['src/app/OptimizationSmoke.ts', 'assertMainRuntimeHealthReportSmoke'],
+  ['src/app/OptimizationSmoke.ts', 'runtimeHealthReport'],
+  ['src/app/OptimizationSmoke.ts', 'runtimeHealth='],
   ['src/app/MainRuntimeQueueTelemetry.ts', 'MainRuntimeQueuePressure'],
   ['src/app/MainRuntimeQueueTelemetry.ts', 'MainRuntimeQueueTelemetry'],
   ['src/app/MainRuntimeQueueTelemetry.ts', 'MainRuntimeWorkQueueTelemetry'],
