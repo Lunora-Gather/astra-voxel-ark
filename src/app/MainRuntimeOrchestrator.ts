@@ -2,6 +2,7 @@ import type { MainOptimizationFrameOptions } from './MainOptimizationBootstrap'
 import type { MainRuntimeAdapter } from './MainRuntimeAdapter'
 import { createMainRuntimeFrameHistory, type MainRuntimeFrameHistory, type MainRuntimeFrameHistorySnapshot } from './MainRuntimeFrameHistory'
 import { createMainRuntimeFrameReporter, type MainRuntimeFrameReport, type MainRuntimeFrameReporter, type MainRuntimeFrameTimestampUnit } from './MainRuntimeFrameReporter'
+import { getMainRuntimeWorkQueueTelemetry, type MainRuntimeWorkQueueTelemetry } from './MainRuntimeQueueTelemetry'
 import { isMainRuntimeFrameBacklogged, summarizeMainRuntimeFrame, type MainRuntimeFrameSummary } from './MainRuntimeFrameSummary'
 import type { MainRuntimeFrameScheduleResult } from './MainRuntimeFrameScheduler'
 import { createMainRuntimeTaskQueue, createMainRuntimeUniqueTaskQueue, runMainRuntimeTaskQueue, type MainRuntimeQueueEnqueueResult, type MainRuntimeQueueKeySelector, type MainRuntimeQueueTask, type MainRuntimeTaskQueue, type MainRuntimeTaskQueueOptions, type MainRuntimeWorkQueueResult } from './MainRuntimeWorkQueue'
@@ -32,6 +33,7 @@ export type MainRuntimeOrchestratorStats = {
   pressureFrames: MainRuntimeFrameHistorySnapshot['pressureFrames']
   lastSummary: MainRuntimeFrameSummary | null
   lastReport: MainRuntimeFrameReport | null
+  lastQueueTelemetry: MainRuntimeWorkQueueTelemetry | null
 }
 
 export type MainRuntimeOrchestratorFrameResult = MainRuntimeFrameScheduleResult & {
@@ -39,6 +41,7 @@ export type MainRuntimeOrchestratorFrameResult = MainRuntimeFrameScheduleResult 
   summaryLabel: string
   report: MainRuntimeFrameReport
   history: MainRuntimeFrameHistorySnapshot
+  queueTelemetry: MainRuntimeWorkQueueTelemetry
 }
 
 export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> = {
@@ -54,6 +57,7 @@ export type MainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask = unknown> 
   tryEnqueueDirtyChunkSummaryTask: (task: DirtyTask) => MainRuntimeQueueEnqueueResult
   runFrame: (frame?: MainOptimizationFrameOptions) => MainRuntimeOrchestratorFrameResult
   getSummaryLabel: () => string
+  getQueueTelemetry: () => MainRuntimeWorkQueueTelemetry
   clearQueues: () => void
   dispose: () => void
 }
@@ -77,6 +81,10 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
   const dirtyTaskQueue = normalizeMainRuntimeTaskQueue(dirtyChunkSummaryQueue, dirtyChunkSummaryTaskKey, { maxPending: dirtyChunkSummaryQueueMaxPending })
   const history = createMainRuntimeFrameHistory(historyLimit)
   const reporter = createMainRuntimeFrameReporter({ minIntervalMs: summaryReportIntervalMs, timestampUnit: summaryReportTimestampUnit })
+  const getQueueTelemetry = () => getMainRuntimeWorkQueueTelemetry({
+    terrainQueue: terrainTaskQueue,
+    dirtyChunkSummaryQueue: dirtyTaskQueue,
+  })
   const stats: MainRuntimeOrchestratorStats = {
     frames: 0,
     terrainProcessed: 0,
@@ -87,11 +95,13 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     pressureFrames: { nominal: 0, moderate: 0, high: 0 },
     lastSummary: null,
     lastReport: null,
+    lastQueueTelemetry: getQueueTelemetry(),
   }
 
   const syncDroppedStats = () => {
     stats.terrainDropped = terrainTaskQueue.dropped
     stats.dirtyChunkSummariesDropped = dirtyTaskQueue.dropped
+    stats.lastQueueTelemetry = getQueueTelemetry()
   }
 
   const tryEnqueueTerrainTask = (task: TerrainTask) => {
@@ -122,6 +132,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     const summary = summarizeMainRuntimeFrame(scheduled)
     const report = reporter.report(summary, frame?.timestamp)
     const historySnapshot = history.record(summary)
+    const queueTelemetry = getQueueTelemetry()
     stats.frames += 1
     stats.terrainProcessed += summary.terrainProcessed
     stats.dirtyChunkSummariesProcessed += summary.dirtyChunkSummariesProcessed
@@ -137,6 +148,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
       summaryLabel: report.label,
       report,
       history: historySnapshot,
+      queueTelemetry,
     }
   }
 
@@ -153,6 +165,7 @@ export function createMainRuntimeOrchestrator<TerrainTask = unknown, DirtyTask =
     tryEnqueueDirtyChunkSummaryTask,
     runFrame,
     getSummaryLabel: () => reporter.peek(),
+    getQueueTelemetry,
     clearQueues: () => {
       terrainTaskQueue.clear()
       dirtyTaskQueue.clear()
