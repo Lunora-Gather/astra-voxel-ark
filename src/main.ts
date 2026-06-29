@@ -298,8 +298,11 @@ const AIR_ACCEL_RESPONSE = 6
 const AIR_STOP_RESPONSE = 2.5
 const JUMP_VELOCITY = 8.2
 const GRAVITY = 21.5
-const TOUCH_JOYSTICK_DEADZONE = 0.1
-const TOUCH_LOOK_DEADZONE = 0.35
+const TOUCH_JOYSTICK_DEADZONE = 0.08
+const TOUCH_JOYSTICK_EDGE = 0.42
+const TOUCH_JOYSTICK_RESPONSE = 1.28
+const TOUCH_LOOK_DEADZONE = 0.28
+const TOUCH_LOOK_MAX_DELTA = 34
 function adaptiveBudget(base: number, minimum: number) {
   const pressureScale = currentFps > 0 && currentFps < 36 ? 0.65 : 1
   return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale))
@@ -1956,6 +1959,7 @@ function resetInputState() {
   joystickPointerId = null
   lookPointerId = null
   stick.style.transform = 'translate(-50%, -50%)'
+  setJoystickActive(false)
   cancelTouchMining()
 }
 
@@ -2110,6 +2114,7 @@ function updateOrientationClass() {
     joystickPointerId = null
     lookPointerId = null
     stick.style.transform = 'translate(-50%, -50%)'
+    setJoystickActive(false)
     cancelTouchMining()
   }
 }
@@ -2169,6 +2174,7 @@ window.addEventListener('blur', () => {
   keys.clear()
   mobileMove.set(0, 0)
   stick.style.transform = 'translate(-50%, -50%)'
+  setJoystickActive(false)
 })
 
 type PickHit = {
@@ -2384,6 +2390,21 @@ let touchStartedOnRight = false
 const TOUCH_TAP_MAX_MOVE = isTouchDevice ? 30 : 24
 const TOUCH_MINE_MS = 650
 
+function vibrateTouch(pattern: number | number[]) {
+  if (!isTouchDevice || typeof navigator.vibrate !== 'function') return
+  navigator.vibrate(pattern)
+}
+
+function applySoftDeadzone(value: number, deadzone: number) {
+  const magnitude = Math.abs(value)
+  if (magnitude <= deadzone) return 0
+  return Math.sign(value) * (magnitude - deadzone)
+}
+
+function setJoystickActive(active: boolean) {
+  joystick.classList.toggle('active', active)
+}
+
 function stopUiTouch(event: Event) {
   event.preventDefault()
   event.stopPropagation()
@@ -2400,6 +2421,7 @@ function bindTouchButton(button: HTMLButtonElement, action: () => void) {
     stopUiTouch(event)
     button.setPointerCapture(event.pointerId)
     button.classList.add('pressed')
+    vibrateTouch(8)
     action()
   })
   button.addEventListener('pointerup', (event) => {
@@ -2416,7 +2438,7 @@ function updateJoystick(event: PointerEvent) {
   const rect = joystick.getBoundingClientRect()
   const centerX = rect.left + rect.width / 2
   const centerY = rect.top + rect.height / 2
-  const max = rect.width * 0.34
+  const max = rect.width * TOUCH_JOYSTICK_EDGE
   const dx = event.clientX - centerX
   const dy = event.clientY - centerY
   const length = Math.hypot(dx, dy)
@@ -2431,7 +2453,7 @@ function updateJoystick(event: PointerEvent) {
     mobileMove.set(0, 0)
     return
   }
-  const adjustedMagnitude = (magnitude - TOUCH_JOYSTICK_DEADZONE) / (1 - TOUCH_JOYSTICK_DEADZONE)
+  const adjustedMagnitude = Math.pow((magnitude - TOUCH_JOYSTICK_DEADZONE) / (1 - TOUCH_JOYSTICK_DEADZONE), TOUCH_JOYSTICK_RESPONSE)
   mobileMove.set(rawX / magnitude * adjustedMagnitude, rawY / magnitude * adjustedMagnitude)
 }
 
@@ -2439,6 +2461,8 @@ joystick.addEventListener('pointerdown', (event) => {
   if (joystickPointerId !== null) return
   stopUiTouch(event)
   joystickPointerId = event.pointerId
+  setJoystickActive(true)
+  vibrateTouch(8)
   joystick.setPointerCapture(event.pointerId)
   updateJoystick(event)
 })
@@ -2453,6 +2477,7 @@ function releaseJoystick(event: PointerEvent) {
   joystickPointerId = null
   mobileMove.set(0, 0)
   stick.style.transform = 'translate(-50%, -50%)'
+  setJoystickActive(false)
 }
 joystick.addEventListener('pointerup', releaseJoystick)
 joystick.addEventListener('pointercancel', releaseJoystick)
@@ -2521,8 +2546,20 @@ function updateTouchMining() {
   touchMiningComplete = true
   mineProgress.classList.add('mining-complete')
   mineProgress.querySelector('span')!.textContent = 'Break'
+  vibrateTouch([10, 22, 14])
   breakTargetBlock()
   window.setTimeout(cancelTouchMining, 180)
+}
+
+function applyTouchLookDelta(dx: number, dy: number) {
+  const lookDx = THREE.MathUtils.clamp(applySoftDeadzone(dx, TOUCH_LOOK_DEADZONE), -TOUCH_LOOK_MAX_DELTA, TOUCH_LOOK_MAX_DELTA)
+  const lookDy = THREE.MathUtils.clamp(applySoftDeadzone(dy, TOUCH_LOOK_DEADZONE), -TOUCH_LOOK_MAX_DELTA, TOUCH_LOOK_MAX_DELTA)
+  if (lookDx === 0 && lookDy === 0) return
+
+  const object = controls.object
+  object.rotation.y -= lookDx * touchLookSpeed
+  camera.rotation.x = clampLookPitch(camera.rotation.x - lookDy * touchLookSpeed)
+  stabilizeFirstPersonLook()
 }
 
 updateOrientationClass()
@@ -2567,12 +2604,7 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     lookMoved = true
     if (touchMining && !touchMiningComplete) cancelTouchMining()
   }
-  const object = controls.object
-  const lookDx = Math.abs(dx) < TOUCH_LOOK_DEADZONE ? 0 : dx
-  const lookDy = Math.abs(dy) < TOUCH_LOOK_DEADZONE ? 0 : dy
-  object.rotation.y -= lookDx * touchLookSpeed
-  camera.rotation.x = clampLookPitch(camera.rotation.x - lookDy * touchLookSpeed)
-  stabilizeFirstPersonLook()
+  applyTouchLookDelta(dx, dy)
 })
 renderer.domElement.addEventListener('pointerup', (event) => {
   if (event.pointerId !== lookPointerId) return
@@ -2580,7 +2612,10 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   const shouldPlace = touchStartedOnRight && !lookMoved && touchMining && !touchMiningComplete
   lookPointerId = null
   if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
-  if (shouldPlace) placeTargetBlock()
+  if (shouldPlace) {
+    vibrateTouch(12)
+    placeTargetBlock()
+  }
   cancelTouchMining()
 })
 renderer.domElement.addEventListener('pointercancel', (event) => {
