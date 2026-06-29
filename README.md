@@ -61,19 +61,18 @@ Set `ASTRA_SMOKE_ARTIFACT_DIR=artifacts/hud-smoke` before `npm run verify` to sa
 # Ubuntu Linux AppImage + .deb
 npm run dist:linux
 
-# Windows installer + portable exe for x64, x86 and arm64
+# Windows installer for x64 and arm64
 npm run dist:windows
 
 # Single Windows architecture builds
 npm run dist:windows:x64
-npm run dist:windows:x86
 npm run dist:windows:arm64
 
 # Android debug APK
 npm run android:build
 ```
 
-GitHub `v*` tags publish release assets for Windows x64/x86/arm64, Linux and Android APK. Desktop builds include a Check for Updates menu backed by GitHub Releases. See `PACKAGING.md` for platform-specific notes and output paths.
+GitHub `v*` tags publish release assets for Windows x64/arm64, Linux and Android APK. Desktop builds include a Check for Updates menu backed by GitHub Releases. See `PACKAGING.md` for platform-specific notes and output paths.
 
 ## Deployment
 

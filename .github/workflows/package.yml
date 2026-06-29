@@ -49,8 +49,10 @@ jobs:
         with:
           name: astra-voxel-ark-windows
           path: |
-            release/*.exe
-            release/*.blockmap
+            release/AstraVoxel-Ark-Setup-*-win-x64.exe
+            release/AstraVoxel-Ark-Setup-*-win-x64.exe.blockmap
+            release/AstraVoxel-Ark-Setup-*-win-arm64.exe
+            release/AstraVoxel-Ark-Setup-*-win-arm64.exe.blockmap
             release/latest.yml
           if-no-files-found: error
 

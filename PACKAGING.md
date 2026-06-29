@@ -5,7 +5,7 @@ AstraVoxel Ark is now structured as a landscape-first game app with one shared V
 - Web / GitHub Pages
 - Android via Capacitor
 - Ubuntu Linux via Electron Builder (`AppImage` and `.deb`)
-- Windows via Electron Builder (`NSIS` installer and portable `.exe`) for x64, x86/ia32 and arm64
+- Windows via Electron Builder (`NSIS` installer) for x64 and arm64
 
 ## Orientation
 
@@ -25,13 +25,12 @@ npm run electron:dev
 # Ubuntu Linux packages
 npm run dist:linux
 
-# Windows packages for x64, x86/ia32 and arm64, best run on a Windows GitHub Actions runner or Windows machine.
-# Linux cross-builds require Wine for NSIS/portable exe generation.
+# Windows packages for x64 and arm64, best run on a Windows GitHub Actions runner or Windows machine.
+# Linux cross-builds require Wine for NSIS exe generation.
 npm run dist:windows
 
 # Windows single-architecture builds
 npm run dist:windows:x64
-npm run dist:windows:x86
 npm run dist:windows:arm64
 
 # Android project sync/build. Requires a full JDK with javac, not only a JRE.
@@ -52,7 +51,7 @@ Generated outputs are ignored by git. GitHub Actions can build and upload them a
 - `Verify` runs typecheck, build and HUD smoke testing for pull requests and optimization branches.
 - `Deploy to GitHub Pages` builds and publishes the web app from `main`.
 - `Package Apps` can be run manually or from `v*` tags to produce Linux, Windows and Android artifacts.
-- Tag builds publish a GitHub Release containing Windows x64/x86/arm64 installers, portable executables, update metadata, Linux packages and Android APK.
+- Tag builds publish a GitHub Release containing Windows x64/arm64 installers, update metadata, Linux packages and Android APK.
 
 ## Updates
 
@@ -64,7 +63,7 @@ The packaged Electron app includes an **AstraVoxel Ark → Check for Updates** m
 - let the `Package Apps` workflow finish;
 - keep the generated Windows `.exe`, `.blockmap` and `latest.yml` assets on the release.
 
-The NSIS installer is the recommended update-capable Windows package. Portable `.exe` builds are still useful for no-install play, but users can always use **Open Releases** from the app menu to download a newer build manually.
+The NSIS installer is the update-capable Windows package. Users can also use **Open Releases** from the app menu to download a newer build manually.
 
 ### Android
 

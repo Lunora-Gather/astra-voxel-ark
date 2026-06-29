@@ -11,11 +11,10 @@
     "dist:linux": "npm run build && electron-builder --linux AppImage deb --publish never",
     "dist:linux:publish": "npm run build && electron-builder --linux AppImage deb --publish always",
     "dist:windows": "npm run dist:windows:all",
-    "dist:windows:all": "npm run build && electron-builder --win nsis portable --x64 --ia32 --arm64 --publish never",
-    "dist:windows:x64": "npm run build && electron-builder --win nsis portable --x64 --publish never",
-    "dist:windows:x86": "npm run build && electron-builder --win nsis portable --ia32 --publish never",
-    "dist:windows:arm64": "npm run build && electron-builder --win nsis portable --arm64 --publish never",
-    "dist:windows:publish": "npm run build && electron-builder --win nsis portable --x64 --ia32 --arm64 --publish always",
+    "dist:windows:all": "npm run build && electron-builder --win nsis --x64 --arm64 --publish never",
+    "dist:windows:x64": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:windows:arm64": "npm run build && electron-builder --win nsis --arm64 --publish never",
+    "dist:windows:publish": "npm run build && electron-builder --win nsis --x64 --arm64 --publish always",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
     "android:build": "npm run android:sync && node scripts/build-android.mjs"
@@ -72,17 +71,14 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        "nsis"
       ]
     },
     "nsis": {
       "artifactName": "AstraVoxel-Ark-Setup-${version}-win-${arch}.${ext}",
+      "buildUniversalInstaller": false,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    },
-    "portable": {
-      "artifactName": "AstraVoxel-Ark-Portable-${version}-win-${arch}.${ext}"
     }
   },
   "author": {
