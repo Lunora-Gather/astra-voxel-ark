@@ -245,6 +245,21 @@ async function readState(win, label) {
         joystickVisible: visible('.joystick'),
         touchActionsVisible: visible('.touch-actions'),
         touchButtonsVisible: visibleCount('.touch-btn'),
+        joystickRect: rectOf('.joystick'),
+        touchButtonRects: [...document.querySelectorAll('.touch-btn')].map((button) => {
+          const rect = button.getBoundingClientRect();
+          const style = getComputedStyle(button);
+          return {
+            text: button.textContent.trim(),
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+            width: rect.width,
+            height: rect.height,
+            visible: style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || '1') > 0.01,
+          };
+        }),
         pressedTouchButtons: document.querySelectorAll('.touch-btn.pressed').length,
         mineProgressVisible: visible('.mine-progress'),
         panelFullyVisible: fullyVisible(rectOf('.pause-panel')),
@@ -291,6 +306,11 @@ function assertTouchLandscapeState(state) {
   if (!state.mobileControlsVisible || !state.joystickVisible || !state.touchActionsVisible || state.touchButtonsVisible !== 3) {
     fail('Touch landscape controls should be visible and complete', state)
   }
+  if (!state.joystickRect || state.joystickRect.width < 88 || state.joystickRect.height < 88) {
+    fail('Touch joystick should keep a comfortable control area', state)
+  }
+  const smallButtons = state.touchButtonRects.filter((rect) => rect.visible && (rect.width < 48 || rect.height < 48))
+  if (smallButtons.length) fail('Touch action buttons should keep comfortable tap targets', { smallButtons, state })
 }
 
 function assertTouchPortraitState(state) {

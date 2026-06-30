@@ -1960,6 +1960,7 @@ function resetInputState() {
   lookPointerId = null
   stick.style.transform = 'translate(-50%, -50%)'
   setJoystickActive(false)
+  clearTouchButtonPresses()
   cancelTouchMining()
 }
 
@@ -2115,6 +2116,7 @@ function updateOrientationClass() {
     lookPointerId = null
     stick.style.transform = 'translate(-50%, -50%)'
     setJoystickActive(false)
+    clearTouchButtonPresses()
     cancelTouchMining()
   }
 }
@@ -2175,6 +2177,7 @@ window.addEventListener('blur', () => {
   mobileMove.set(0, 0)
   stick.style.transform = 'translate(-50%, -50%)'
   setJoystickActive(false)
+  clearTouchButtonPresses()
 })
 
 type PickHit = {
@@ -2392,7 +2395,11 @@ const TOUCH_MINE_MS = 650
 
 function vibrateTouch(pattern: number | number[]) {
   if (!isTouchDevice || typeof navigator.vibrate !== 'function') return
-  navigator.vibrate(pattern)
+  try {
+    navigator.vibrate(pattern)
+  } catch {
+    // Vibration is a best-effort touch affordance and should never interrupt input.
+  }
 }
 
 function applySoftDeadzone(value: number, deadzone: number) {
@@ -2403,6 +2410,12 @@ function applySoftDeadzone(value: number, deadzone: number) {
 
 function setJoystickActive(active: boolean) {
   joystick.classList.toggle('active', active)
+}
+
+function clearTouchButtonPresses() {
+  jumpButton.classList.remove('pressed')
+  breakButton.classList.remove('pressed')
+  placeButton.classList.remove('pressed')
 }
 
 function stopUiTouch(event: Event) {
