@@ -37,8 +37,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build site
-        run: npm run build
+      - name: Install smoke-test display runtime
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Build and smoke verify
+        run: xvfb-run -a npm run verify
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
