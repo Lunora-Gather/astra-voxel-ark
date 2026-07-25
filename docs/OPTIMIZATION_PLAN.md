@@ -32,7 +32,7 @@ Status: mostly complete on `optimize/architecture-performance-pass`.
 
 ## Phase 2: Source modularization
 
-Status: scaffolding started. `Settings`, `SaveSystem`, `AudioSystem`, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, block render layers, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, particle pooling, and app-level runtime adapters now have standalone modules ready for incremental integration.
+Status: active migration. The v8 `SaveSystem` and shared `AudioSystem` now own their live persistence or runtime boundaries. Typed settings, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, block render layers, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, particle pooling, and app-level runtime adapters have standalone modules for continued extraction.
 
 Target structure:
 
@@ -76,9 +76,9 @@ src/
 
 Recommended extraction order:
 
-1. `SaveSystem` and save validation.
+1. `SaveSystem` and save validation — integrated.
 2. `Settings` and local storage settings.
-3. `AudioSystem`.
+3. `AudioSystem` — integrated.
 4. `BlockPicker` and placement helpers.
 5. `PlayerController` and collision helpers.
 6. `TerrainGenerator`.
@@ -87,7 +87,7 @@ Recommended extraction order:
 
 ## Phase 3: Runtime performance pass
 
-Status: helper modules started, main-loop integration still pending. Terrain worker, particle pooling, point-light budgeting, chunk mesh diagnostics, and chunk mesh renderer paths now have app-level feature-flag adapters. Greedy meshing has render-layer filtering, visible-face collection, face merging, buffer geometry generation, chunk mesh renderer management, diagnostics, and smoke helpers at the module layer.
+Status: core paths integrated. Streamed terrain uses the worker pipeline; opaque terrain uses budgeted greedy chunk meshes; particle effects use pools; point lights are distance-budgeted; and resident terrain chunks are evicted outside the retention radius. Diagnostics and runtime adapters remain available for deeper profiling and further main-loop extraction.
 
 High-impact tasks:
 

@@ -1,5 +1,6 @@
 export type ToneOptions = {
   frequency: number
+  endFrequency?: number
   durationSeconds?: number
   type?: OscillatorType
   gain?: number
@@ -13,36 +14,51 @@ export class AudioSystem {
   private context: AudioContext | null = null
   private masterGain: GainNode | null = null
   private enabled = true
+  private masterVolume = 0.7
 
   setEnabled(enabled: boolean) {
     this.enabled = enabled
+    this.syncMasterGain()
+  }
+
+  setMasterVolume(volume: number) {
+    this.masterVolume = clamp01(volume)
+    this.syncMasterGain()
   }
 
   unlock() {
+    if (!this.enabled || this.masterVolume <= 0) return
     const context = this.getContext()
+    if (!context) return
     if (context.state === 'suspended') {
       void context.resume().catch(() => undefined)
     }
   }
 
-  playTone({ frequency, durationSeconds = 0.08, type = 'square', gain = 0.035 }: ToneOptions) {
-    if (!this.enabled) return
+  playTone({ frequency, endFrequency, durationSeconds = 0.08, type = 'square', gain = 0.035 }: ToneOptions) {
+    if (!this.enabled || this.masterVolume <= 0) return false
 
     const context = this.getContext()
+    if (!context) return false
     const oscillator = context.createOscillator()
     const envelope = context.createGain()
     const now = context.currentTime
+    const duration = Math.max(0.02, durationSeconds)
 
     oscillator.type = type
-    oscillator.frequency.setValueAtTime(frequency, now)
+    oscillator.frequency.setValueAtTime(Math.max(1, frequency), now)
+    if (typeof endFrequency === 'number' && Number.isFinite(endFrequency)) {
+      oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), now + duration)
+    }
     envelope.gain.setValueAtTime(0.0001, now)
-    envelope.gain.exponentialRampToValueAtTime(gain, now + 0.01)
-    envelope.gain.exponentialRampToValueAtTime(0.0001, now + durationSeconds)
+    envelope.gain.exponentialRampToValueAtTime(Math.max(0.0001, gain), now + Math.min(0.01, duration * 0.25))
+    envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration)
 
     oscillator.connect(envelope)
     envelope.connect(this.getMasterGain())
     oscillator.start(now)
-    oscillator.stop(now + durationSeconds + 0.02)
+    oscillator.stop(now + duration + 0.02)
+    return true
   }
 
   playBlockBreak(blockTone = 180) {
@@ -74,26 +90,40 @@ export class AudioSystem {
     this.masterGain = null
   }
 
-  private getContext() {
+  private getContext(): AudioContext | null {
     if (!this.context) {
       const AudioContextCtor = window.AudioContext || (window as BrowserWindowWithWebkitAudio).webkitAudioContext
-      if (!AudioContextCtor) {
-        throw new Error('Web Audio API is not available in this browser')
+      if (!AudioContextCtor) return null
+      try {
+        this.context = new AudioContextCtor()
+      } catch {
+        return null
       }
-      this.context = new AudioContextCtor()
     }
     return this.context
   }
 
   private getMasterGain() {
     const context = this.getContext()
+    if (!context) throw new Error('Audio context unavailable')
     if (!this.masterGain) {
       this.masterGain = context.createGain()
-      this.masterGain.gain.value = 1
+      this.masterGain.gain.value = this.enabled ? this.masterVolume : 0
       this.masterGain.connect(context.destination)
     }
     return this.masterGain
   }
+
+  private syncMasterGain() {
+    if (!this.masterGain || !this.context) return
+    const value = this.enabled ? this.masterVolume : 0
+    this.masterGain.gain.cancelScheduledValues(this.context.currentTime)
+    this.masterGain.gain.setTargetAtTime(value, this.context.currentTime, 0.012)
+  }
 }
 
 export const audioSystem = new AudioSystem()
+
+function clamp01(value: number) {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
+}

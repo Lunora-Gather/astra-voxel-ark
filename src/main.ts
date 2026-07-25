@@ -40,6 +40,7 @@ import {
   type WorldSlotId,
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
+import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
@@ -1650,48 +1651,8 @@ function createShardBurst(position: THREE.Vector3) {
   particleEffects.createShardBurst(position, cosmeticEffectsReduced ? 8 : 16)
 }
 
-// 简单音效 (Web Audio API)
-let audioContext: AudioContext | null = null
 let soundVolume = 0.7
 let soundEnabled = true
-function getAudioContext() {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-  }
-  if (audioContext.state === 'suspended') {
-    void audioContext.resume().catch(() => undefined)
-  }
-  return audioContext
-}
-function playSound(type: 'break' | 'place' | 'jump' | 'select', volume: number) {
-  if (!soundEnabled || soundVolume <= 0) return
-  const audioContext = getAudioContext()
-  const osc = audioContext.createOscillator()
-  const gain = audioContext.createGain()
-  osc.connect(gain)
-  gain.connect(audioContext.destination)
-
-  gain.gain.setValueAtTime(Math.max(0.001, volume * soundVolume), audioContext.currentTime)
-  gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.08)
-
-  if (type === 'break') {
-    osc.frequency.setValueAtTime(220, audioContext.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(110, audioContext.currentTime + 0.08)
-  } else if (type === 'place') {
-    osc.frequency.setValueAtTime(330, audioContext.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(220, audioContext.currentTime + 0.08)
-  } else if (type === 'jump') {
-    osc.frequency.setValueAtTime(440, audioContext.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(660, audioContext.currentTime + 0.1)
-  } else if (type === 'select') {
-    osc.frequency.setValueAtTime(520, audioContext.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(650, audioContext.currentTime + 0.06)
-  }
-
-  osc.type = 'sine'
-  osc.start(audioContext.currentTime)
-  osc.stop(audioContext.currentTime + 0.1)
-}
 
 function isTerrainChunkInBounds(cx: number, cz: number) {
   return Math.hypot(cx, cz) <= TERRAIN_MAX_RADIUS
@@ -2070,7 +2031,7 @@ function selectHotbarSlot(index: number, source: HotbarSelectionSource = 'pointe
   }
   if (source !== 'auto') {
     pulseSelectedSlot()
-    if (changed || source === 'wheel') playSound('select', source === 'wheel' ? 0.08 : 0.06)
+    if (changed || source === 'wheel') playGameSound('select', source === 'wheel' ? 0.08 : 0.06)
   }
 }
 
@@ -2427,7 +2388,7 @@ recipeList.addEventListener('click', (event) => {
     showToast('Missing crafting materials')
     return
   }
-  playSound('select', 0.28)
+  playGameSound('select', 0.28)
   showToast(`${recipe.name} crafted`)
   updateHotbar()
   updateProgressionUi()
@@ -2569,9 +2530,11 @@ function applySettings(settings: GameSettings, persist = false) {
   document.body.dataset.frameRate = String(frameRateLimit)
 
   soundVolume = clampNumber(settings.volume, 0, 100) / 100
+  audioSystem.setMasterVolume(soundVolume)
   volumeInput.value = String(Math.round(soundVolume * 100))
   volumeValue.textContent = `${Math.round(soundVolume * 100)}%`
   soundEnabled = settings.soundEnabled
+  audioSystem.setEnabled(soundEnabled)
   soundToggle.checked = soundEnabled
   if (persist) writeStoredSettings()
 }
@@ -2732,7 +2695,7 @@ function updateOrientationClass() {
 }
 
 start.querySelector('button')!.addEventListener('click', () => {
-  if (soundEnabled && soundVolume > 0) getAudioContext()
+  unlockGameAudio()
   hasStarted = true
   closePauseMenu(false)
   if (isTouchDevice) {
@@ -2873,8 +2836,7 @@ function breakTargetBlock() {
     const canAbsorbCharge = !playerPlacedBlocks.has(minedKey)
     // 破坏粒子
     createBreakParticles(hitBlockPosition, blockId)
-    // 简单音效反馈（可选：用 Web Audio API）
-    playSound('break', 0.3)
+    playGameSound('break', 0.3)
     // Crosshair flash on break hit
     const crosshair = document.querySelector<HTMLDivElement>('.crosshair')!
     if (crosshair) {
@@ -2913,7 +2875,7 @@ function placeTargetBlock() {
       showToast('Too close to place')
       return
     }
-    playSound('place', 0.25)
+    playGameSound('place', 0.25)
     removeBlockAtKey(hitKey)
     addBlock(hitBlockPosition.x, hitBlockPosition.y, hitBlockPosition.z, selectedBlock, 'player')
     consumeInventory(selectedBlock)
@@ -2935,7 +2897,7 @@ function placeTargetBlock() {
     showToast('Too close to place')
     return
   }
-  playSound('place', 0.25)
+  playGameSound('place', 0.25)
   addBlock(placePosition.x, placePosition.y, placePosition.z, selectedBlock, 'player')
   consumeInventory(selectedBlock)
   progression.recordPlacement()
@@ -2951,6 +2913,7 @@ function collectExplorationShard(blockKey: string, blockId: BlockId) {
 
   getBlockPositionFromKey(blockKey, hitBlockPosition)
   createShardBurst(hitBlockPosition)
+  playShardCollectSound()
   compassBadge.classList.add('pulse')
   window.setTimeout(() => compassBadge.classList.remove('pulse'), 650)
   landmarkShardBlocks.delete(blockKey)
@@ -3133,7 +3096,7 @@ function runJump() {
   if (!canJump) return
   velocityY = JUMP_VELOCITY
   canJump = false
-  playSound('jump', 0.2)
+  playGameSound('jump', 0.2)
 }
 
 bindTouchButton(jumpButton, runJump)
@@ -3755,4 +3718,5 @@ window.addEventListener('pagehide', () => {
   if (hasStarted) getWorldSaveSystem().save(serializeWorld())
   terrainWorker?.dispose()
   particleEffects.dispose()
+  audioSystem.dispose()
 }, { once: true })

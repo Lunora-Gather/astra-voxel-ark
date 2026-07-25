@@ -49,6 +49,14 @@ and reapplies those deltas.
 - Constrained tiers disable live HUD backdrop blur and render one nine-slot palette at a time;
   all 18 materials remain available in the paused backpack.
 
+## Audio lifecycle
+
+`src/systems/AudioSystem.ts` is the only owner of Web Audio nodes. It applies persistent master
+volume and mute state without creating an `AudioContext` during boot or settings hydration. The
+context is unlocked lazily by the player's start gesture, unsupported browsers degrade without
+interrupting gameplay, and the page lifecycle disposes the shared graph. Gameplay code requests
+named sound effects through `src/systems/soundEffects.ts` instead of allocating oscillators itself.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is
