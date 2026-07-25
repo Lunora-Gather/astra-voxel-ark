@@ -96,7 +96,7 @@ async function waitForLoad(win, url, timeoutMs = 45000) {
           href: location.href
         })
       `, true)
-      if ((pageState.readyState === 'interactive' || pageState.readyState === 'complete') && pageState.appReady) {
+      if (pageState.href === url && (pageState.readyState === 'interactive' || pageState.readyState === 'complete') && pageState.appReady) {
         await new Promise((resolve) => setTimeout(resolve, 250))
         return
       }
@@ -322,6 +322,33 @@ function assertMenuState(state) {
   if (state.menuTabsVisible !== 3) fail('Pause menu should expose three navigation tabs', state)
   if (state.overlaps.length) fail('HUD elements overlap while menu is open', state)
   if (state.pointerLocked) fail('Pointer lock should be released while the pause menu is open', state)
+}
+
+async function reloadAtUrl(win, url, timeoutMs = 45000) {
+  await win.loadURL(url)
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`Timed out reloading ${url}`))
+    }, timeoutMs)
+    const cleanup = () => {
+      clearTimeout(timer)
+      win.webContents.removeListener('did-finish-load', onFinish)
+      win.webContents.removeListener('did-fail-load', onFail)
+    }
+    const onFinish = () => {
+      cleanup()
+      resolve()
+    }
+    const onFail = (_event, code, description) => {
+      cleanup()
+      reject(new Error(`Failed to reload ${url}: ${code} ${description}`))
+    }
+    win.webContents.once('did-finish-load', onFinish)
+    win.webContents.once('did-fail-load', onFail)
+    win.webContents.reloadIgnoringCache()
+  })
+  await waitForLoad(win, url, timeoutMs)
 }
 
 async function pressKey(win, code, key = '') {
@@ -573,6 +600,30 @@ async function runScenario(win, scenario) {
   if (String(persistedSettings?.frameRate) !== tunedFrameRate || persistedSettings?.volume !== 25 || persistedSettings?.soundEnabled !== false) {
     fail('Frame-rate and audio settings should persist locally', { persistedSettings, tunedFrameRate })
   }
+  if (scenario.label === 'desktop') {
+    await win.webContents.executeJavaScript(`
+      window.__astraOriginalSettingsSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(key, value) {
+        if (key === ${JSON.stringify(settingsKey)}) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        return window.__astraOriginalSettingsSetItem.call(this, key, value);
+      };
+      void 0;
+    `)
+    await setRange(win, '.volume-input', 26)
+    await win.webContents.executeJavaScript(`
+      Storage.prototype.setItem = window.__astraOriginalSettingsSetItem;
+      delete window.__astraOriginalSettingsSetItem;
+      void 0;
+    `)
+    const failedSettingsState = await readState(win, `${scenario.label}:failed-settings-write`)
+    const settingsAfterFailedWrite = await readStorageJson(win, settingsKey)
+    if (failedSettingsState.settings.volume !== '26' || !failedSettingsState.toastText.includes('could not save locally')) {
+      fail('Settings should still apply with clear feedback when local persistence fails', failedSettingsState)
+    }
+    if (settingsAfterFailedWrite?.volume !== 25) {
+      fail('A failed settings write should preserve the previous stored configuration', settingsAfterFailedWrite)
+    }
+  }
   await setRange(win, '.sensitivity-input', 72)
   await setRange(win, '.fov-input', 72)
   await setSelect(win, '.view-distance-select', 1)
@@ -593,6 +644,20 @@ async function runScenario(win, scenario) {
     await pressKey(win, 'KeyE', 'e')
     const keyboardBackpackClosed = await readState(win, `${scenario.label}:keyboard-backpack-closed`)
     if (keyboardBackpackClosed.menuOpen) fail('E should close the focused backpack', keyboardBackpackClosed)
+
+    await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(settingsKey)}, JSON.stringify({ mouseLookSpeed: 0.95, fov: 80, viewDistance: 999, qualityPreset: 'low', showPerformanceHud: true, frameRate: 30, volume: 25, soundEnabled: false }))`)
+    await reloadAtUrl(win, scenarioUrl(scenario, 'legacy-settings'))
+    const migratedSettings = await readState(win, `${scenario.label}:legacy-settings`)
+    if (migratedSettings.settings.sensitivity !== '95' || migratedSettings.settings.fov !== '80' || migratedSettings.settings.viewDistance !== tunedViewDistance || migratedSettings.settings.quality !== 'low' || migratedSettings.settings.frameRate !== '30' || migratedSettings.settings.volume !== '25' || migratedSettings.settings.soundEnabled !== false) {
+      fail('Legacy settings should migrate and clamp to the active device limits', migratedSettings)
+    }
+
+    await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(settingsKey)}, '{broken')`)
+    await reloadAtUrl(win, scenarioUrl(scenario, 'broken-settings'))
+    const recoveredSettings = await readState(win, `${scenario.label}:broken-settings`)
+    if (recoveredSettings.settings.sensitivity !== '72' || recoveredSettings.settings.fov !== '72' || recoveredSettings.settings.viewDistance !== '1' || recoveredSettings.settings.quality !== 'balanced' || recoveredSettings.settings.volume !== '70' || recoveredSettings.settings.soundEnabled !== true) {
+      fail('Damaged settings should recover to safe runtime defaults', recoveredSettings)
+    }
   }
   if (consoleIssues.length) fail('Console or renderer issues detected', { scenario: scenario.label, consoleIssues })
   return { scenario: scenario.label, density: closed.density, classes: closed.bodyClasses, artifacts }

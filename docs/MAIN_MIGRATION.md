@@ -90,40 +90,21 @@ Then run dirty chunk diagnostics without rendering:
 const updates = mainOptimization.chunkMirror.diagnoseDirtyChunks({ limit: 2 })
 ```
 
-## Step 1: Audio adapter
+## Step 1: Audio adapter — completed
 
-Current target: replace the local `playSound(...)` implementation with `playGameSound(...)` from `src/systems/soundEffects.ts`.
+The live game routes named effects through `src/systems/soundEffects.ts`. `AudioSystem` owns lazy
+context creation, master volume, mute state and page-lifecycle cleanup.
 
-Suggested changes:
+## Step 2: Settings adapter — completed
 
-```ts
-import { playGameSound, unlockGameAudio } from './systems/soundEffects'
-```
+The live game uses `SettingsStore` directly. It preserves the existing storage key and UI-facing
+fields while accepting the earlier typed-module field names during migration.
 
-Then replace calls like:
+## Step 3: Save system — completed
 
-```ts
-playSound('break', 0.12)
-```
-
-with:
-
-```ts
-playGameSound('break', 0.12)
-```
-
-## Step 2: Settings adapter
-
-Use `loadLegacySettings()` and `saveLegacySettings()` from `src/game/legacySettings.ts` first. This preserves the current UI-facing shape while routing persistence through the typed settings module.
-
-## Step 3: Save system
-
-Use `SaveSystem` only around the existing serialize/apply functions first:
-
-- keep `serializeWorld()` as the source of truth;
-- replace raw `localStorage.setItem(...)` with `saveSystem.save(...)`;
-- replace raw `localStorage.getItem(...)` with `saveSystem.load()`;
-- keep import/export behavior unchanged until after verify passes.
+The live world flow uses the typed v8 `SaveSystem` for load, safe writes, import/export and per-slot
+last-good recovery. Renderer-state serialization and apply adapters remain the next save-boundary
+extraction target.
 
 ## Step 4: Particle pool
 

@@ -57,6 +57,14 @@ context is unlocked lazily by the player's start gesture, unsupported browsers d
 interrupting gameplay, and the page lifecycle disposes the shared graph. Gameplay code requests
 named sound effects through `src/systems/soundEffects.ts` instead of allocating oscillators itself.
 
+## Settings persistence
+
+`src/game/settings.ts` owns the complete live settings schema, device-aware bounds, legacy-field
+migration and storage error boundary. Existing `astra-voxel-ark-settings-v1` data remains compatible.
+Malformed data falls back to the current device defaults; out-of-range view distance is capped by the
+detected device tier; and failed writes leave the previous stored settings intact while the selected
+setting still applies for the current session.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is

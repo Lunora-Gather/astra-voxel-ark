@@ -32,7 +32,7 @@ Status: mostly complete on `optimize/architecture-performance-pass`.
 
 ## Phase 2: Source modularization
 
-Status: active migration. The v8 `SaveSystem` and shared `AudioSystem` now own their live persistence or runtime boundaries. Typed settings, performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, block render layers, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, particle pooling, and app-level runtime adapters have standalone modules for continued extraction.
+Status: active migration. The typed `SettingsStore`, v8 `SaveSystem`, and shared `AudioSystem` now own their live persistence or runtime boundaries. Performance budgets, packed block keys, `ChunkManager`, `BlockPicker`, collision helpers, `TerrainGenerator`, terrain worker/client, block render layers, visible-face helpers, greedy face merge helpers, buffer geometry builders, chunk mesh renderer management, point-light budgeting, particle pooling, and app-level runtime adapters have standalone modules for continued extraction.
 
 Target structure:
 
@@ -77,7 +77,7 @@ src/
 Recommended extraction order:
 
 1. `SaveSystem` and save validation — integrated.
-2. `Settings` and local storage settings.
+2. `Settings` and local storage settings — integrated.
 3. `AudioSystem` — integrated.
 4. `BlockPicker` and placement helpers.
 5. `PlayerController` and collision helpers.

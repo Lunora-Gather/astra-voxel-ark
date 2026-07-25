@@ -41,6 +41,7 @@ import {
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
+import { SettingsStore, type GameSettings, type QualityPreset } from './game'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
@@ -296,7 +297,6 @@ app.appendChild(renderer.domElement)
 
 const controls = new PointerLockControls(camera, renderer.domElement)
 scene.add(controls.object)
-const SETTINGS_KEY = 'astra-voxel-ark-settings-v1'
 let mouseLookSpeed = 0.72
 let touchLookSpeed = 0.00245
 let qualityPreset: QualityPreset = 'balanced'
@@ -430,7 +430,6 @@ const GRASS_ANIMATION_BUDGET = runtimeLimits.grassAnimationBudget
 const MIN_RENDER_QUALITY = runtimeLimits.minRenderScale
 const MAX_RENDER_QUALITY = runtimeLimits.maxRenderScale
 const QUALITY_STEP = 0.06
-type QualityPreset = 'low' | 'balanced' | 'high'
 const WALK_SPEED = 7.6
 const SPRINT_SPEED = 12.2
 const GROUND_ACCEL_RESPONSE = 14
@@ -2406,23 +2405,13 @@ let hudLayoutFrame = 0
 let hasStarted = false
 let isPaused = false
 
-type GameSettings = {
-  sensitivity: number
-  fov: number
-  viewDistance: number
-  quality: QualityPreset
-  showPerf: boolean
-  frameRate: 30 | 60
-  volume: number
-  soundEnabled: boolean
-}
-
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
-function readStoredSettings(): GameSettings {
-  const fallback: GameSettings = {
+const settingsStore = new SettingsStore({
+  maxViewDistance: runtimeLimits.maxViewDistance,
+  defaults: {
     sensitivity: Math.round(mouseLookSpeed * 100),
     fov: camera.fov,
     viewDistance: terrainLoadRadius,
@@ -2431,30 +2420,8 @@ function readStoredSettings(): GameSettings {
     frameRate: frameRateLimit,
     volume: Math.round(soundVolume * 100),
     soundEnabled,
-  }
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as Partial<GameSettings>
-    const quality = parsed.quality === 'low' || parsed.quality === 'balanced' || parsed.quality === 'high'
-      ? parsed.quality
-      : fallback.quality
-    return {
-      sensitivity: clampNumber(Number(parsed.sensitivity) || fallback.sensitivity, 35, 150),
-      fov: clampNumber(Number(parsed.fov) || fallback.fov, 60, 90),
-      viewDistance: Math.round(clampNumber(Number(parsed.viewDistance) || fallback.viewDistance, 1, 3)),
-      quality,
-      showPerf: Boolean(parsed.showPerf),
-      frameRate: parsed.frameRate === 60 ? 60 : parsed.frameRate === 30 ? 30 : fallback.frameRate,
-      volume: typeof parsed.volume === 'number' && Number.isFinite(parsed.volume)
-        ? clampNumber(parsed.volume, 0, 100)
-        : fallback.volume,
-      soundEnabled: parsed.soundEnabled !== false,
-    }
-  } catch {
-    return fallback
-  }
-}
+  },
+})
 
 function qualityBounds() {
   if (qualityPreset === 'low') {
@@ -2483,20 +2450,6 @@ function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
   qualityButtons.forEach((button) => button.classList.toggle('active', button.dataset.quality === nextPreset))
 }
 
-function writeStoredSettings() {
-  const settings: GameSettings = {
-    sensitivity: Number(sensitivityInput.value),
-    fov: Number(fovInput.value),
-    viewDistance: Number(viewDistanceSelect.value),
-    quality: qualityPreset,
-    showPerf: showPerformanceHud,
-    frameRate: frameRateLimit,
-    volume: Number(volumeInput.value),
-    soundEnabled,
-  }
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
-}
-
 function setPerformanceHudVisible(visible: boolean) {
   showPerformanceHud = visible
   document.body.classList.toggle('show-perf-hud', visible)
@@ -2504,42 +2457,54 @@ function setPerformanceHudVisible(visible: boolean) {
 }
 
 function applySettings(settings: GameSettings, persist = false) {
-  const sensitivity = clampNumber(settings.sensitivity, 35, 150)
+  const nextSettings = settingsStore.sanitize(settings)
+  const sensitivity = nextSettings.sensitivity
   mouseLookSpeed = sensitivity / 100
   touchLookSpeed = mouseLookSpeed * 0.0034
   controls.pointerSpeed = mouseLookSpeed
   sensitivityInput.value = String(Math.round(sensitivity))
   sensitivityValue.textContent = `${Math.round(sensitivity)}%`
 
-  const fov = clampNumber(settings.fov, 60, 90)
+  const fov = nextSettings.fov
   camera.fov = fov
   camera.updateProjectionMatrix()
   fovInput.value = String(Math.round(fov))
   fovValue.textContent = String(Math.round(fov))
 
-  terrainLoadRadius = Math.round(clampNumber(settings.viewDistance, 1, runtimeLimits.maxViewDistance))
+  terrainLoadRadius = nextSettings.viewDistance
   viewDistanceSelect.value = String(terrainLoadRadius)
   lastTerrainEnsureScanKey = ''
   pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
 
-  applyQualityPreset(settings.quality, persist)
-  setPerformanceHudVisible(settings.showPerf)
-  frameRateLimit = settings.frameRate === 60 ? 60 : 30
+  applyQualityPreset(nextSettings.quality, persist)
+  setPerformanceHudVisible(nextSettings.showPerf)
+  frameRateLimit = nextSettings.frameRate
   gameplayFrameLimiter.setTargetFps(frameRateLimit)
   frameRateSelect.value = String(frameRateLimit)
   document.body.dataset.frameRate = String(frameRateLimit)
 
-  soundVolume = clampNumber(settings.volume, 0, 100) / 100
+  soundVolume = nextSettings.volume / 100
   audioSystem.setMasterVolume(soundVolume)
   volumeInput.value = String(Math.round(soundVolume * 100))
   volumeValue.textContent = `${Math.round(soundVolume * 100)}%`
-  soundEnabled = settings.soundEnabled
+  soundEnabled = nextSettings.soundEnabled
   audioSystem.setEnabled(soundEnabled)
   soundToggle.checked = soundEnabled
-  if (persist) writeStoredSettings()
+  if (persist) {
+    const saved = settingsStore.save(nextSettings)
+    if (!saved.ok) showSettingsPersistenceWarning()
+  }
 }
 
-applySettings(readStoredSettings())
+let lastSettingsPersistenceWarningAt = -Infinity
+function showSettingsPersistenceWarning() {
+  const now = performance.now()
+  if (now - lastSettingsPersistenceWarningAt < 4000) return
+  lastSettingsPersistenceWarningAt = now
+  showToast('Settings applied · could not save locally')
+}
+
+applySettings(settingsStore.load())
 
 function collectCurrentSettings(): GameSettings {
   return {
