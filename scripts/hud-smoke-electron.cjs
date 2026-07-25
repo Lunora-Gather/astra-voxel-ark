@@ -253,7 +253,16 @@ async function readState(win, label) {
         worldSlotsFullyVisible: [...document.querySelectorAll('.world-slot')].every((button) => fullyVisible(rectOf('.world-slot[data-world-slot="' + button.dataset.worldSlot + '"]'))),
         activeWorldSlot: document.querySelector('.world-slot.active')?.dataset.worldSlot || null,
         perfVisible: visible('.perf-badge'),
+        perfRect: rectOf('.perf-badge'),
+        perfFullyVisible: !visible('.perf-badge') || fullyVisible(rectOf('.perf-badge')),
+        perfRows: document.querySelectorAll('.perf-badge .perf-row').length,
         perfFps: Number(document.querySelector('.perf-fps')?.textContent) || 0,
+        perfRender: {
+          calls: document.querySelector('.perf-calls')?.textContent?.trim() || '',
+          triangles: document.querySelector('.perf-triangles')?.textContent?.trim() || '',
+          geometries: document.querySelector('.perf-geometries')?.textContent?.trim() || '',
+          textures: document.querySelector('.perf-textures')?.textContent?.trim() || '',
+        },
         hotbarVisible: visible('.hotbar'),
         hotbarSlots: document.querySelectorAll('.slot').length,
         activeSlots: document.querySelectorAll('.slot.active').length,
@@ -593,6 +602,14 @@ async function runScenario(win, scenario) {
   await setCheckbox(win, '.sound-toggle', false)
   const tuned = await readState(win, `${scenario.label}:settings-tuned`)
   if (!tuned.perfVisible) fail('Performance HUD toggle should show the perf badge', tuned)
+  if (!tuned.perfFullyVisible || tuned.perfRows !== 3) fail('Three-row performance diagnostics should fit inside the viewport', tuned)
+  if (tuned.perfFps <= 0) fail('Performance HUD should show the latest FPS sample immediately when enabled', tuned)
+  if (!Object.values(tuned.perfRender).every((value) => /^\d+(?:\.\d+)?[km]?$/.test(value))) {
+    fail('Performance diagnostics should expose formatted draw, triangle, geometry and texture metrics', tuned)
+  }
+  if (tuned.perfRender.calls === '0' || tuned.perfRender.geometries === '0') {
+    fail('Performance diagnostics should report the latest rendered frame and allocated geometries', tuned)
+  }
   if (tuned.settings.sensitivity !== '95' || tuned.settings.fov !== '80' || tuned.settings.viewDistance !== tunedViewDistance || tuned.settings.quality !== 'low' || tuned.settings.frameRate !== tunedFrameRate || tuned.settings.frameRateApplied !== tunedFrameRate || tuned.settings.volume !== '25' || tuned.settings.soundEnabled !== false) {
     fail('Settings controls should apply immediately', tuned)
   }

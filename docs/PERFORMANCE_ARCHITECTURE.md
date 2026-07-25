@@ -81,6 +81,15 @@ share one resolver with reusable probes and result objects. Ground lookup starts
 that can actually fit below the current eye height instead of scanning from the fixed world ceiling,
 and it verifies the player's true footprint so merely adjacent raised blocks cannot cause hovering.
 
+## Live diagnostics
+
+The optional performance HUD is grouped into frame, world-load and renderer-resource rows. It reports
+FPS, average frame time, adaptive render scale, runtime tier, resident/discovered chunks, blocks,
+terrain/mesh queues, draw calls, triangles, geometries and textures. Large counters use compact
+`k`/`m` notation, and hidden diagnostics do not perform DOM writes. Enabling the panel while paused
+shows the latest collected frame immediately. Minimal layouts constrain it to the right safe column,
+and the menu hides its redundant toggle button so the two controls cannot overlap.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is

@@ -71,6 +71,8 @@ const runtimeLimits = runtimeProfile.limits
 const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
 let frameRateLimit: 30 | 60 = runtimeLimits.targetFps === 30 ? 30 : 60
 const gameplayFrameLimiter = new FrameRateLimiter(frameRateLimit)
+let currentFps = 0
+let currentAverageFrameMs = 0
 document.body.dataset.runtimeTier = runtimeProfile.tier
 document.body.classList.toggle('constrained-runtime', lowPowerMode)
 
@@ -125,20 +127,26 @@ app.innerHTML = `
 
     <div class="hud-stack hud-right-stack">
       <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap palette badge to switch · Menu for backpack<br/>Repair Ark Core with shards</span></div>
-      <div class="perf-badge">
-        <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Frame</span><div><span class="perf-ms">--</span><span class="perf-unit">ms</span></div></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Chunks</span><span class="perf-chunks">0</span></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Terrain</span><span class="perf-terrain-chunks">0</span></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Blocks</span><span class="perf-blocks">0</span></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Queue</span><span class="perf-dirty">0</span></div>
-        <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${runtimeProfile.tier}</span></div>
+      <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
+        <div class="perf-row perf-frame-row">
+          <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
+          <div class="perf-divider"></div>
+          <div class="perf-metric"><span class="perf-label">Frame</span><span><span class="perf-ms">--</span><span class="perf-unit">ms</span></span></div>
+          <div class="perf-divider"></div>
+          <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${runtimeProfile.tier}</span></div>
+        </div>
+        <div class="perf-row perf-world-row">
+          <div class="perf-metric"><span class="perf-label">Chunks</span><span class="perf-chunks">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Terrain</span><span class="perf-terrain-chunks">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Blocks</span><span class="perf-blocks">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Queue</span><span class="perf-dirty">0</span></div>
+        </div>
+        <div class="perf-row perf-render-row">
+          <div class="perf-metric"><span class="perf-label">Calls</span><span class="perf-calls">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Tris</span><span class="perf-triangles">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Geo</span><span class="perf-geometries">0</span></div>
+          <div class="perf-metric"><span class="perf-label">Tex</span><span class="perf-textures">0</span></div>
+        </div>
       </div>
       <div class="world-badge"><span class="badge-pulse"></span><span class="world-biome">Star Meadow</span></div>
     </div>
@@ -2372,6 +2380,26 @@ function setPerformanceHudVisible(visible: boolean) {
   showPerformanceHud = visible
   document.body.classList.toggle('show-perf-hud', visible)
   perfToggle.checked = visible
+  if (visible) {
+    const info = renderer.info
+    const latestFps = currentFps > 0
+      ? currentFps
+      : currentAverageFrameMs > 0
+        ? Math.max(1, Math.round(1000 / currentAverageFrameMs))
+        : '--'
+    const metrics = [
+      ['.perf-fps', latestFps],
+      ['.perf-ms', currentAverageFrameMs > 0 ? currentAverageFrameMs : '--'],
+      ['.perf-calls', info.render.calls],
+      ['.perf-triangles', info.render.triangles],
+      ['.perf-geometries', info.memory.geometries],
+      ['.perf-textures', info.memory.textures],
+    ] as const
+    metrics.forEach(([selector, value]) => {
+      const element = document.querySelector<HTMLElement>(selector)
+      if (element) element.textContent = typeof value === 'number' ? formatPerformanceNumber(value) : String(value)
+    })
+  }
 }
 
 function applySettings(settings: GameSettings, persist = false) {
@@ -3088,6 +3116,10 @@ const blocksEl = document.querySelector<HTMLElement>('.perf-blocks')
 const chunksEl = document.querySelector<HTMLElement>('.perf-chunks')
 const terrainChunksEl = document.querySelector<HTMLElement>('.perf-terrain-chunks')
 const dirtyEl = document.querySelector<HTMLElement>('.perf-dirty')
+const callsEl = document.querySelector<HTMLElement>('.perf-calls')
+const trianglesEl = document.querySelector<HTMLElement>('.perf-triangles')
+const geometriesEl = document.querySelector<HTMLElement>('.perf-geometries')
+const texturesEl = document.querySelector<HTMLElement>('.perf-textures')
 const crystalBarEl = document.querySelector<HTMLElement>('.charge-bar')
 const crystalValEl = document.querySelector<HTMLElement>('.crystal-val')
 const threatValEl = document.querySelector<HTMLElement>('.threat-val')
@@ -3103,7 +3135,6 @@ const previousPosition = new THREE.Vector3()
 const movementDelta = new THREE.Vector3()
 let fpsFrameCount = 0
 let fpsElapsed = 0
-let currentFps = 0
 
 const FRAME_SAMPLE_COUNT = 30
 const frameBudgetSamples = new Float32Array(FRAME_SAMPLE_COUNT)
@@ -3311,6 +3342,7 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   frameBudgetTotal += frameMs
   frameBudgetIndex = (frameBudgetIndex + 1) % FRAME_SAMPLE_COUNT
   frameBudgetCount = Math.min(frameBudgetCount + 1, FRAME_SAMPLE_COUNT)
+  currentAverageFrameMs = Math.round(frameBudgetTotal / frameBudgetCount)
 
   fpsFrameCount++
   fpsElapsed += dt
@@ -3319,10 +3351,11 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   fpsFrameCount = 0
   fpsElapsed = 0
 
-  const avgMs = Math.round(frameBudgetTotal / frameBudgetCount)
+  const avgMs = currentAverageFrameMs
   updateAdaptiveQuality(avgMs, elapsedTime)
   cosmeticEffectsReduced = currentFps > 0 && (currentFps < 36 || avgMs > 24 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
 
+  if (!showPerformanceHud) return
   if (fpsEl && msEl) {
     fpsEl.textContent = String(currentFps)
     msEl.textContent = `${avgMs} · Q${Math.round(renderQuality * 100)}%`
@@ -3340,6 +3373,17 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   if (dirtyEl) {
     dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${dirtyChunkKeys.size}/${optimizedChunks.getDirtyChunks().length}`
   }
+  if (callsEl) callsEl.textContent = formatPerformanceNumber(renderer.info.render.calls)
+  if (trianglesEl) trianglesEl.textContent = formatPerformanceNumber(renderer.info.render.triangles)
+  if (geometriesEl) geometriesEl.textContent = formatPerformanceNumber(renderer.info.memory.geometries)
+  if (texturesEl) texturesEl.textContent = formatPerformanceNumber(renderer.info.memory.textures)
+}
+
+function formatPerformanceNumber(value: number) {
+  const safeValue = Math.max(0, Math.round(Number.isFinite(value) ? value : 0))
+  if (safeValue < 1000) return String(safeValue)
+  if (safeValue < 1_000_000) return `${(safeValue / 1000).toFixed(safeValue < 10_000 ? 1 : 0)}k`
+  return `${(safeValue / 1_000_000).toFixed(safeValue < 10_000_000 ? 1 : 0)}m`
 }
 
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes

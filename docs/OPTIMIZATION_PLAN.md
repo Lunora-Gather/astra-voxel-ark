@@ -105,7 +105,7 @@ High-impact tasks:
 - Add simple crafting recipes.
 - Add named save slots.
 - Add biome/landmark templates.
-- Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues.
+- Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence
 
