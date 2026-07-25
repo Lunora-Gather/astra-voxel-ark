@@ -2,6 +2,7 @@
 html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b1020; touch-action: none; overscroll-behavior: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 canvas { display: block; touch-action: none; position: fixed; inset: 0; z-index: 0; }
 button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 .hud { position: fixed; inset: 0; z-index: 1; pointer-events: none; color: white; text-shadow: 0 2px 12px rgba(0,0,0,.45); }
 .hud::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 38%, transparent 0 36%, rgba(7,12,28,.2) 68%, rgba(3,5,14,.52) 100%); mix-blend-mode: multiply; }
 .hud::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(255,255,255,.1), transparent 28%, transparent 72%, rgba(121,213,255,.12)); opacity: .68; }
@@ -24,6 +25,9 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
   100% { transform: translateY(-9px) scale(1); }
 }
 .slot.active.selected-pulse { animation: selected-slot-pulse .18s ease-out; }
+.hotbar-page { position: sticky; left: 0; z-index: 2; flex: 0 0 50px; width: 50px; height: 64px; display: grid; place-items: center; align-content: center; gap: 2px; padding: 0; border: 1px solid rgba(169,239,255,.3); border-radius: 17px; color: #c7f2ff; background: rgba(16,31,59,.96); cursor: pointer; touch-action: manipulation; }
+.hotbar-page span { font-size: 12px; font-weight: 900; }
+.hotbar-page small { font-size: 7px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; opacity: .62; }
 .swatch { width: 31px; height: 31px; border-radius: 9px; box-shadow: inset 0 6px 11px rgba(255,255,255,.25), inset 0 -8px 10px rgba(0,0,0,.22), 0 8px 18px rgba(0,0,0,.22); }
 .key { position: absolute; left: 7px; top: 5px; font-size: 11px; opacity: .78; }
 .count { position: absolute; right: 4px; bottom: 3px; font-size: 11px; font-weight: 900; color: #ffd7fa; opacity: .88; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.95); }
@@ -191,7 +195,19 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .expedition-heading strong { display: block; font-size: 15px; }
 .tool-tier-value { flex: none; padding: 7px 10px; border-radius: 999px; color: #071120; background: linear-gradient(135deg, #9ee8ff, #fff3a8); font-size: 11px; font-weight: 900; }
 .objective-list, .recipe-list { display: grid; gap: 7px; }
-.recipe-list { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.expedition-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 13px 2px 7px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); }
+.expedition-section-heading strong { font-size: 11px; }
+.expedition-section-heading small { color: rgba(255,255,255,.5); font-size: 9px; text-align: right; }
+.inventory-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.inventory-card { pointer-events: auto; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; padding: 7px; text-align: left; color: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.045); cursor: pointer; }
+.inventory-card > span:last-child { display: grid; min-width: 0; gap: 1px; }
+.inventory-card strong, .inventory-card small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-card strong { font-size: 9px; }
+.inventory-card small { color: rgba(255,255,255,.5); font-size: 7px; }
+.inventory-card.empty { opacity: .45; }
+.inventory-card.active { border-color: rgba(169,239,255,.72); background: rgba(115,214,255,.14); box-shadow: inset 0 0 12px rgba(115,214,255,.08); }
+.inventory-swatch { width: 24px; height: 24px; border-radius: 7px; box-shadow: inset 0 4px 7px rgba(255,255,255,.24), inset 0 -5px 7px rgba(0,0,0,.2); }
+.recipe-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .objective-card, .recipe-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; padding: 9px 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(255,255,255,.055); }
 .objective-card > div, .recipe-card > div { display: grid; min-width: 0; gap: 2px; }
 .objective-card strong, .recipe-card strong { color: rgba(255,255,255,.94); font-size: 11px; }
@@ -590,6 +606,10 @@ body:not(.touch-layout) .mobile-controls { display: none; }
   height: var(--slot-height);
 }
 
+.hotbar-page {
+  height: var(--slot-height);
+}
+
 body[data-hud-density="compact"] {
   --hud-safe-left: calc(16px + env(safe-area-inset-left));
   --hud-safe-right: calc(16px + env(safe-area-inset-right));
@@ -911,6 +931,10 @@ body.portrait-touch .block-info {
   }
 
   .pause-menu .save-tools {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

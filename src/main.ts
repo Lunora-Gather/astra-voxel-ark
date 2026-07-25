@@ -55,6 +55,8 @@ const runtimeProfile = detectRuntimeDeviceProfile({
 })
 const runtimeLimits = runtimeProfile.limits
 const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
+document.body.dataset.runtimeTier = runtimeProfile.tier
+document.body.classList.toggle('constrained-runtime', lowPowerMode)
 
 app.innerHTML = `
   <div class="hud">
@@ -106,7 +108,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1-18 select block · Click to enter<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap right side: place · Hold right side: break<br/>Repair Ark Core with shards</span></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap palette badge to switch · Menu for backpack<br/>Repair Ark Core with shards</span></div>
       <div class="perf-badge">
         <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
         <div class="perf-divider"></div>
@@ -195,6 +197,9 @@ app.innerHTML = `
             <span class="tool-tier-value">Hand Tools</span>
           </div>
           <div class="objective-list"></div>
+          <div class="expedition-section-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
+          <div class="inventory-grid"></div>
+          <div class="expedition-section-heading"><strong>Crafting</strong><small>Recipes consume materials from this expedition only.</small></div>
           <div class="recipe-list"></div>
           </section>
         </section>
@@ -421,6 +426,7 @@ type SavedWorld = {
   removedBlocks?: string[]
   playerPlacedBlocks?: string[]
   inventory?: InventorySnapshot
+  selectedBlock?: BlockId
   player?: Partial<PlayerStateSnapshot>
   worldTime?: number
   survival?: {
@@ -1166,6 +1172,7 @@ function serializeWorld(): SavedWorld {
     removedBlocks: [...removedTerrainBlocks],
     playerPlacedBlocks: [...playerPlacedBlocks],
     inventory: inventory.snapshot(),
+    selectedBlock: BLOCKS[selected]?.id ?? BLOCKS[0].id,
     player: {
       position: controls.object.position.toArray() as [number, number, number],
       rotation: [controls.object.rotation.x, controls.object.rotation.y],
@@ -1266,6 +1273,10 @@ function applySavedWorld(data: SavedWorld) {
   clearWorldBlocks()
   readSavedInventory(data.inventory)
   readSavedExploration(data.exploration)
+  const savedSelection = isValidBlockId(data.selectedBlock)
+    ? BLOCKS.findIndex(({ id }) => id === data.selectedBlock)
+    : -1
+  selected = savedSelection >= 0 ? savedSelection : 0
 
   if (Array.isArray(data.removedBlocks)) {
     data.removedBlocks.filter(isValidBlockKey).forEach((key) => removedTerrainBlocks.add(key))
@@ -1945,6 +1956,9 @@ for (let i = 0; i < EXPLORATION_GOAL_SHARDS; i += 1) {
 scene.add(arkCore)
 
 let selected = 0
+const HOTBAR_PAGE_SIZE = 9
+const HOTBAR_PAGE_COUNT = Math.ceil(BLOCKS.length / HOTBAR_PAGE_SIZE)
+let hotbarPage = 0
 const hotbar = document.querySelector<HTMLDivElement>('.hotbar')!
 const blockInfo = document.querySelector<HTMLDivElement>('.block-info')!
 const blockName = blockInfo.querySelector<HTMLDivElement>('.block-name')!
@@ -1967,18 +1981,31 @@ function updateBlockInfo() {
 }
 
 function updateHotbar() {
-  for (let i = 0; i < hotbarSlots.length; i++) {
-    const count = countBlocksInInventory(BLOCKS[i].id)
-    hotbarSlots[i].classList.toggle('active', i === selected)
-    hotbarSlots[i].classList.toggle('empty', count <= 0)
-    hotbarCounts[i].textContent = String(count)
+  const selectedPage = Math.floor(selected / HOTBAR_PAGE_SIZE)
+  if (selectedPage !== hotbarPage) {
+    hotbarPage = selectedPage
+    renderHotbar()
+    return
   }
-  hotbarSlots[selected]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  hotbarSlots.forEach((slot, visibleIndex) => {
+    const blockIndex = Number(slot.dataset.slot)
+    const count = countBlocksInInventory(BLOCKS[blockIndex].id)
+    slot.classList.toggle('active', blockIndex === selected)
+    slot.classList.toggle('empty', count <= 0)
+    hotbarCounts[visibleIndex].textContent = String(count)
+  })
+  revealSelectedHotbarSlot()
   updateBlockInfo()
 }
 
+function revealSelectedHotbarSlot() {
+  const slot = hotbarSlots.find((candidate) => Number(candidate.dataset.slot) === selected)
+  if (!slot || hotbar.scrollWidth <= hotbar.clientWidth) return
+  hotbar.scrollLeft = Math.max(0, slot.offsetLeft - hotbar.clientWidth / 2 + slot.clientWidth / 2)
+}
+
 function pulseSelectedSlot() {
-  const slot = hotbarSlots[selected]
+  const slot = hotbarSlots.find((candidate) => Number(candidate.dataset.slot) === selected)
   if (!slot) return
   slot.classList.remove('selected-pulse')
   void slot.offsetWidth
@@ -1986,15 +2013,29 @@ function pulseSelectedSlot() {
   window.setTimeout(() => slot.classList.remove('selected-pulse'), 180)
 }
 
-function selectHotbarSlot(index: number, source: 'pointer' | 'wheel' | 'key' | 'auto' = 'pointer') {
+type HotbarSelectionSource = 'pointer' | 'wheel' | 'key' | 'page' | 'backpack' | 'auto'
+
+function selectHotbarSlot(index: number, source: HotbarSelectionSource = 'pointer') {
   if (!Number.isInteger(index) || index < 0 || index >= BLOCKS.length) return
   const changed = selected !== index
   selected = index
-  updateHotbar()
+  const nextPage = Math.floor(selected / HOTBAR_PAGE_SIZE)
+  if (nextPage !== hotbarPage) {
+    hotbarPage = nextPage
+    renderHotbar()
+  } else {
+    updateHotbar()
+  }
   if (source !== 'auto') {
     pulseSelectedSlot()
     if (changed || source === 'wheel') playSound('select', source === 'wheel' ? 0.08 : 0.06)
   }
+}
+
+function switchHotbarPage() {
+  const nextPage = (hotbarPage + 1) % HOTBAR_PAGE_COUNT
+  const localIndex = selected % HOTBAR_PAGE_SIZE
+  selectHotbarSlot(Math.min(nextPage * HOTBAR_PAGE_SIZE + localIndex, BLOCKS.length - 1), 'page')
 }
 
 function directionLabel(dx: number, dz: number) {
@@ -2090,21 +2131,31 @@ function selectNextAvailableBlock() {
 }
 
 function renderHotbar() {
-  hotbar.innerHTML = BLOCKS.map((b, i) => {
+  const startIndex = hotbarPage * HOTBAR_PAGE_SIZE
+  const visibleBlocks = BLOCKS.slice(startIndex, startIndex + HOTBAR_PAGE_SIZE)
+  hotbar.dataset.page = String(hotbarPage + 1)
+  hotbar.innerHTML = `<button class="hotbar-page" aria-label="Switch material palette, page ${hotbarPage + 1} of ${HOTBAR_PAGE_COUNT}"><span>${hotbarPage + 1}/${HOTBAR_PAGE_COUNT}</span><small>Palette</small></button>` + visibleBlocks.map((b, localIndex) => {
+    const i = startIndex + localIndex
     const count = countBlocksInInventory(b.id)
-    return `<button class="slot ${i === selected ? 'active' : ''} ${count <= 0 ? 'empty' : ''}" data-slot="${i}" aria-label="Select ${b.name}"><span class="key">${i + 1}</span><span class="swatch" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="count">${count}</span></button>`
+    return `<button class="slot ${i === selected ? 'active' : ''} ${count <= 0 ? 'empty' : ''}" data-slot="${i}" aria-label="Select ${b.name}"><span class="key">${localIndex + 1}</span><span class="swatch" style="background:#${b.color.toString(16).padStart(6, '0')}"></span><span class="count">${count}</span></button>`
   }).join('')
   hotbarSlots.length = 0
   hotbarCounts.length = 0
   hotbar.querySelectorAll<HTMLButtonElement>('.slot').forEach((slot) => {
     hotbarSlots.push(slot)
     hotbarCounts.push(slot.querySelector<HTMLSpanElement>('.count')!)
-    slot.addEventListener('pointerdown', (event) => {
+    slot.addEventListener('click', (event) => {
       event.preventDefault()
       event.stopPropagation()
       selectHotbarSlot(Number(slot.dataset.slot), 'pointer')
     })
   })
+  hotbar.querySelector<HTMLButtonElement>('.hotbar-page')!.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    switchHotbarPage()
+  })
+  revealSelectedHotbarSlot()
   updateBlockInfo()
 }
 renderHotbar()
@@ -2134,6 +2185,7 @@ viewDistanceSelect.querySelectorAll<HTMLOptionElement>('option').forEach((option
 const perfToggle = document.querySelector<HTMLInputElement>('.perf-toggle')!
 const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value')!
 const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
+const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
 const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
@@ -2244,7 +2296,8 @@ function formatIngredients(ingredients: Array<{ id: BlockId; amount: number }>) 
 }
 
 function updateProgressionUi() {
-  if (!toolTierValue || !objectiveList || !recipeList) return
+  if (!toolTierValue || !objectiveList || !inventoryGrid || !recipeList) return
+  const progressionSnapshot = progression.snapshot()
   toolTierValue.textContent = progression.getToolName()
   objectiveList.innerHTML = progression.getObjectives().map((objective) => `
     <article class="objective-card ${objective.complete ? 'complete' : ''} ${objective.claimed ? 'claimed' : ''}">
@@ -2252,8 +2305,17 @@ function updateProgressionUi() {
       <button data-claim-objective="${objective.id}" ${!objective.complete || objective.claimed ? 'disabled' : ''}>${objective.claimed ? 'Claimed' : 'Claim'}</button>
     </article>
   `).join('')
+  inventoryGrid.innerHTML = BLOCKS.map((block, index) => {
+    const count = countBlocksInInventory(block.id)
+    return `
+      <button class="inventory-card ${index === selected ? 'active' : ''} ${count <= 0 ? 'empty' : ''}" data-inventory-block="${block.id}" aria-label="Select ${block.name}, ${count} available">
+        <span class="inventory-swatch" style="background:#${block.color.toString(16).padStart(6, '0')}"></span>
+        <span><strong>${block.name}</strong><small>${count} available</small></span>
+      </button>
+    `
+  }).join('')
   recipeList.innerHTML = RECIPES.map((recipe) => {
-    const crafted = progression.snapshot().crafted[recipe.id] ?? 0
+    const crafted = progressionSnapshot.crafted[recipe.id] ?? 0
     const completed = Boolean(recipe.once && crafted > 0)
     return `
       <article class="recipe-card ${completed ? 'complete' : ''}">
@@ -2263,6 +2325,16 @@ function updateProgressionUi() {
     `
   }).join('')
 }
+
+inventoryGrid.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-inventory-block]')
+  if (!button || !isValidBlockId(button.dataset.inventoryBlock)) return
+  const index = BLOCKS.findIndex(({ id }) => id === button.dataset.inventoryBlock)
+  if (index < 0) return
+  selectHotbarSlot(index, 'backpack')
+  updateProgressionUi()
+  showToast(`${BLOCKS[index].name} selected`)
+})
 
 objectiveList.addEventListener('click', (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-claim-objective]')
@@ -2561,7 +2633,7 @@ helpToggleBtn.addEventListener('click', (e) => {
 if (isTouchDevice) {
   const tutorial = document.querySelector<HTMLDivElement>('.tutorial')
   if (tutorial) {
-    tutorial.innerHTML = `<p><strong>🎮 Tips:</strong> Drag screen to look · Joystick to move · Tap right to place · Long-press to break · Swipe hotbar</p>`
+    tutorial.innerHTML = `<p><strong>🎮 Tips:</strong> Drag to look · Joystick to move · Tap Palette for more blocks · Menu opens backpack</p>`
   }
 }
 
@@ -2612,11 +2684,24 @@ document.addEventListener('keydown', (e) => {
     else openPauseMenu()
     return
   }
+  if (e.code === 'KeyE') {
+    e.preventDefault()
+    if (isPaused && activePauseMenuTab === 'expedition') closePauseMenu()
+    else {
+      setPauseMenuTab('expedition')
+      openPauseMenu()
+    }
+    return
+  }
   if (isPaused) return
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space'].includes(e.code)) e.preventDefault()
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space', 'Tab'].includes(e.code)) e.preventDefault()
+  if (e.code === 'Tab') {
+    switchHotbarPage()
+    return
+  }
   keys.add(e.code)
   const n = Number(e.key)
-  if (n >= 1 && n <= BLOCKS.length) selectHotbarSlot(n - 1, 'key')
+  if (n >= 1 && n <= HOTBAR_PAGE_SIZE) selectHotbarSlot(hotbarPage * HOTBAR_PAGE_SIZE + n - 1, 'key')
   if (e.code === 'Space') runJump()
 })
 renderer.domElement.addEventListener('wheel', (event) => {

@@ -44,6 +44,8 @@ and reapplies those deltas.
 - Ultra-low devices tune adaptive quality against a 30 FPS target without imposing a
   refresh-rate-dependent frame cap.
 - Autosaves serialize during an idle callback when available.
+- Constrained tiers disable live HUD backdrop blur and render one nine-slot palette at a time;
+  all 18 materials remain available in the paused backpack.
 
 ## Compatibility boundary
 

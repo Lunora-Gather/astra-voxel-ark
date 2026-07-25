@@ -21,7 +21,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Landscape-first phone experience with a rotate-device prompt in portrait mode
 - Android shell via Capacitor
 - Ubuntu Linux and Windows desktop shells via Electron Builder
-- 18-block hotbar with terrain, wood, water, crystal, glow, clay, metal and rare blocks
+- Two-page nine-slot hotbar plus a complete 18-material backpack and direct selection
 - Beacon Trail exploration loop: collect landmark shards, repair visible Ark Core modules and strengthen night survival
 - Single-player progression with tool tiers, crafting recipes, expedition objectives and claimable rewards
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
@@ -44,7 +44,9 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 | Sprint | Left Shift |
 | Break block | Left click |
 | Place block | Right click |
-| Select block | 1-18 / mouse wheel / tap hotbar slot |
+| Select material | 1-9 / mouse wheel / tap hotbar slot |
+| Switch material palette | Tab / Palette button |
+| Open backpack | E / Game Menu → Expedition |
 | Save / Load / Export / Import / Reset | Game Menu |
 | Open game menu / unlock mouse | Esc / II button |
 
@@ -98,7 +100,7 @@ This repo includes GitHub Actions workflows for GitHub Pages and app package art
 ## Roadmap
 
 - Better chunk meshing for performance
-- Expanded backpack and crafting interface
+- Building blueprints and richer crafting stations
 - Decorative plants and ruins
 - Audio and ambient particles
 - More polished screenshots and trailer GIF

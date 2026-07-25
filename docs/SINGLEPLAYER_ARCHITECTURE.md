@@ -20,8 +20,8 @@ When multiplayer work begins, add a separate gateway implementation and explicit
 ## Save compatibility
 
 World save version 7 stores deterministic terrain as generated chunk coordinates plus player
-deltas (placed and removed blocks), the player's position and view direction, and paused-safe world
-time. The version 6 delta loader, version 5 snapshot loader and older compatibility defaults remain
+deltas (placed and removed blocks), the player's position and view direction, selected backpack
+material, and paused-safe world time. The version 6 delta loader, version 5 snapshot loader and older compatibility defaults remain
 available:
 
 - missing player state resumes at the Ark spawn;

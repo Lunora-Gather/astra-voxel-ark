@@ -251,6 +251,10 @@ async function readState(win, label) {
         hotbarVisible: visible('.hotbar'),
         hotbarSlots: document.querySelectorAll('.slot').length,
         activeSlots: document.querySelectorAll('.slot.active').length,
+        hotbarPageButtons: document.querySelectorAll('.hotbar-page').length,
+        hotbarPage: document.querySelector('.hotbar')?.dataset.page || null,
+        inventoryCards: document.querySelectorAll('.inventory-card').length,
+        activeInventoryCards: document.querySelectorAll('.inventory-card.active').length,
         mobileControlsVisible: visible('.mobile-controls'),
         joystickVisible: visible('.joystick'),
         touchActionsVisible: visible('.touch-actions'),
@@ -289,8 +293,9 @@ async function readState(win, label) {
 }
 
 function assertGameplayState(state) {
-  if (state.hotbarSlots !== 18) fail('Hotbar should expose all 18 block slots', state)
+  if (state.hotbarSlots !== 9) fail('Hotbar should expose one focused nine-slot palette', state)
   if (state.activeSlots !== 1) fail('Hotbar should have exactly one active slot', state)
+  if (state.hotbarPageButtons !== 1) fail('Hotbar should expose one palette switch control', state)
   if (state.overlaps.length) fail('HUD elements overlap in gameplay', state)
   if (state.outside.length) fail('HUD elements should stay inside the viewport', state)
   if (state.saveToolsVisible) fail('Save tools should be hidden during gameplay', state)
@@ -305,6 +310,13 @@ function assertMenuState(state) {
   if (state.menuTabsVisible !== 3) fail('Pause menu should expose three navigation tabs', state)
   if (state.overlaps.length) fail('HUD elements overlap while menu is open', state)
   if (state.pointerLocked) fail('Pointer lock should be released while the pause menu is open', state)
+}
+
+async function pressKey(win, code, key = '') {
+  await win.webContents.executeJavaScript(`
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: ${JSON.stringify(code)}, key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))
+  `)
+  await new Promise((resolve) => setTimeout(resolve, 180))
 }
 
 async function readStorageJson(win, key) {
@@ -380,6 +392,7 @@ function assertSavedWorld(payload, label) {
   if (!payload.player || !Array.isArray(payload.player.position) || payload.player.position.length !== 3) fail(`${label}: saved world should include player position`, payload)
   if (!Array.isArray(payload.player.rotation) || payload.player.rotation.length !== 2) fail(`${label}: saved world should include player rotation`, payload)
   if (typeof payload.worldTime !== 'number') fail(`${label}: saved world should include simulation time`, payload)
+  if (typeof payload.selectedBlock !== 'string') fail(`${label}: saved world should include selected material`, payload)
 }
 
 async function smokeSaveLoad(win, scenario) {
@@ -415,6 +428,8 @@ async function smokeSaveLoad(win, scenario) {
   await waitForLoad(win, scenarioUrl(scenario, 'saved-boot'))
   const booted = await readSavedWorld(win)
   assertSavedWorld(booted, `${scenario.label}:saved-boot`)
+  const bootState = await readState(win, `${scenario.label}:saved-boot-state`)
+  if (bootState.hotbarPage !== '2') fail('Saved material selection should restore its hotbar palette', bootState)
   await click(win, '.start button')
   await click(win, '.menu-toggle-btn')
   await click(win, '.menu-tab[data-menu-tab="world"]')
@@ -448,6 +463,16 @@ async function runScenario(win, scenario) {
   const gameplay = await readState(win, `${scenario.label}:gameplay`)
   assertGameplayState(gameplay)
   if (scenario.touch) assertTouchLandscapeState(gameplay)
+  await click(win, '.hotbar-page')
+  const secondPalette = await readState(win, `${scenario.label}:palette-2`)
+  if (secondPalette.hotbarPage !== '2' || secondPalette.activeSlots !== 1) fail('Palette control should switch to the second nine-slot page', secondPalette)
+  await click(win, '.hotbar-page')
+  if (scenario.label === 'desktop') {
+    await pressKey(win, 'Tab', 'Tab')
+    const keyboardPalette = await readState(win, `${scenario.label}:keyboard-palette`)
+    if (keyboardPalette.hotbarPage !== '2') fail('Tab should switch the active material palette', keyboardPalette)
+    await pressKey(win, 'Tab', 'Tab')
+  }
   const artifacts = []
   const gameplayArtifact = await captureArtifact(win, scenario, 'gameplay', gameplay)
   if (gameplayArtifact) artifacts.push(gameplayArtifact)
@@ -464,6 +489,14 @@ async function runScenario(win, scenario) {
   const expeditionMenu = await readState(win, `${scenario.label}:expedition-menu`)
   if (expeditionMenu.activeMenuTab !== 'expedition' || !expeditionMenu.expeditionVisible) {
     fail('Expedition tab should expose progression content', expeditionMenu)
+  }
+  if (expeditionMenu.inventoryCards !== 18 || expeditionMenu.activeInventoryCards !== 1) {
+    fail('Expedition tab should expose the complete backpack with one selected material', expeditionMenu)
+  }
+  await click(win, '.inventory-card[data-inventory-block="gold"]')
+  const backpackSelection = await readState(win, `${scenario.label}:backpack-selection`)
+  if (backpackSelection.hotbarPage !== '2' || backpackSelection.activeInventoryCards !== 1) {
+    fail('Backpack selection should activate the matching hotbar palette', backpackSelection)
   }
   await click(win, '.menu-tab[data-menu-tab="world"]')
   const worldMenu = await readState(win, `${scenario.label}:world-menu`)
@@ -493,6 +526,14 @@ async function runScenario(win, scenario) {
   if (closed.menuOpen) fail('Pause menu should close on Resume', closed)
   assertGameplayState(closed)
   if (scenario.touch) assertTouchLandscapeState(closed)
+  if (scenario.label === 'desktop') {
+    await pressKey(win, 'KeyE', 'e')
+    const keyboardBackpack = await readState(win, `${scenario.label}:keyboard-backpack`)
+    if (!keyboardBackpack.menuOpen || keyboardBackpack.activeMenuTab !== 'expedition') fail('E should open the backpack directly', keyboardBackpack)
+    await pressKey(win, 'KeyE', 'e')
+    const keyboardBackpackClosed = await readState(win, `${scenario.label}:keyboard-backpack-closed`)
+    if (keyboardBackpackClosed.menuOpen) fail('E should close the focused backpack', keyboardBackpackClosed)
+  }
   if (consoleIssues.length) fail('Console or renderer issues detected', { scenario: scenario.label, consoleIssues })
   return { scenario: scenario.label, density: closed.density, classes: closed.bodyClasses, artifacts }
 }
