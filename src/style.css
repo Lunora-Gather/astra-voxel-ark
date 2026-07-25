@@ -193,7 +193,8 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .quality-btn.active { color: #071120; background: linear-gradient(135deg, #9ee8ff, #fff3a8); border-color: rgba(255,255,255,.65); }
 .setting-check { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); }
 .setting-check input { width: 18px; height: 18px; accent-color: #9ee8ff; }
-.pause-menu .save-tools { position: static !important; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; width: 100%; margin-top: 14px; padding: 0; border: 0; background: transparent !important; box-shadow: none; backdrop-filter: none; }
+.pause-menu .save-tools { position: static !important; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; width: 100%; margin-top: 14px; padding: 0; border: 0; background: transparent !important; box-shadow: none; backdrop-filter: none; }
+.pause-menu .save-tools button:disabled { opacity: .36; cursor: default; }
 .expedition-panel { margin-top: 0; padding: 14px; border: 1px solid rgba(169,239,255,.18); border-radius: 18px; background: linear-gradient(135deg, rgba(22,39,70,.5), rgba(52,33,82,.32)); }
 .expedition-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 11px; }
 .expedition-heading strong { display: block; font-size: 15px; }
@@ -992,7 +993,7 @@ body.portrait-touch .block-info {
   }
 
   .pause-menu .save-tools {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     margin-top: 10px;
     gap: 7px;
   }

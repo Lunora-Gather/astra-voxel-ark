@@ -1,58 +1,54 @@
 import { BLOCKS, type BlockId } from '../blocks'
+import type { PlayerStateSnapshot } from '../player'
+import type { InventorySnapshot, ProgressionSnapshot, SurvivalVitalsSnapshot } from '../singleplayer'
 
 const BLOCK_ID_SET = new Set<BlockId>(BLOCKS.map((block) => block.id))
+const MAX_SAVE_TEXT_LENGTH = 16 * 1024 * 1024
+const MAX_SAVE_ARRAY_LENGTH = 250_000
 
-export type SavedBlock = {
-  x: number
-  y: number
-  z: number
-  id: BlockId
-}
-
-export type SavedPlayerState = {
-  position?: [number, number, number]
-  rotation?: [number, number, number]
-}
-
-export type SavedSurvivalState = {
-  crystalPower?: number
-  threatLevel?: number
-  dayTime?: number
-  survivedNights?: number
-}
-
-export type SavedExplorationState = {
-  collectedShardIds?: string[]
-  discoveredLandmarkIds?: string[]
-  arkCoreRepaired?: boolean
-}
+export type SavedBlock = [number, number, number, BlockId]
 
 export type SavedWorldState = {
   version: number
-  savedAt: string
+  savedAt: number
+  format?: 'snapshot' | 'delta'
   blocks: SavedBlock[]
-  terrainChunks: string[]
-  removedBlocks: string[]
-  playerPlacedBlocks: string[]
-  inventory: Partial<Record<BlockId, number>>
-  player?: SavedPlayerState
-  survival?: SavedSurvivalState
-  exploration?: SavedExplorationState
+  terrainChunks?: string[]
+  removedBlocks?: string[]
+  playerPlacedBlocks?: string[]
+  inventory?: InventorySnapshot
+  selectedBlock?: BlockId
+  worldSeed?: number
+  player?: Partial<PlayerStateSnapshot>
+  worldTime?: number
+  survival?: {
+    crystalPower?: number
+    carriedCrystal?: number
+  }
+  exploration?: {
+    glowShards?: number
+    collectedShardBlocks?: string[]
+  }
+  progression?: Partial<ProgressionSnapshot>
+  vitals?: Partial<SurvivalVitalsSnapshot>
 }
 
 export type SaveSystemOptions = {
-  key?: string
+  key: string
+  backupKey?: string
   storage?: Storage
 }
 
-export const DEFAULT_SAVE_KEY = 'astra-voxel-ark-save-v1'
+export type SaveWriteResult = { ok: true } | { ok: false; error: unknown }
 
 export class SaveSystem {
-  private readonly key: string
+  readonly key: string
+  readonly backupKey: string
   private readonly storage: Storage
 
-  constructor({ key = DEFAULT_SAVE_KEY, storage = window.localStorage }: SaveSystemOptions = {}) {
+  constructor({ key, backupKey = `${key}-backup-v1`, storage = window.localStorage }: SaveSystemOptions) {
     this.key = key
+    this.backupKey = backupKey
     this.storage = storage
   }
 
@@ -60,18 +56,43 @@ export class SaveSystem {
     return this.storage.getItem(this.key) !== null
   }
 
-  load(): SavedWorldState | null {
-    const raw = this.storage.getItem(this.key)
-    if (!raw) return null
-    return parseSavedWorld(raw)
+  hasBackup() {
+    return this.loadBackup() !== null
   }
 
-  save(state: SavedWorldState) {
-    this.storage.setItem(this.key, JSON.stringify(normalizeSavedWorld(state)))
+  load() {
+    return parseSavedWorld(this.storage.getItem(this.key))
+  }
+
+  loadBackup() {
+    return parseSavedWorld(this.storage.getItem(this.backupKey))
+  }
+
+  save(state: SavedWorldState): SaveWriteResult {
+    try {
+      const encoded = stringifySavedWorld(state)
+      const previous = this.storage.getItem(this.key)
+      if (previous && parseSavedWorld(previous)) this.storage.setItem(this.backupKey, previous)
+      this.storage.setItem(this.key, encoded)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  }
+
+  recover() {
+    const backup = this.loadBackup()
+    if (!backup) return null
+    try {
+      this.storage.setItem(this.key, stringifySavedWorld(backup))
+      return backup
+    } catch {
+      return null
+    }
   }
 
   exportText(state: SavedWorldState) {
-    return JSON.stringify(normalizeSavedWorld(state), null, 2)
+    return stringifySavedWorld(state, true)
   }
 
   importText(text: string) {
@@ -79,41 +100,32 @@ export class SaveSystem {
   }
 
   clear() {
-    this.storage.removeItem(this.key)
+    try {
+      this.storage.removeItem(this.key)
+      this.storage.removeItem(this.backupKey)
+      return { ok: true } as const
+    } catch (error) {
+      return { ok: false, error } as const
+    }
   }
 }
 
-export function normalizeSavedWorld(state: SavedWorldState): SavedWorldState {
-  return {
-    version: Number.isFinite(state.version) ? state.version : 1,
-    savedAt: state.savedAt || new Date().toISOString(),
-    blocks: state.blocks.filter(isSavedBlock),
-    terrainChunks: filterStrings(state.terrainChunks),
-    removedBlocks: filterStrings(state.removedBlocks),
-    playerPlacedBlocks: filterStrings(state.playerPlacedBlocks),
-    inventory: normalizeInventory(state.inventory),
-    player: state.player,
-    survival: state.survival,
-    exploration: normalizeExploration(state.exploration),
-  }
+export function stringifySavedWorld(state: SavedWorldState, pretty = false) {
+  return JSON.stringify(state, null, pretty ? 2 : undefined)
 }
 
-export function parseSavedWorld(text: string): SavedWorldState | null {
+export function parseSavedWorld(text: string | null): SavedWorldState | null {
+  if (!text || text.length > MAX_SAVE_TEXT_LENGTH) return null
   try {
     const parsed = JSON.parse(text) as Partial<SavedWorldState>
-    if (!parsed || typeof parsed !== 'object') return null
-    return normalizeSavedWorld({
-      version: typeof parsed.version === 'number' ? parsed.version : 1,
-      savedAt: typeof parsed.savedAt === 'string' ? parsed.savedAt : new Date().toISOString(),
-      blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [],
-      terrainChunks: Array.isArray(parsed.terrainChunks) ? parsed.terrainChunks : [],
-      removedBlocks: Array.isArray(parsed.removedBlocks) ? parsed.removedBlocks : [],
-      playerPlacedBlocks: Array.isArray(parsed.playerPlacedBlocks) ? parsed.playerPlacedBlocks : [],
-      inventory: parsed.inventory && typeof parsed.inventory === 'object' ? parsed.inventory : {},
-      player: parsed.player,
-      survival: parsed.survival,
-      exploration: parsed.exploration,
-    })
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.blocks)) return null
+    if (!arraysWithinLimit(parsed)) return null
+    return {
+      ...parsed,
+      version: typeof parsed.version === 'number' && Number.isFinite(parsed.version) ? parsed.version : 1,
+      savedAt: typeof parsed.savedAt === 'number' && Number.isFinite(parsed.savedAt) ? parsed.savedAt : 0,
+      blocks: parsed.blocks,
+    }
   } catch {
     return null
   }
@@ -123,31 +135,29 @@ export function isBlockId(value: unknown): value is BlockId {
   return typeof value === 'string' && BLOCK_ID_SET.has(value as BlockId)
 }
 
-function isSavedBlock(value: unknown): value is SavedBlock {
-  if (!value || typeof value !== 'object') return false
-  const block = value as Partial<SavedBlock>
-  return Number.isInteger(block.x) && Number.isInteger(block.y) && Number.isInteger(block.z) && isBlockId(block.id)
+export function isSavedBlock(value: unknown): value is SavedBlock {
+  if (!Array.isArray(value) || value.length !== 4) return false
+  const [x, y, z, id] = value
+  return isCoordinate(x) && isCoordinate(y) && isCoordinate(z) && isBlockId(id)
 }
 
-function filterStrings(values: unknown): string[] {
-  return Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : []
+export function isSavedBlockKey(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const parts = value.split(',')
+  return parts.length === 3 && parts.map(Number).every(isCoordinate)
 }
 
-function normalizeInventory(inventory: Partial<Record<BlockId, number>> = {}) {
-  const normalized: Partial<Record<BlockId, number>> = {}
-  for (const [id, count] of Object.entries(inventory) as [BlockId, number][]) {
-    if (isBlockId(id) && Number.isFinite(count) && count > 0) {
-      normalized[id] = Math.floor(count)
-    }
-  }
-  return normalized
+export function isSavedTerrainChunkKey(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const parts = value.split(',')
+  return parts.length === 2 && parts.map(Number).every(isCoordinate)
 }
 
-function normalizeExploration(exploration: SavedExplorationState | undefined): SavedExplorationState | undefined {
-  if (!exploration) return undefined
-  return {
-    collectedShardIds: filterStrings(exploration.collectedShardIds),
-    discoveredLandmarkIds: filterStrings(exploration.discoveredLandmarkIds),
-    arkCoreRepaired: Boolean(exploration.arkCoreRepaired),
-  }
+function arraysWithinLimit(value: Partial<SavedWorldState>) {
+  const arrays = [value.blocks, value.terrainChunks, value.removedBlocks, value.playerPlacedBlocks, value.exploration?.collectedShardBlocks]
+  return arrays.every((entry) => !Array.isArray(entry) || entry.length <= MAX_SAVE_ARRAY_LENGTH)
+}
+
+function isCoordinate(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 1_000_000
 }

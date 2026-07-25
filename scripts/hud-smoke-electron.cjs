@@ -19,6 +19,7 @@ const scenarios = [
 
 const settingsKey = 'astra-voxel-ark-settings-v1'
 const saveKey = 'astra-voxel-ark-world-v1'
+const backupSaveKey = `${saveKey}-backup-v1`
 const activeWorldSlotKey = 'astra-voxel-ark-active-world-slot-v1'
 const secondSaveKey = `${saveKey}-slot-2`
 const consoleIssues = []
@@ -243,6 +244,10 @@ async function readState(win, label) {
         rightStackVisible: visible('.hud-right-stack'),
         menuButtonVisible: visible('.menu-toggle-btn'),
         saveToolsVisible: visible('.save-tools'),
+        saveToolButtons: document.querySelectorAll('.pause-menu .save-tools button').length,
+        saveToolsFullyVisible: [...document.querySelectorAll('.pause-menu .save-tools button')].every((button) => fullyVisible(rectOf('.' + button.className.split(' ').join('.')))),
+        recoverDisabled: document.querySelector('.recover-btn')?.disabled ?? true,
+        toastText: document.querySelector('.toast')?.textContent?.trim() || '',
         worldSlotsVisible: visibleCount('.world-slot'),
         activeWorldSlots: document.querySelectorAll('.world-slot.active').length,
         worldSlotsFullyVisible: [...document.querySelectorAll('.world-slot')].every((button) => fullyVisible(rectOf('.world-slot[data-world-slot="' + button.dataset.worldSlot + '"]'))),
@@ -340,6 +345,7 @@ function assertWorldMenuState(state) {
   if (state.activeMenuTab !== 'world') fail('World tab should be active', state)
   if (!state.saveToolsVisible) fail('Save tools should be visible on the World tab', state)
   if (!state.saveButtonFullyVisible) fail('Save buttons should fit on the World tab', state)
+  if (state.saveToolButtons !== 6 || !state.saveToolsFullyVisible) fail('All six world save controls should fit in the viewport', state)
   if (state.worldSlotsVisible !== 3 || state.activeWorldSlots !== 1) fail('World tab should expose three slots with one active slot', state)
   if (!state.worldSlotsFullyVisible) fail('World slot controls should fit in the viewport', state)
   if (!state.worldSeedFullyVisible || !/^[0-9A-F]{8}$/.test(state.worldSeedLabel || '')) fail('World seed control should be visible and formatted', state)
@@ -410,10 +416,35 @@ async function smokeSaveLoad(win, scenario) {
   const saved = await readSavedWorld(win)
   assertSavedWorld(saved, `${scenario.label}:save`)
   if (saved.worldSeed === 0) fail('A newly created world should receive a non-legacy seed', { saved })
+  await click(win, '.save-btn')
+  const backup = await readStorageJson(win, backupSaveKey)
+  assertSavedWorld(backup, `${scenario.label}:backup`)
+  await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(saveKey)}, '{broken')`)
+  await click(win, '.recover-btn')
+  const recovered = await readSavedWorld(win)
+  assertSavedWorld(recovered, `${scenario.label}:recovered`)
+  await win.webContents.executeJavaScript(`
+    window.__astraOriginalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key === ${JSON.stringify(saveKey)}) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      return window.__astraOriginalSetItem.call(this, key, value);
+    };
+    void 0;
+  `)
+  await click(win, '.save-btn')
+  await win.webContents.executeJavaScript(`
+    Storage.prototype.setItem = window.__astraOriginalSetItem;
+    delete window.__astraOriginalSetItem;
+    void 0;
+  `)
+  const failedSaveState = await readState(win, `${scenario.label}:failed-save`)
+  if (!failedSaveState.toastText.includes('Save failed')) fail('Storage write failures should produce recoverable UI feedback', failedSaveState)
   await click(win, '.reset-btn')
   await click(win, '.reset-btn')
   const cleared = await readSavedWorld(win)
   if (cleared) fail('Reset should remove the local saved world', { cleared })
+  const clearedBackup = await readStorageJson(win, backupSaveKey)
+  if (clearedBackup) fail('New World should remove the previous slot backup', { clearedBackup })
   const rerolledWorld = await readState(win, `${scenario.label}:rerolled-world`)
   const previousSeedLabel = saved.worldSeed.toString(16).toUpperCase().padStart(8, '0')
   if (rerolledWorld.worldSeedLabel === previousSeedLabel) fail('New World should reroll the active world seed', { previousSeedLabel, rerolledWorld })

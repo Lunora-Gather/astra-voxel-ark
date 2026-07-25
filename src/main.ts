@@ -4,7 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
-import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals, type InventorySnapshot, type ProgressionSnapshot, type SurvivalVitalsSnapshot } from './singleplayer'
+import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
 import { sanitizePlayerState, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
@@ -27,9 +27,16 @@ import {
   getWorldSlotSaveKey,
   normalizeWorldSeed,
   ProceduralTerrainWorkerClient,
+  SaveSystem,
   sanitizeWorldSlotId,
   selectChunksForEviction,
+  isBlockId as isValidBlockId,
+  isSavedBlock as isValidSavedBlock,
+  isSavedBlockKey as isValidBlockKey,
+  isSavedTerrainChunkKey,
   type ProceduralChunkPlan,
+  type SavedBlock,
+  type SavedWorldState as SavedWorld,
   type WorldSlotId,
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
@@ -239,6 +246,7 @@ app.innerHTML = `
           <div class="save-tools">
           <button class="save-btn">Save</button>
           <button class="load-btn">Load</button>
+          <button class="recover-btn">Recover</button>
           <button class="export-btn">Export</button>
           <button class="import-btn">Import</button>
           <button class="reset-btn">New World</button>
@@ -438,32 +446,6 @@ const TOUCH_LOOK_MAX_DELTA = 34
 function adaptiveBudget(base: number, minimum: number) {
   const pressureScale = currentFps > 0 && currentFps < 36 ? 0.65 : 1
   return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale))
-}
-const BLOCK_IDS = new Set<BlockId>(BLOCKS.map((block) => block.id))
-type SavedBlock = [number, number, number, BlockId]
-type SavedWorld = {
-  version: number
-  savedAt: number
-  format?: 'snapshot' | 'delta'
-  blocks: SavedBlock[]
-  terrainChunks?: string[]
-  removedBlocks?: string[]
-  playerPlacedBlocks?: string[]
-  inventory?: InventorySnapshot
-  selectedBlock?: BlockId
-  worldSeed?: number
-  player?: Partial<PlayerStateSnapshot>
-  worldTime?: number
-  survival?: {
-    crystalPower?: number
-    carriedCrystal?: number
-  }
-  exploration?: {
-    glowShards?: number
-    collectedShardBlocks?: string[]
-  }
-  progression?: Partial<ProgressionSnapshot>
-  vitals?: Partial<SurvivalVitalsSnapshot>
 }
 type BlockSource = 'terrain' | 'player' | 'save'
 type ChunkBucket = {
@@ -1219,30 +1201,10 @@ function serializeWorld(): SavedWorld {
   }
 }
 
-function isValidBlockId(id: unknown): id is BlockId {
-  return typeof id === 'string' && BLOCK_IDS.has(id as BlockId)
-}
-
-function isValidSavedBlock(block: unknown): block is SavedBlock {
-  if (!Array.isArray(block) || block.length !== 4) return false
-  const [x, y, z, id] = block
-  return Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(z) && isValidBlockId(id)
-}
-
 function isValidTerrainChunkKey(key: unknown): key is string {
-  if (typeof key !== 'string') return false
-  const parts = key.split(',')
-  if (parts.length !== 2) return false
-  const [cx, cz] = parts.map(Number)
-  return Number.isInteger(cx) && Number.isInteger(cz) && isTerrainChunkInBounds(cx, cz)
-}
-
-function isValidBlockKey(key: unknown): key is string {
-  if (typeof key !== 'string') return false
-  const parts = key.split(',')
-  if (parts.length !== 3) return false
-  const [x, y, z] = parts.map(Number)
-  return Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(z)
+  if (!isSavedTerrainChunkKey(key)) return false
+  const [cx, cz] = key.split(',').map(Number)
+  return isTerrainChunkInBounds(cx, cz)
 }
 
 function getLandmarkShardKeysForChunk(cx: number, cz: number) {
@@ -1375,26 +1337,39 @@ function applySavedWorld(data: SavedWorld) {
   updateProgressionUi()
 }
 
-function getActiveWorldSaveKey() {
-  return getWorldSlotSaveKey(activeWorldSlot)
+function getWorldSaveSystem(slot: WorldSlotId = activeWorldSlot) {
+  return new SaveSystem({ key: getWorldSlotSaveKey(slot) })
 }
 
-function saveWorld() {
-  localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
+function saveWorld(silent = false) {
+  const result = getWorldSaveSystem().save(serializeWorld())
+  if (!result.ok) {
+    updateSaveMeta('Save failed. Local storage may be full or unavailable.')
+    if (!silent) showToast('Save failed · storage unavailable')
+    return false
+  }
   updateSaveMeta()
   updateWorldSlotUi()
-  showToast('World saved')
+  if (!silent) showToast('World saved')
+  return true
 }
 
 function loadWorld() {
-  const raw = localStorage.getItem(getActiveWorldSaveKey())
-  if (!raw) {
+  const saves = getWorldSaveSystem()
+  if (!saves.hasSave()) {
     updateSaveMeta('No local save yet. Autosave starts after you begin exploring.')
     showToast('No save yet')
     return false
   }
+  const data = saves.load()
+  if (!data) {
+    updateSaveMeta('Primary save is damaged. Use Recover if a backup is available.')
+    updateWorldSlotUi()
+    showToast('Save is broken · recovery available')
+    return false
+  }
   try {
-    applySavedWorld(JSON.parse(raw) as SavedWorld)
+    applySavedWorld(data)
     updateSaveMeta()
     updateWorldSlotUi()
     showToast('World loaded')
@@ -1406,7 +1381,7 @@ function loadWorld() {
 }
 
 function exportWorld() {
-  const data = JSON.stringify(serializeWorld(), null, 2)
+  const data = getWorldSaveSystem().exportText(serializeWorld())
   const blob = new Blob([data], { type: 'application/json' })
   const link = document.createElement('a')
   const date = new Date().toISOString().slice(0, 10)
@@ -1421,9 +1396,12 @@ function importWorld(file: File) {
   const reader = new FileReader()
   reader.addEventListener('load', () => {
     try {
-      const data = JSON.parse(String(reader.result)) as SavedWorld
+      const saves = getWorldSaveSystem()
+      const data = saves.importText(String(reader.result))
+      if (!data) throw new Error('Invalid save structure')
       applySavedWorld(data)
-      localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
+      const result = saves.save(serializeWorld())
+      if (!result.ok) throw result.error
       updateSaveMeta()
       updateWorldSlotUi()
       updateHotbar()
@@ -1436,9 +1414,13 @@ function importWorld(file: File) {
 }
 
 function resetWorld() {
+  const cleared = getWorldSaveSystem().clear()
+  if (!cleared.ok) {
+    showToast('New World failed · storage unavailable')
+    return false
+  }
   clearWorldBlocks()
   setStarterInventory()
-  localStorage.removeItem(getActiveWorldSaveKey())
   worldSeed = createWorldSeed()
   updateSaveMeta()
   crystalPower = 68
@@ -1456,6 +1438,7 @@ function resetWorld() {
   updateProgressionUi()
   updateWorldSlotUi()
   showToast('New world')
+  return true
 }
 
 function updateSaveMeta(message?: string) {
@@ -1465,13 +1448,13 @@ function updateSaveMeta(message?: string) {
     saveMeta.textContent = message
     return
   }
-  const raw = localStorage.getItem(getActiveWorldSaveKey())
-  if (!raw) {
+  const saves = getWorldSaveSystem()
+  if (!saves.hasSave()) {
     saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(worldSeed)} · New world`
     return
   }
-  try {
-    const saved = JSON.parse(raw) as Partial<SavedWorld>
+  const saved = saves.load()
+  if (saved) {
     const savedAt = typeof saved.savedAt === 'number' ? new Date(saved.savedAt) : null
     const timeLabel = savedAt && !Number.isNaN(savedAt.getTime())
       ? savedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -1479,8 +1462,31 @@ function updateSaveMeta(message?: string) {
     const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
     const savedSeed = normalizeWorldSeed(saved.worldSeed, 0)
     saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(savedSeed)} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
+  } else {
+    saveMeta.textContent = saves.hasBackup()
+      ? 'Primary save needs attention · a recovery backup is available.'
+      : 'Primary save needs attention · no valid recovery backup was found.'
+  }
+}
+
+function recoverWorld() {
+  const recovered = getWorldSaveSystem().recover()
+  if (!recovered) {
+    showToast('No recovery backup available')
+    updateWorldSlotUi()
+    return false
+  }
+  try {
+    applySavedWorld(recovered)
+    updateHotbar()
+    updateProgressionUi()
+    updateSaveMeta()
+    updateWorldSlotUi()
+    showToast('World recovered from backup')
+    return true
   } catch {
-    saveMeta.textContent = 'Local save needs attention. Export it before resetting the world.'
+    showToast('Recovery backup is invalid')
+    return false
   }
 }
 
@@ -1853,14 +1859,16 @@ function showToast(message: string) {
 
 const saveButton = document.querySelector<HTMLButtonElement>('.save-btn')!
 const loadButton = document.querySelector<HTMLButtonElement>('.load-btn')!
+const recoverButton = document.querySelector<HTMLButtonElement>('.recover-btn')!
 const exportButton = document.querySelector<HTMLButtonElement>('.export-btn')!
 const importButton = document.querySelector<HTMLButtonElement>('.import-btn')!
 const resetButton = document.querySelector<HTMLButtonElement>('.reset-btn')!
 const importInput = document.querySelector<HTMLInputElement>('.import-input')!
-saveButton.addEventListener('click', saveWorld)
+saveButton.addEventListener('click', () => saveWorld())
 loadButton.addEventListener('click', () => {
   if (loadWorld()) updateHotbar()
 })
+recoverButton.addEventListener('click', recoverWorld)
 exportButton.addEventListener('click', exportWorld)
 importButton.addEventListener('click', () => importInput.click())
 importInput.addEventListener('change', () => {
@@ -2236,33 +2244,37 @@ function updateWorldSlotUi() {
   const activeLabel = getWorldSlotLabel(activeWorldSlot)
   pauseSessionLabel.textContent = `${activeLabel} · Offline`
   sessionCurrentLabel.textContent = `${activeLabel} · offline`
-  startPrimaryButton.textContent = localStorage.getItem(getActiveWorldSaveKey())
+  const activeSaves = getWorldSaveSystem()
+  startPrimaryButton.textContent = activeSaves.hasSave()
     ? `Continue ${activeLabel}`
     : `Start ${activeLabel}`
   worldSeedButton.querySelector('strong')!.textContent = formatWorldSeed(worldSeed)
+  recoverButton.disabled = !activeSaves.hasBackup()
+  recoverButton.title = recoverButton.disabled ? 'No valid backup yet' : 'Restore the previous valid save'
 
   worldSlotButtons.forEach((button) => {
     const slot = sanitizeWorldSlotId(button.dataset.worldSlot)
     const active = slot === activeWorldSlot
-    const raw = localStorage.getItem(getWorldSlotSaveKey(slot))
+    const slotSaves = getWorldSaveSystem(slot)
+    const hasSave = slotSaves.hasSave()
+    const saved = slotSaves.load()
     button.classList.toggle('active', active)
     button.setAttribute('aria-pressed', String(active))
     button.querySelector('strong')!.textContent = getWorldSlotLabel(slot)
     const status = button.querySelector('small')!
-    if (!raw) {
+    if (!hasSave) {
       status.textContent = active ? 'Active · New world' : 'Empty world'
       return
     }
-    try {
-      const saved = JSON.parse(raw) as Partial<SavedWorld>
+    if (saved) {
       const savedAt = typeof saved.savedAt === 'number' ? new Date(saved.savedAt) : null
       const dateLabel = savedAt && !Number.isNaN(savedAt.getTime())
         ? savedAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
         : 'Saved'
       const explored = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : 0
       status.textContent = `${active ? 'Active · ' : ''}${dateLabel} · ${explored} chunks`
-    } catch {
-      status.textContent = `${active ? 'Active · ' : ''}Needs attention`
+    } else {
+      status.textContent = `${active ? 'Active · ' : ''}${slotSaves.hasBackup() ? 'Recoverable' : 'Needs attention'}`
     }
   })
 }
@@ -2282,12 +2294,21 @@ worldSeedButton.addEventListener('click', () => {
 function switchWorldSlot(nextSlot: WorldSlotId) {
   if (nextSlot === activeWorldSlot) return
   const previousSlot = activeWorldSlot
-  localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
+  if (!saveWorld(true)) {
+    showToast('Could not switch · current world was not saved')
+    return
+  }
   activeWorldSlot = nextSlot
   localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
-  const targetExists = Boolean(localStorage.getItem(getActiveWorldSaveKey()))
+  const targetExists = getWorldSaveSystem().hasSave()
   if (!targetExists) {
-    resetWorld()
+    if (!resetWorld()) {
+      activeWorldSlot = previousSlot
+      localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
+      loadWorld()
+      updateWorldSlotUi()
+      return
+    }
   } else if (!loadWorld()) {
     activeWorldSlot = previousSlot
     localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
@@ -2414,7 +2435,7 @@ recipeList.addEventListener('click', (event) => {
 
 document.querySelector<HTMLButtonElement>('.session-option[data-session="singleplayer"]')!.querySelector('strong')!.textContent = localSession.session.label
 document.querySelector<HTMLButtonElement>('.multiplayer-entry')!.title = multiplayerSession.session.label
-if (localStorage.getItem(getActiveWorldSaveKey())) loadWorld()
+if (getWorldSaveSystem().hasSave()) loadWorld()
 else updateSaveMeta()
 updateHotbar()
 updateProgressionUi()
@@ -3519,9 +3540,7 @@ let lastIdleFrameAt = -Infinity
 
 function scheduleAutoSave() {
   idleTasks.schedule(() => {
-    localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
-    updateSaveMeta()
-    updateWorldSlotUi()
+    saveWorld(true)
   })
 }
 
@@ -3733,7 +3752,7 @@ window.addEventListener('resize', () => {
 
 window.addEventListener('pagehide', () => {
   idleTasks.cancel()
-  if (hasStarted) localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
+  if (hasStarted) getWorldSaveSystem().save(serializeWorld())
   terrainWorker?.dispose()
   particleEffects.dispose()
 }, { once: true })
