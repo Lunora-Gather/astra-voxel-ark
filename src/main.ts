@@ -133,10 +133,17 @@ app.innerHTML = `
     <div class="pause-menu hidden" role="dialog" aria-modal="true" aria-label="Game Menu">
       <div class="pause-panel">
         <div class="pause-header">
-          <span>Game Menu</span>
+          <div><span>Game Menu</span><small>Local Expedition · Offline</small></div>
           <button class="resume-btn">Resume</button>
         </div>
-        <div class="settings-grid">
+        <div class="menu-tabs" role="tablist" aria-label="Game menu sections">
+          <button class="menu-tab active" role="tab" aria-selected="true" aria-controls="menu-settings" data-menu-tab="settings">Settings</button>
+          <button class="menu-tab" role="tab" aria-selected="false" aria-controls="menu-expedition" data-menu-tab="expedition">Expedition</button>
+          <button class="menu-tab" role="tab" aria-selected="false" aria-controls="menu-world" data-menu-tab="world">World</button>
+        </div>
+        <section class="menu-page active" id="menu-settings" role="tabpanel" data-menu-page="settings">
+          <div class="menu-page-heading"><strong>Experience</strong><small>Changes apply immediately and stay on this device.</small></div>
+          <div class="settings-grid">
           <label class="setting-row">
             <span>Mouse Sensitivity</span>
             <output class="sensitivity-value">72%</output>
@@ -167,30 +174,37 @@ app.innerHTML = `
             <input class="perf-toggle" type="checkbox" />
             <span>Show performance HUD</span>
           </label>
-        </div>
-        <section class="expedition-panel" aria-label="Single-player expedition">
+          </div>
+        </section>
+        <section class="menu-page" id="menu-expedition" role="tabpanel" data-menu-page="expedition" hidden>
+          <section class="expedition-panel" aria-label="Single-player expedition">
           <div class="expedition-heading">
             <div><span class="eyebrow">SINGLE PLAYER</span><strong>Wayfinder Progression</strong></div>
             <span class="tool-tier-value">Hand Tools</span>
           </div>
           <div class="objective-list"></div>
           <div class="recipe-list"></div>
+          </section>
         </section>
-        <section class="session-panel" aria-label="Play sessions">
+        <section class="menu-page" id="menu-world" role="tabpanel" data-menu-page="world" hidden>
+          <div class="menu-page-heading"><strong>World & Saves</strong><small>Your deterministic world is stored locally as compact player changes.</small></div>
+          <section class="session-panel" aria-label="Play sessions">
           <button class="session-option active" data-session="singleplayer"><strong>Local Expedition</strong><small>Current world · offline</small></button>
           <button class="session-option multiplayer-entry" data-session="multiplayer" disabled><strong>Multiplayer</strong><small>Coming later</small></button>
-        </section>
-        <div class="save-tools">
+          </section>
+          <div class="save-tools">
           <button class="save-btn">Save</button>
           <button class="load-btn">Load</button>
           <button class="export-btn">Export</button>
           <button class="import-btn">Import</button>
           <button class="reset-btn">Reset</button>
           <input class="import-input" type="file" accept="application/json,.json" />
-        </div>
+          </div>
+          <div class="save-meta" aria-live="polite">Checking local save…</div>
+        </section>
       </div>
     </div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><button>Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><div class="start-features"><span>Offline world</span><span>Autosave</span><span>Adaptive performance</span></div><button>Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div>
   </div>
 `
 
@@ -1309,17 +1323,20 @@ function applySavedWorld(data: SavedWorld) {
 
 function saveWorld() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  updateSaveMeta()
   showToast('World saved')
 }
 
 function loadWorld() {
   const raw = localStorage.getItem(SAVE_KEY)
   if (!raw) {
+    updateSaveMeta('No local save yet. Autosave starts after you begin exploring.')
     showToast('No save yet')
     return false
   }
   try {
     applySavedWorld(JSON.parse(raw) as SavedWorld)
+    updateSaveMeta()
     showToast('World loaded')
     return true
   } catch {
@@ -1347,6 +1364,7 @@ function importWorld(file: File) {
       const data = JSON.parse(String(reader.result)) as SavedWorld
       applySavedWorld(data)
       localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+      updateSaveMeta()
       updateHotbar()
       showToast('Save imported')
     } catch {
@@ -1360,6 +1378,7 @@ function resetWorld() {
   clearWorldBlocks()
   setStarterInventory()
   localStorage.removeItem(SAVE_KEY)
+  updateSaveMeta('New world · not saved yet')
   crystalPower = 68
   carriedCrystal = 0
   collectedGlowShards = 0
@@ -1372,6 +1391,31 @@ function resetWorld() {
   updateHotbar()
   updateProgressionUi()
   showToast('New world')
+}
+
+function updateSaveMeta(message?: string) {
+  const saveMeta = document.querySelector<HTMLDivElement>('.save-meta')
+  if (!saveMeta) return
+  if (message) {
+    saveMeta.textContent = message
+    return
+  }
+  const raw = localStorage.getItem(SAVE_KEY)
+  if (!raw) {
+    saveMeta.textContent = 'No local save yet. Autosave starts after you begin exploring.'
+    return
+  }
+  try {
+    const saved = JSON.parse(raw) as Partial<SavedWorld>
+    const savedAt = typeof saved.savedAt === 'number' ? new Date(saved.savedAt) : null
+    const timeLabel = savedAt && !Number.isNaN(savedAt.getTime())
+      ? savedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : 'time unavailable'
+    const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
+    saveMeta.textContent = `Saved locally · ${timeLabel} · ${exploredCount} explored chunks · v${saved.version ?? '?'}`
+  } catch {
+    saveMeta.textContent = 'Local save needs attention. Export it before resetting the world.'
+  }
 }
 
 function isSolidBlockAt(x: number, y: number, z: number) {
@@ -1751,6 +1795,7 @@ resetButton.addEventListener('click', () => {
   resetWorld()
 })
 if (localStorage.getItem(SAVE_KEY)) loadWorld()
+else updateSaveMeta()
 
 const platform = new THREE.Mesh(
   new THREE.CylinderGeometry(40, 48, 2, runtimeProfile.tier === 'ultra-low' ? 32 : lowPowerMode ? 48 : runtimeProfile.tier === 'standard' ? 64 : 96),
@@ -2036,6 +2081,10 @@ const tutorialPanel = document.querySelector<HTMLDivElement>('.tutorial')!
 const menuToggleBtn = document.querySelector<HTMLButtonElement>('.menu-toggle-btn')!
 const pauseMenu = document.querySelector<HTMLDivElement>('.pause-menu')!
 const resumeButton = document.querySelector<HTMLButtonElement>('.resume-btn')!
+type PauseMenuTab = 'settings' | 'expedition' | 'world'
+const pauseMenuTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-menu-tab]')]
+const pauseMenuPages = [...document.querySelectorAll<HTMLElement>('[data-menu-page]')]
+let activePauseMenuTab: PauseMenuTab = 'settings'
 const sensitivityInput = document.querySelector<HTMLInputElement>('.sensitivity-input')!
 const sensitivityValue = document.querySelector<HTMLOutputElement>('.sensitivity-value')!
 const fovInput = document.querySelector<HTMLInputElement>('.fov-input')!
@@ -2050,6 +2099,42 @@ const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value'
 const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
+
+function setPauseMenuTab(tab: PauseMenuTab) {
+  activePauseMenuTab = tab
+  pauseMenuTabs.forEach((button) => {
+    const active = button.dataset.menuTab === tab
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-selected', String(active))
+    button.tabIndex = active ? 0 : -1
+  })
+  pauseMenuPages.forEach((page) => {
+    const active = page.dataset.menuPage === tab
+    page.classList.toggle('active', active)
+    page.hidden = !active
+    if (active) page.scrollTop = 0
+  })
+}
+
+pauseMenuTabs.forEach((button) => {
+  button.addEventListener('click', () => {
+    const tab = button.dataset.menuTab
+    if (tab === 'settings' || tab === 'expedition' || tab === 'world') setPauseMenuTab(tab)
+  })
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const currentIndex = pauseMenuTabs.indexOf(button)
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    const nextButton = pauseMenuTabs[(currentIndex + direction + pauseMenuTabs.length) % pauseMenuTabs.length]
+    const nextTab = nextButton.dataset.menuTab
+    if (nextTab === 'settings' || nextTab === 'expedition' || nextTab === 'world') {
+      setPauseMenuTab(nextTab)
+      nextButton.focus()
+    }
+  })
+})
+setPauseMenuTab(activePauseMenuTab)
 
 function formatIngredients(ingredients: Array<{ id: BlockId; amount: number }>) {
   return ingredients.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
@@ -2232,6 +2317,8 @@ function openPauseMenu() {
   if (!hasStarted) return
   isPaused = true
   updateProgressionUi()
+  updateSaveMeta()
+  setPauseMenuTab(activePauseMenuTab)
   pauseMenu.classList.remove('hidden')
   document.body.classList.add('menu-open')
   resetInputState()
@@ -3184,6 +3271,7 @@ let lastIdleFrameAt = -Infinity
 function scheduleAutoSave() {
   idleTasks.schedule(() => {
     localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+    updateSaveMeta()
   })
 }
 

@@ -232,6 +232,10 @@ async function readState(win, label) {
         rotatePromptVisible: visible('.rotate-prompt'),
         rotatePromptFullyVisible: fullyVisible(rectOf('.rotate-prompt > div')),
         menuOpen: !document.querySelector('.pause-menu')?.classList.contains('hidden'),
+        activeMenuTab: document.querySelector('.menu-tab.active')?.dataset.menuTab || null,
+        menuTabsVisible: visibleCount('.menu-tab'),
+        expeditionVisible: visible('.expedition-panel'),
+        settingsVisible: visible('.settings-grid'),
         pointerLocked: document.pointerLockElement === document.querySelector('canvas'),
         leftStackVisible: visible('.hud-left-stack'),
         rightStackVisible: visible('.hud-right-stack'),
@@ -292,10 +296,16 @@ function assertGameplayState(state) {
 function assertMenuState(state) {
   if (!state.menuOpen) fail('Pause menu should be open', state)
   if (!state.panelFullyVisible) fail('Pause panel should fit in the viewport', state)
-  if (!state.saveToolsVisible) fail('Save tools should be visible in the pause menu', state)
-  if (!state.saveButtonFullyVisible) fail('Save buttons should fit in the pause menu', state)
+  if (state.menuTabsVisible !== 3) fail('Pause menu should expose three navigation tabs', state)
   if (state.overlaps.length) fail('HUD elements overlap while menu is open', state)
   if (state.pointerLocked) fail('Pointer lock should be released while the pause menu is open', state)
+}
+
+function assertWorldMenuState(state) {
+  assertMenuState(state)
+  if (state.activeMenuTab !== 'world') fail('World tab should be active', state)
+  if (!state.saveToolsVisible) fail('Save tools should be visible on the World tab', state)
+  if (!state.saveButtonFullyVisible) fail('Save buttons should fit on the World tab', state)
 }
 
 function assertTouchLandscapeState(state) {
@@ -345,7 +355,8 @@ async function captureArtifact(win, scenario, phase, state) {
 
 function assertSavedWorld(payload, label) {
   if (!payload || typeof payload !== 'object') fail(`${label}: saved world should exist`, { payload })
-  if (!Array.isArray(payload.blocks) || payload.blocks.length === 0) fail(`${label}: saved world should include blocks`, payload)
+  if (!Array.isArray(payload.blocks)) fail(`${label}: saved world should include a player block delta array`, payload)
+  if (!Array.isArray(payload.terrainChunks) || payload.terrainChunks.length === 0) fail(`${label}: saved world should include explored terrain chunks`, payload)
   if (!payload.inventory || typeof payload.inventory !== 'object') fail(`${label}: saved world should include inventory counts`, payload)
   if (!payload.survival || typeof payload.survival.crystalPower !== 'number') fail(`${label}: saved world should include survival state`, payload)
   if (!payload.exploration || typeof payload.exploration.glowShards !== 'number') fail(`${label}: saved world should include exploration state`, payload)
@@ -388,18 +399,33 @@ async function runScenario(win, scenario) {
   await click(win, '.menu-toggle-btn')
   const menu = await readState(win, `${scenario.label}:menu`)
   assertMenuState(menu)
+  if (menu.activeMenuTab !== 'settings' || !menu.settingsVisible || menu.saveToolsVisible) {
+    fail('Pause menu should open on the focused Settings tab', menu)
+  }
   if (scenario.touch) assertTouchLandscapeState(menu)
   const menuArtifact = await captureArtifact(win, scenario, 'menu', menu)
   if (menuArtifact) artifacts.push(menuArtifact)
+  await click(win, '.menu-tab[data-menu-tab="expedition"]')
+  const expeditionMenu = await readState(win, `${scenario.label}:expedition-menu`)
+  if (expeditionMenu.activeMenuTab !== 'expedition' || !expeditionMenu.expeditionVisible) {
+    fail('Expedition tab should expose progression content', expeditionMenu)
+  }
+  await click(win, '.menu-tab[data-menu-tab="world"]')
+  const worldMenu = await readState(win, `${scenario.label}:world-menu`)
+  assertWorldMenuState(worldMenu)
   await smokeSaveLoad(win, scenario)
+  await click(win, '.menu-tab[data-menu-tab="settings"]')
   await setRange(win, '.sensitivity-input', 95)
   await setRange(win, '.fov-input', 80)
-  await setSelect(win, '.view-distance-select', 2)
+  const tunedViewDistance = await win.webContents.executeJavaScript(`
+    [...document.querySelectorAll('.view-distance-select option')].filter((option) => !option.disabled).at(-1)?.value || '1'
+  `)
+  await setSelect(win, '.view-distance-select', tunedViewDistance)
   await click(win, '.quality-btn[data-quality="low"]')
   await setCheckbox(win, '.perf-toggle', true)
   const tuned = await readState(win, `${scenario.label}:settings-tuned`)
   if (!tuned.perfVisible) fail('Performance HUD toggle should show the perf badge', tuned)
-  if (tuned.settings.sensitivity !== '95' || tuned.settings.fov !== '80' || tuned.settings.viewDistance !== '2' || tuned.settings.quality !== 'low') {
+  if (tuned.settings.sensitivity !== '95' || tuned.settings.fov !== '80' || tuned.settings.viewDistance !== tunedViewDistance || tuned.settings.quality !== 'low') {
     fail('Settings controls should apply immediately', tuned)
   }
   await setRange(win, '.sensitivity-input', 72)
