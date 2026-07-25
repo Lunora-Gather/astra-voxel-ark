@@ -41,6 +41,8 @@ and reapplies those deltas.
 - Point lights use allocation and active-light budgets.
 - Hidden pages do no rendering work.
 - Paused screens run at 10 FPS.
+- Active gameplay uses a timestamp gate at the persisted 30 or 60 FPS target; constrained devices
+  default to 30 FPS instead of running the heavy simulation at the display's full refresh rate.
 - Ultra-low devices tune adaptive quality against a 30 FPS target without imposing a
   refresh-rate-dependent frame cap.
 - Autosaves serialize during an idle callback when available.

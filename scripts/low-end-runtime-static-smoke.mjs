@@ -4,6 +4,7 @@ const profile = fs.readFileSync(new URL('../src/performance/DeviceProfile.ts', i
 const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const terrain = fs.readFileSync(new URL('../src/world/ProceduralTerrain.ts', import.meta.url), 'utf8')
 const worker = fs.readFileSync(new URL('../src/workers/proceduralTerrainWorker.ts', import.meta.url), 'utf8')
+const frameLimiter = fs.readFileSync(new URL('../src/performance/FrameRateLimiter.ts', import.meta.url), 'utf8')
 
 const expectations = [
   [profile.includes("'ultra-low'"), 'ultra-low device tier'],
@@ -18,6 +19,10 @@ const expectations = [
   [worker.includes('procedural-chunk-built'), 'worker response contract'],
   [worker.includes('request.worldSeed'), 'worker world seed propagation'],
   [main.includes('createWorldSeed'), 'world seed lifecycle'],
+  [main.includes('gameplayFrameLimiter.shouldRun(now)'), 'active frame-rate limiter'],
+  [main.includes('frameRateLimit'), 'adaptive target frame rate'],
+  [frameLimiter.includes('1000 / this.targetFps'), 'timestamp frame interval'],
+  [frameLimiter.includes('lastAcceptedAt'), 'frame acceptance state'],
 ]
 
 const missing = expectations.filter(([present]) => !present).map(([, label]) => label)

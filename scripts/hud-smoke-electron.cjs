@@ -248,6 +248,7 @@ async function readState(win, label) {
         worldSlotsFullyVisible: [...document.querySelectorAll('.world-slot')].every((button) => fullyVisible(rectOf('.world-slot[data-world-slot="' + button.dataset.worldSlot + '"]'))),
         activeWorldSlot: document.querySelector('.world-slot.active')?.dataset.worldSlot || null,
         perfVisible: visible('.perf-badge'),
+        perfFps: Number(document.querySelector('.perf-fps')?.textContent) || 0,
         hotbarVisible: visible('.hotbar'),
         hotbarSlots: document.querySelectorAll('.slot').length,
         activeSlots: document.querySelectorAll('.slot.active').length,
@@ -287,6 +288,10 @@ async function readState(win, label) {
           viewDistance: document.querySelector('.view-distance-select')?.value,
           quality: document.querySelector('.quality-btn.active')?.dataset.quality,
           perf: document.querySelector('.perf-toggle')?.checked,
+          frameRate: document.querySelector('.frame-rate-select')?.value,
+          frameRateApplied: document.body.dataset.frameRate,
+          volume: document.querySelector('.volume-input')?.value,
+          soundEnabled: document.querySelector('.sound-toggle')?.checked,
         },
         overlaps,
       };
@@ -522,18 +527,29 @@ async function runScenario(win, scenario) {
     [...document.querySelectorAll('.view-distance-select option')].filter((option) => !option.disabled).at(-1)?.value || '1'
   `)
   await setSelect(win, '.view-distance-select', tunedViewDistance)
+  const tunedFrameRate = '30'
+  await setSelect(win, '.frame-rate-select', tunedFrameRate)
+  await setRange(win, '.volume-input', 25)
   await click(win, '.quality-btn[data-quality="low"]')
   await setCheckbox(win, '.perf-toggle', true)
+  await setCheckbox(win, '.sound-toggle', false)
   const tuned = await readState(win, `${scenario.label}:settings-tuned`)
   if (!tuned.perfVisible) fail('Performance HUD toggle should show the perf badge', tuned)
-  if (tuned.settings.sensitivity !== '95' || tuned.settings.fov !== '80' || tuned.settings.viewDistance !== tunedViewDistance || tuned.settings.quality !== 'low') {
+  if (tuned.settings.sensitivity !== '95' || tuned.settings.fov !== '80' || tuned.settings.viewDistance !== tunedViewDistance || tuned.settings.quality !== 'low' || tuned.settings.frameRate !== tunedFrameRate || tuned.settings.frameRateApplied !== tunedFrameRate || tuned.settings.volume !== '25' || tuned.settings.soundEnabled !== false) {
     fail('Settings controls should apply immediately', tuned)
+  }
+  const persistedSettings = await readStorageJson(win, settingsKey)
+  if (String(persistedSettings?.frameRate) !== tunedFrameRate || persistedSettings?.volume !== 25 || persistedSettings?.soundEnabled !== false) {
+    fail('Frame-rate and audio settings should persist locally', { persistedSettings, tunedFrameRate })
   }
   await setRange(win, '.sensitivity-input', 72)
   await setRange(win, '.fov-input', 72)
   await setSelect(win, '.view-distance-select', 1)
+  await setSelect(win, '.frame-rate-select', gameplay.settings.frameRate)
+  await setRange(win, '.volume-input', 70)
   await click(win, '.quality-btn[data-quality="balanced"]')
   await setCheckbox(win, '.perf-toggle', false)
+  await setCheckbox(win, '.sound-toggle', true)
   await click(win, '.resume-btn')
   const closed = await readState(win, `${scenario.label}:closed`)
   if (closed.menuOpen) fail('Pause menu should close on Resume', closed)

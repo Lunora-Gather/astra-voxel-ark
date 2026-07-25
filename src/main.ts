@@ -15,6 +15,7 @@ import { isGreedyMeshEligible } from './render/BlockRenderLayers'
 import { applyPointLightBudget } from './render/lightBudget'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
+import { FrameRateLimiter } from './performance/FrameRateLimiter'
 import {
   ACTIVE_WORLD_SLOT_KEY,
   WORLD_SLOT_IDS,
@@ -59,6 +60,8 @@ const runtimeProfile = detectRuntimeDeviceProfile({
 })
 const runtimeLimits = runtimeProfile.limits
 const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
+let frameRateLimit: 30 | 60 = runtimeLimits.targetFps === 30 ? 30 : 60
+const gameplayFrameLimiter = new FrameRateLimiter(frameRateLimit)
 document.body.dataset.runtimeTier = runtimeProfile.tier
 document.body.classList.toggle('constrained-runtime', lowPowerMode)
 
@@ -180,6 +183,18 @@ app.innerHTML = `
               <option value="3">Far</option>
             </select>
           </label>
+          <label class="setting-row">
+            <span>Frame Rate</span>
+            <select class="frame-rate-select">
+              <option value="30">30 FPS · Battery</option>
+              <option value="60">60 FPS · Smooth</option>
+            </select>
+          </label>
+          <label class="setting-row">
+            <span>Sound Volume</span>
+            <output class="volume-value">70%</output>
+            <input class="volume-input" type="range" min="0" max="100" value="70" />
+          </label>
           <div class="setting-row setting-row-buttons">
             <span>Graphics</span>
             <div class="quality-options" role="group" aria-label="Graphics quality">
@@ -191,6 +206,10 @@ app.innerHTML = `
           <label class="setting-check">
             <input class="perf-toggle" type="checkbox" />
             <span>Show performance HUD</span>
+          </label>
+          <label class="setting-check">
+            <input class="sound-toggle" type="checkbox" checked />
+            <span>Enable sound effects</span>
           </label>
           </div>
         </section>
@@ -1627,6 +1646,8 @@ function createShardBurst(position: THREE.Vector3) {
 
 // 简单音效 (Web Audio API)
 let audioContext: AudioContext | null = null
+let soundVolume = 0.7
+let soundEnabled = true
 function getAudioContext() {
   if (!audioContext) {
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
@@ -1637,13 +1658,14 @@ function getAudioContext() {
   return audioContext
 }
 function playSound(type: 'break' | 'place' | 'jump' | 'select', volume: number) {
+  if (!soundEnabled || soundVolume <= 0) return
   const audioContext = getAudioContext()
   const osc = audioContext.createOscillator()
   const gain = audioContext.createGain()
   osc.connect(gain)
   gain.connect(audioContext.destination)
 
-  gain.gain.setValueAtTime(volume, audioContext.currentTime)
+  gain.gain.setValueAtTime(Math.max(0.001, volume * soundVolume), audioContext.currentTime)
   gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.08)
 
   if (type === 'break') {
@@ -2190,11 +2212,15 @@ const sensitivityValue = document.querySelector<HTMLOutputElement>('.sensitivity
 const fovInput = document.querySelector<HTMLInputElement>('.fov-input')!
 const fovValue = document.querySelector<HTMLOutputElement>('.fov-value')!
 const viewDistanceSelect = document.querySelector<HTMLSelectElement>('.view-distance-select')!
+const frameRateSelect = document.querySelector<HTMLSelectElement>('.frame-rate-select')!
+const volumeInput = document.querySelector<HTMLInputElement>('.volume-input')!
+const volumeValue = document.querySelector<HTMLOutputElement>('.volume-value')!
 const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('.quality-btn')]
 viewDistanceSelect.querySelectorAll<HTMLOptionElement>('option').forEach((option) => {
   option.disabled = Number(option.value) > runtimeLimits.maxViewDistance
 })
 const perfToggle = document.querySelector<HTMLInputElement>('.perf-toggle')!
+const soundToggle = document.querySelector<HTMLInputElement>('.sound-toggle')!
 const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value')!
 const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
 const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
@@ -2404,6 +2430,9 @@ type GameSettings = {
   viewDistance: number
   quality: QualityPreset
   showPerf: boolean
+  frameRate: 30 | 60
+  volume: number
+  soundEnabled: boolean
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -2417,6 +2446,9 @@ function readStoredSettings(): GameSettings {
     viewDistance: terrainLoadRadius,
     quality: qualityPreset,
     showPerf: showPerformanceHud,
+    frameRate: frameRateLimit,
+    volume: Math.round(soundVolume * 100),
+    soundEnabled,
   }
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
@@ -2431,6 +2463,11 @@ function readStoredSettings(): GameSettings {
       viewDistance: Math.round(clampNumber(Number(parsed.viewDistance) || fallback.viewDistance, 1, 3)),
       quality,
       showPerf: Boolean(parsed.showPerf),
+      frameRate: parsed.frameRate === 60 ? 60 : parsed.frameRate === 30 ? 30 : fallback.frameRate,
+      volume: typeof parsed.volume === 'number' && Number.isFinite(parsed.volume)
+        ? clampNumber(parsed.volume, 0, 100)
+        : fallback.volume,
+      soundEnabled: parsed.soundEnabled !== false,
     }
   } catch {
     return fallback
@@ -2471,6 +2508,9 @@ function writeStoredSettings() {
     viewDistance: Number(viewDistanceSelect.value),
     quality: qualityPreset,
     showPerf: showPerformanceHud,
+    frameRate: frameRateLimit,
+    volume: Number(volumeInput.value),
+    soundEnabled,
   }
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
 }
@@ -2502,10 +2542,37 @@ function applySettings(settings: GameSettings, persist = false) {
 
   applyQualityPreset(settings.quality, persist)
   setPerformanceHudVisible(settings.showPerf)
+  frameRateLimit = settings.frameRate === 60 ? 60 : 30
+  gameplayFrameLimiter.setTargetFps(frameRateLimit)
+  frameRateSelect.value = String(frameRateLimit)
+  document.body.dataset.frameRate = String(frameRateLimit)
+
+  soundVolume = clampNumber(settings.volume, 0, 100) / 100
+  volumeInput.value = String(Math.round(soundVolume * 100))
+  volumeValue.textContent = `${Math.round(soundVolume * 100)}%`
+  soundEnabled = settings.soundEnabled
+  soundToggle.checked = soundEnabled
   if (persist) writeStoredSettings()
 }
 
 applySettings(readStoredSettings())
+
+function collectCurrentSettings(): GameSettings {
+  return {
+    sensitivity: Number(sensitivityInput.value),
+    fov: Number(fovInput.value),
+    viewDistance: Number(viewDistanceSelect.value),
+    quality: qualityPreset,
+    showPerf: perfToggle.checked,
+    frameRate: frameRateSelect.value === '60' ? 60 : 30,
+    volume: Number(volumeInput.value),
+    soundEnabled: soundToggle.checked,
+  }
+}
+
+function updateSettings(overrides: Partial<GameSettings> = {}) {
+  applySettings({ ...collectCurrentSettings(), ...overrides }, true)
+}
 
 function resetInputState() {
   keys.clear()
@@ -2544,55 +2611,20 @@ menuToggleBtn.addEventListener('click', (event) => {
   openPauseMenu()
 })
 resumeButton.addEventListener('click', () => closePauseMenu())
-sensitivityInput.addEventListener('input', () => {
-  applySettings({
-    sensitivity: Number(sensitivityInput.value),
-    fov: Number(fovInput.value),
-    viewDistance: Number(viewDistanceSelect.value),
-    quality: qualityPreset,
-    showPerf: showPerformanceHud,
-  }, true)
-})
-fovInput.addEventListener('input', () => {
-  applySettings({
-    sensitivity: Number(sensitivityInput.value),
-    fov: Number(fovInput.value),
-    viewDistance: Number(viewDistanceSelect.value),
-    quality: qualityPreset,
-    showPerf: showPerformanceHud,
-  }, true)
-})
-viewDistanceSelect.addEventListener('change', () => {
-  applySettings({
-    sensitivity: Number(sensitivityInput.value),
-    fov: Number(fovInput.value),
-    viewDistance: Number(viewDistanceSelect.value),
-    quality: qualityPreset,
-    showPerf: showPerformanceHud,
-  }, true)
-})
+sensitivityInput.addEventListener('input', () => updateSettings())
+fovInput.addEventListener('input', () => updateSettings())
+viewDistanceSelect.addEventListener('change', () => updateSettings())
+frameRateSelect.addEventListener('change', () => updateSettings())
+volumeInput.addEventListener('input', () => updateSettings())
 qualityButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const nextQuality = button.dataset.quality
     if (nextQuality !== 'low' && nextQuality !== 'balanced' && nextQuality !== 'high') return
-    applySettings({
-      sensitivity: Number(sensitivityInput.value),
-      fov: Number(fovInput.value),
-      viewDistance: Number(viewDistanceSelect.value),
-      quality: nextQuality,
-      showPerf: showPerformanceHud,
-    }, true)
+    updateSettings({ quality: nextQuality })
   })
 })
-perfToggle.addEventListener('change', () => {
-  applySettings({
-    sensitivity: Number(sensitivityInput.value),
-    fov: Number(fovInput.value),
-    viewDistance: Number(viewDistanceSelect.value),
-    quality: qualityPreset,
-    showPerf: perfToggle.checked,
-  }, true)
-})
+perfToggle.addEventListener('change', () => updateSettings())
+soundToggle.addEventListener('change', () => updateSettings())
 
 function setHudDensity(density: HudDensity) {
   document.body.dataset.hudDensity = density
@@ -2679,7 +2711,7 @@ function updateOrientationClass() {
 }
 
 start.querySelector('button')!.addEventListener('click', () => {
-  getAudioContext()
+  if (soundEnabled && soundVolume > 0) getAudioContext()
   hasStarted = true
   closePauseMenu(false)
   if (isTouchDevice) {
@@ -3256,10 +3288,10 @@ function updateAdaptiveQuality(avgMs: number, elapsedTime: number) {
   if (elapsedTime - lastQualityAdjustAt < 2.5) return
   const previousQuality = renderQuality
   const bounds = qualityBounds()
-  const targetFrameMs = 1000 / runtimeLimits.targetFps
-  if ((currentFps > 0 && currentFps < runtimeLimits.targetFps * 0.82) || avgMs > targetFrameMs * 1.18) {
+  const targetFrameMs = 1000 / frameRateLimit
+  if ((currentFps > 0 && currentFps < frameRateLimit * 0.82) || avgMs > targetFrameMs * 1.18) {
     renderQuality = Math.max(bounds.min, renderQuality - QUALITY_STEP)
-  } else if (currentFps >= runtimeLimits.targetFps * 0.96 && avgMs < targetFrameMs * 0.92) {
+  } else if (currentFps >= frameRateLimit * 0.96 && avgMs < targetFrameMs * 0.92) {
     renderQuality = Math.min(bounds.max, renderQuality + QUALITY_STEP)
   }
   if (Math.abs(renderQuality - previousQuality) >= 0.01) {
@@ -3466,7 +3498,7 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   if (fpsEl && msEl) {
     fpsEl.textContent = String(currentFps)
     msEl.textContent = `${avgMs} · Q${Math.round(renderQuality * 100)}%`
-    fpsEl.style.color = currentFps >= 55 ? '#a8ffb9' : currentFps >= 30 ? '#fff3a8' : '#ffd7fa'
+    fpsEl.style.color = currentFps >= frameRateLimit * 0.92 ? '#a8ffb9' : currentFps >= frameRateLimit * 0.65 ? '#fff3a8' : '#ffd7fa'
   }
   if (blocksEl) {
     blocksEl.textContent = String(blocks.size)
@@ -3502,6 +3534,7 @@ function animate() {
   const now = performance.now()
   if ((!hasStarted || isPaused) && now - lastIdleFrameAt < 100) return
   if (!hasStarted || isPaused) lastIdleFrameAt = now
+  if (hasStarted && !isPaused && !gameplayFrameLimiter.shouldRun(now)) return
   const dt = Math.min(clock.getDelta(), 0.05)
   if (!hasStarted || isPaused) {
     rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
