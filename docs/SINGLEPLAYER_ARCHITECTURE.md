@@ -19,18 +19,19 @@ When multiplayer work begins, add a separate gateway implementation and explicit
 
 ## Save compatibility
 
-World save version 6 stores deterministic terrain as generated chunk coordinates plus player
-deltas (placed and removed blocks). The version 5 snapshot loader and older compatibility defaults
-remain available:
+World save version 7 stores deterministic terrain as generated chunk coordinates plus player
+deltas (placed and removed blocks), the player's position and view direction, and paused-safe world
+time. The version 6 delta loader, version 5 snapshot loader and older compatibility defaults remain
+available:
 
+- missing player state resumes at the Ark spawn;
 - missing progression starts at hand tools with empty statistics;
 - missing vitals starts at full health;
 - existing blocks, inventory, survival charge and shard progress retain their old behavior.
 
 ## Next extraction targets
 
-1. Move the legacy inventory map behind a standalone inventory service.
-2. Move `serializeWorld` and validation into the typed save module.
-3. Replace the legacy block map with `ChunkManager`.
-4. Extract player movement into `PlayerController`.
-5. Add entity simulation through commands/events rather than direct scene mutation.
+1. Move `serializeWorld` and validation into the typed save module.
+2. Replace the legacy block map with `ChunkManager`.
+3. Extract player movement into `PlayerController`.
+4. Add entity simulation through commands/events rather than direct scene mutation.

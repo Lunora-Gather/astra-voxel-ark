@@ -4,8 +4,9 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
-import { ProgressionSystem, RECIPES, SurvivalVitals, type ProgressionSnapshot, type SurvivalVitalsSnapshot } from './singleplayer'
+import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals, type InventorySnapshot, type ProgressionSnapshot, type SurvivalVitalsSnapshot } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
+import { sanitizePlayerState, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
 import { ChunkManager } from './world/ChunkManager'
 import { buildChunkMeshData } from './render/ChunkMeshBuilder'
@@ -404,7 +405,9 @@ type SavedWorld = {
   terrainChunks?: string[]
   removedBlocks?: string[]
   playerPlacedBlocks?: string[]
-  inventory?: Partial<Record<BlockId, number>>
+  inventory?: InventorySnapshot
+  player?: Partial<PlayerStateSnapshot>
+  worldTime?: number
   survival?: {
     crystalPower?: number
     carriedCrystal?: number
@@ -463,7 +466,6 @@ const removedTerrainBlocks = new Set<string>()
 const playerPlacedBlocks = new Set<string>()
 const landmarkShardBlocks = new Set<string>()
 const collectedShardBlocks = new Set<string>()
-const inventoryCounts = new Map<BlockId, number>()
 const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
 const localSession = new LocalSessionGateway()
@@ -475,6 +477,8 @@ let crystalPower = 68
 let carriedCrystal = 0
 let collectedGlowShards = 0
 let lastSurvivalToastAt = 0
+let simulationElapsedTime = 0
+let lastAutoSaveAt = 0
 const EXPLORATION_GOAL_SHARDS = 6
 const SHARD_WARD_PROTECTION = 0.03
 const ARK_MODULE_NAMES = ['Signal', 'Power', 'Shield', 'Chart', 'Lift', 'Core']
@@ -542,16 +546,8 @@ const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
   crystal: 2,
   glow: 2,
 }
-const progressionInventory = {
-  count: (id: BlockId) => inventoryCounts.get(id) ?? 0,
-  add: (id: BlockId, amount: number) => addToInventory(id, amount),
-  remove: (id: BlockId, amount: number) => {
-    const count = inventoryCounts.get(id) ?? 0
-    if (count < amount) return false
-    inventoryCounts.set(id, count - amount)
-    return true
-  },
-}
+const inventory = new InventorySystem(BLOCKS.map(({ id }) => id), STARTER_INVENTORY)
+const progressionInventory = inventory
 const SOLID_NEIGHBOR_OFFSETS = [
   [1, 0, 0],
   [-1, 0, 0],
@@ -1077,32 +1073,19 @@ function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
 }
 
 function setStarterInventory() {
-  inventoryCounts.clear()
-  BLOCKS.forEach(({ id }) => {
-    inventoryCounts.set(id, Math.max(0, STARTER_INVENTORY[id] ?? 0))
-  })
+  inventory.reset()
 }
 
 function addToInventory(id: BlockId, amount = 1) {
-  inventoryCounts.set(id, Math.max(0, (inventoryCounts.get(id) ?? 0) + amount))
+  inventory.add(id, amount)
 }
 
 function consumeInventory(id: BlockId) {
-  const count = inventoryCounts.get(id) ?? 0
-  if (count <= 0) return false
-  inventoryCounts.set(id, count - 1)
-  return true
+  return inventory.remove(id)
 }
 
 function readSavedInventory(savedInventory: SavedWorld['inventory']) {
-  setStarterInventory()
-  if (!savedInventory || typeof savedInventory !== 'object') return
-  BLOCKS.forEach(({ id }) => {
-    const count = savedInventory[id]
-    if (typeof count === 'number' && Number.isFinite(count)) {
-      inventoryCounts.set(id, Math.max(0, Math.floor(count)))
-    }
-  })
+  inventory.restore(savedInventory)
 }
 
 function readSavedExploration(savedExploration: SavedWorld['exploration']) {
@@ -1160,14 +1143,19 @@ function serializeWorld(): SavedWorld {
     if (id) savedBlocks.push([...key.split(',').map(Number), id] as SavedBlock)
   })
   return {
-    version: 6,
+    version: 7,
     savedAt: Date.now(),
     format: 'delta',
     blocks: savedBlocks,
     terrainChunks: [...discoveredTerrainChunks],
     removedBlocks: [...removedTerrainBlocks],
     playerPlacedBlocks: [...playerPlacedBlocks],
-    inventory: Object.fromEntries(BLOCKS.map(({ id }) => [id, inventoryCounts.get(id) ?? 0])) as Partial<Record<BlockId, number>>,
+    inventory: inventory.snapshot(),
+    player: {
+      position: controls.object.position.toArray() as [number, number, number],
+      rotation: [controls.object.rotation.x, controls.object.rotation.y],
+    },
+    worldTime: simulationElapsedTime,
     survival: {
       crystalPower,
       carriedCrystal,
@@ -1254,6 +1242,12 @@ function applySavedWorld(data: SavedWorld) {
   if (!Array.isArray(data.blocks)) throw new Error('Bad save')
   const savedBlocks = data.blocks.filter(isValidSavedBlock)
   const isDeltaSave = data.format === 'delta' || data.version >= 6
+  const playerState = sanitizePlayerState(data.player, {
+    position: [PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z],
+    rotation: [0, 0],
+  }, {
+    maxHorizontal: (TERRAIN_MAX_RADIUS + 1) * CHUNK_SIZE,
+  })
   clearWorldBlocks()
   readSavedInventory(data.inventory)
   readSavedExploration(data.exploration)
@@ -1270,9 +1264,9 @@ function applySavedWorld(data: SavedWorld) {
       terrainKeys.forEach((key) => discoveredTerrainChunks.add(key))
       terrainKeys.forEach((key) => {
         const [cx, cz] = key.split(',').map(Number)
-        const spawnCx = chunkCoord(PLAYER_SPAWN.x)
-        const spawnCz = chunkCoord(PLAYER_SPAWN.z)
-        if (Math.max(Math.abs(cx - spawnCx), Math.abs(cz - spawnCz)) <= INITIAL_TERRAIN_LOAD_RADIUS) {
+        const resumeCx = chunkCoord(playerState.position[0])
+        const resumeCz = chunkCoord(playerState.position[2])
+        if (Math.max(Math.abs(cx - resumeCx), Math.abs(cz - resumeCz)) <= INITIAL_TERRAIN_LOAD_RADIUS) {
           generateTerrainChunk(cx, cz)
         }
       })
@@ -1316,7 +1310,11 @@ function applySavedWorld(data: SavedWorld) {
   rebuildLandmarkShardBlocks()
   crystalPower = typeof data.survival?.crystalPower === 'number' ? Math.max(0, Math.min(100, data.survival.crystalPower)) : 68
   carriedCrystal = typeof data.survival?.carriedCrystal === 'number' ? Math.max(0, Math.floor(data.survival.carriedCrystal)) : 0
-  controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
+  restorePlayerState(playerState)
+  simulationElapsedTime = typeof data.worldTime === 'number' && Number.isFinite(data.worldTime)
+    ? Math.max(0, data.worldTime)
+    : 0
+  lastAutoSaveAt = simulationElapsedTime
   velocityY = 0
   updateProgressionUi()
 }
@@ -1385,6 +1383,8 @@ function resetWorld() {
   collectedShardBlocks.clear()
   progression.reset()
   survivalVitals.reset()
+  simulationElapsedTime = 0
+  lastAutoSaveAt = 0
   generateWorld()
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
   velocityY = 0
@@ -1421,6 +1421,23 @@ function updateSaveMeta(message?: string) {
 function isSolidBlockAt(x: number, y: number, z: number) {
   const id = blockData.get(blockKey(x, y, z))
   return !!id && id !== 'water'
+}
+
+function restorePlayerState(state: PlayerStateSnapshot) {
+  const [x, y, z] = state.position
+  controls.object.position.set(x, y, z)
+  controls.object.rotation.x = state.rotation[0]
+  controls.object.rotation.y = state.rotation[1]
+  controls.object.rotation.z = 0
+
+  // Player edits or imported saves may leave the stored eye point inside a block.
+  // Search upward before falling back to the Ark spawn so load never traps the player.
+  for (let offset = 0; offset <= 12; offset++) {
+    controls.object.position.y = y + offset
+    if (!playerCollidesAt(controls.object.position)) return
+  }
+  controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
+  controls.object.rotation.set(0, 0, 0)
 }
 
 function playerOverlapsBlockAt(pos: THREE.Vector3, x: number, y: number, z: number, clearance = 0) {
@@ -1794,9 +1811,6 @@ resetButton.addEventListener('click', () => {
   resetConfirmUntil = 0
   resetWorld()
 })
-if (localStorage.getItem(SAVE_KEY)) loadWorld()
-else updateSaveMeta()
-
 const platform = new THREE.Mesh(
   new THREE.CylinderGeometry(40, 48, 2, runtimeProfile.tier === 'ultra-low' ? 32 : lowPowerMode ? 48 : runtimeProfile.tier === 'standard' ? 64 : 96),
   new THREE.MeshStandardMaterial({ color: 0x55657b, roughness: 0.9 })
@@ -1920,7 +1934,7 @@ const compassArrow = document.querySelector<HTMLSpanElement>('.compass-arrow')!
 const compassDistance = document.querySelector<HTMLSpanElement>('.compass-distance')!
 
 function countBlocksInInventory(blockId: BlockId): number {
-  return inventoryCounts.get(blockId) ?? 0
+  return inventory.count(blockId)
 }
 
 function updateBlockInfo() {
@@ -2187,6 +2201,9 @@ recipeList.addEventListener('click', (event) => {
 
 document.querySelector<HTMLButtonElement>('.session-option[data-session="singleplayer"]')!.querySelector('strong')!.textContent = localSession.session.label
 document.querySelector<HTMLButtonElement>('.multiplayer-entry')!.title = multiplayerSession.session.label
+if (localStorage.getItem(SAVE_KEY)) loadWorld()
+else updateSaveMeta()
+updateHotbar()
 updateProgressionUi()
 type HudDensity = 'roomy' | 'compact' | 'minimal'
 let hudLayoutFrame = 0
@@ -3265,7 +3282,6 @@ function updateFrameStats(dt: number, elapsedTime: number) {
 }
 
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes
-let lastAutoSaveAt = 0
 let lastIdleFrameAt = -Infinity
 
 function scheduleAutoSave() {
@@ -3285,7 +3301,15 @@ function animate() {
   if ((!hasStarted || isPaused) && now - lastIdleFrameAt < 100) return
   if (!hasStarted || isPaused) lastIdleFrameAt = now
   const dt = Math.min(clock.getDelta(), 0.05)
-  const elapsedTime = clock.elapsedTime
+  if (!hasStarted || isPaused) {
+    rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
+    rebuildOptimizedChunkMeshes(runtimeLimits.meshBatchSize, runtimeLimits.meshBudgetMs)
+    updateInstancedBounds()
+    renderer.render(scene, camera)
+    return
+  }
+  simulationElapsedTime += dt
+  const elapsedTime = simulationElapsedTime
   if (hasStarted && elapsedTime - lastAutoSaveAt > AUTO_SAVE_INTERVAL) {
     lastAutoSaveAt = elapsedTime
     scheduleAutoSave()

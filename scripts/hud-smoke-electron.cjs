@@ -360,6 +360,9 @@ function assertSavedWorld(payload, label) {
   if (!payload.inventory || typeof payload.inventory !== 'object') fail(`${label}: saved world should include inventory counts`, payload)
   if (!payload.survival || typeof payload.survival.crystalPower !== 'number') fail(`${label}: saved world should include survival state`, payload)
   if (!payload.exploration || typeof payload.exploration.glowShards !== 'number') fail(`${label}: saved world should include exploration state`, payload)
+  if (!payload.player || !Array.isArray(payload.player.position) || payload.player.position.length !== 3) fail(`${label}: saved world should include player position`, payload)
+  if (!Array.isArray(payload.player.rotation) || payload.player.rotation.length !== 2) fail(`${label}: saved world should include player rotation`, payload)
+  if (typeof payload.worldTime !== 'number') fail(`${label}: saved world should include simulation time`, payload)
 }
 
 async function smokeSaveLoad(win, scenario) {
@@ -371,11 +374,33 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.reset-btn')
   const cleared = await readSavedWorld(win)
   if (cleared) fail('Reset should remove the local saved world', { cleared })
-  await writeSavedWorld(win, saved)
+  const resumeState = {
+    ...saved,
+    player: { position: [2, 15, 12], rotation: [0.2, 0.4] },
+    worldTime: 42,
+  }
+  await writeSavedWorld(win, resumeState)
   await click(win, '.load-btn')
+  await new Promise((resolve) => setTimeout(resolve, 220))
+  await click(win, '.save-btn')
   const loaded = await readSavedWorld(win)
   assertSavedWorld(loaded, `${scenario.label}:load`)
   if (loaded.blocks.length !== saved.blocks.length) fail('Loaded world should preserve saved block count', { saved: saved.blocks.length, loaded: loaded.blocks.length })
+  if (loaded.player.position.some((value, index) => Math.abs(value - resumeState.player.position[index]) > 0.001)) {
+    fail('Loaded world should restore the player position', { expected: resumeState.player.position, actual: loaded.player.position })
+  }
+  if (loaded.player.rotation.some((value, index) => Math.abs(value - resumeState.player.rotation[index]) > 0.001)) {
+    fail('Loaded world should restore the player rotation', { expected: resumeState.player.rotation, actual: loaded.player.rotation })
+  }
+  if (loaded.worldTime !== resumeState.worldTime) {
+    fail('Paused world should not advance simulation time', { expected: resumeState.worldTime, actual: loaded.worldTime })
+  }
+  await waitForLoad(win, scenarioUrl(scenario, 'saved-boot'))
+  const booted = await readSavedWorld(win)
+  assertSavedWorld(booted, `${scenario.label}:saved-boot`)
+  await click(win, '.start button')
+  await click(win, '.menu-toggle-btn')
+  await click(win, '.menu-tab[data-menu-tab="world"]')
 }
 
 async function runScenario(win, scenario) {

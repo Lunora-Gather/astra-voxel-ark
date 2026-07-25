@@ -23,7 +23,7 @@ old responses so stale terrain cannot leak into the new session.
 
 The runtime distinguishes:
 
-- discovered chunks, which are persisted in the v6 delta save;
+- discovered chunks, which are persisted in the v7 delta save;
 - resident chunks, which currently occupy CPU and GPU memory;
 - queued or worker-owned chunks, which are not yet visible.
 
