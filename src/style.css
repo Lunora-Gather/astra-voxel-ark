@@ -207,6 +207,13 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .session-option small { font-size: 9px; opacity: .62; }
 .session-option.active { border-color: rgba(169,239,255,.35); background: rgba(115,214,255,.1); }
 .session-option:disabled { opacity: .45; }
+.world-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.world-slot { pointer-events: auto; display: grid; min-width: 0; gap: 2px; padding: 9px 10px; text-align: left; color: rgba(255,255,255,.9); border: 1px solid rgba(255,255,255,.12); border-radius: 13px; background: rgba(255,255,255,.045); cursor: pointer; }
+.world-slot > span { color: rgba(255,255,255,.42); font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.world-slot strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.world-slot small { overflow: hidden; color: rgba(255,255,255,.52); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.world-slot.active { color: #071120; border-color: rgba(255,255,255,.6); background: linear-gradient(135deg, #9ee8ff, #fff3a8); box-shadow: 0 8px 24px rgba(115,214,255,.12); }
+.world-slot.active > span, .world-slot.active small { color: rgba(7,17,32,.62); }
 .save-meta { margin-top: 10px; padding: 10px 12px; border-radius: 12px; color: rgba(255,255,255,.58); background: rgba(255,255,255,.05); font-size: 10px; line-height: 1.45; }
 body.menu-open .crosshair { opacity: 0; }
 body:not(.show-perf-hud) .perf-badge { display: none !important; }
@@ -960,6 +967,16 @@ body.portrait-touch .block-info {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     margin-top: 10px;
     gap: 7px;
+  }
+
+  .session-panel,
+  .world-slots {
+    margin-top: 7px;
+    gap: 6px;
+  }
+
+  .world-slot {
+    padding: 6px 8px;
   }
 
   .pause-menu .save-tools button {

@@ -29,6 +29,10 @@ available:
 - missing vitals starts at full health;
 - existing blocks, inventory, survival charge and shard progress retain their old behavior.
 
+Three local expedition slots share the same v7 schema. Slot 1 intentionally keeps the original
+`astra-voxel-ark-world-v1` storage key, so an existing installation opens its previous world without
+a migration copy. Slots 2 and 3 use isolated keys, while the active slot is stored separately.
+
 ## Next extraction targets
 
 1. Move `serializeWorld` and validation into the typed save module.

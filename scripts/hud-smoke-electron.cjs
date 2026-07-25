@@ -19,6 +19,8 @@ const scenarios = [
 
 const settingsKey = 'astra-voxel-ark-settings-v1'
 const saveKey = 'astra-voxel-ark-world-v1'
+const activeWorldSlotKey = 'astra-voxel-ark-active-world-slot-v1'
+const secondSaveKey = `${saveKey}-slot-2`
 const consoleIssues = []
 const smokeArtifacts = []
 const hardTimeout = setTimeout(() => {
@@ -241,6 +243,10 @@ async function readState(win, label) {
         rightStackVisible: visible('.hud-right-stack'),
         menuButtonVisible: visible('.menu-toggle-btn'),
         saveToolsVisible: visible('.save-tools'),
+        worldSlotsVisible: visibleCount('.world-slot'),
+        activeWorldSlots: document.querySelectorAll('.world-slot.active').length,
+        worldSlotsFullyVisible: [...document.querySelectorAll('.world-slot')].every((button) => fullyVisible(rectOf('.world-slot[data-world-slot="' + button.dataset.worldSlot + '"]'))),
+        activeWorldSlot: document.querySelector('.world-slot.active')?.dataset.worldSlot || null,
         perfVisible: visible('.perf-badge'),
         hotbarVisible: visible('.hotbar'),
         hotbarSlots: document.querySelectorAll('.slot').length,
@@ -301,11 +307,22 @@ function assertMenuState(state) {
   if (state.pointerLocked) fail('Pointer lock should be released while the pause menu is open', state)
 }
 
+async function readStorageJson(win, key) {
+  return win.webContents.executeJavaScript(`
+    (() => {
+      const raw = localStorage.getItem(${JSON.stringify(key)});
+      return raw ? JSON.parse(raw) : null;
+    })()
+  `)
+}
+
 function assertWorldMenuState(state) {
   assertMenuState(state)
   if (state.activeMenuTab !== 'world') fail('World tab should be active', state)
   if (!state.saveToolsVisible) fail('Save tools should be visible on the World tab', state)
   if (!state.saveButtonFullyVisible) fail('Save buttons should fit on the World tab', state)
+  if (state.worldSlotsVisible !== 3 || state.activeWorldSlots !== 1) fail('World tab should expose three slots with one active slot', state)
+  if (!state.worldSlotsFullyVisible) fail('World slot controls should fit in the viewport', state)
 }
 
 function assertTouchLandscapeState(state) {
@@ -401,6 +418,19 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.start button')
   await click(win, '.menu-toggle-btn')
   await click(win, '.menu-tab[data-menu-tab="world"]')
+  await click(win, '.world-slot[data-world-slot="2"]')
+  const activeSecondSlot = await win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(activeWorldSlotKey)})`)
+  if (activeSecondSlot !== '2') fail('Selecting a world slot should persist the active slot', { activeSecondSlot })
+  const emptySecondSlot = await readStorageJson(win, secondSaveKey)
+  if (emptySecondSlot) fail('Selecting an empty slot should create a fresh unsaved world', { emptySecondSlot })
+  await click(win, '.save-btn')
+  const savedSecondSlot = await readStorageJson(win, secondSaveKey)
+  assertSavedWorld(savedSecondSlot, `${scenario.label}:slot-2-save`)
+  await click(win, '.world-slot[data-world-slot="1"]')
+  const restoredFirstSlot = await readSavedWorld(win)
+  assertSavedWorld(restoredFirstSlot, `${scenario.label}:slot-1-return`)
+  const activeFirstSlot = await win.webContents.executeJavaScript(`localStorage.getItem(${JSON.stringify(activeWorldSlotKey)})`)
+  if (activeFirstSlot !== '1') fail('Returning to slot 1 should persist the legacy-compatible slot', { activeFirstSlot })
 }
 
 async function runScenario(win, scenario) {

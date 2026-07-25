@@ -15,7 +15,8 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Procedural voxel island terrain
 - First-person movement with pointer lock on desktop and touch controls on mobile
 - Block breaking and placing via raycasting, with player-safe placement checks
-- Local browser save/load/reset plus JSON export/import for changed worlds, player position and view direction
+- Three local expedition slots with save/load/reset, active-slot autosave, and JSON export/import
+- v7 saves resume the player position, view direction and paused-safe world time
 - Mobile virtual joystick, swipe-to-look camera, jump/break/place buttons and tappable hotbar
 - Landscape-first phone experience with a rotate-device prompt in portrait mode
 - Android shell via Capacitor
@@ -97,7 +98,6 @@ This repo includes GitHub Actions workflows for GitHub Pages and app package art
 ## Roadmap
 
 - Better chunk meshing for performance
-- Named save slots
 - Expanded backpack and crafting interface
 - Decorative plants and ruins
 - Audio and ambient particles

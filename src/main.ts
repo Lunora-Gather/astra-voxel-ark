@@ -15,7 +15,18 @@ import { isGreedyMeshEligible } from './render/BlockRenderLayers'
 import { applyPointLightBudget } from './render/lightBudget'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
-import { buildProceduralChunkPlan, ProceduralTerrainWorkerClient, selectChunksForEviction, type ProceduralChunkPlan } from './world'
+import {
+  ACTIVE_WORLD_SLOT_KEY,
+  WORLD_SLOT_IDS,
+  buildProceduralChunkPlan,
+  getWorldSlotLabel,
+  getWorldSlotSaveKey,
+  ProceduralTerrainWorkerClient,
+  sanitizeWorldSlotId,
+  selectChunksForEviction,
+  type ProceduralChunkPlan,
+  type WorldSlotId,
+} from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -134,7 +145,7 @@ app.innerHTML = `
     <div class="pause-menu hidden" role="dialog" aria-modal="true" aria-label="Game Menu">
       <div class="pause-panel">
         <div class="pause-header">
-          <div><span>Game Menu</span><small>Local Expedition · Offline</small></div>
+          <div><span>Game Menu</span><small class="pause-session-label">Expedition 1 · Offline</small></div>
           <button class="resume-btn">Resume</button>
         </div>
         <div class="menu-tabs" role="tablist" aria-label="Game menu sections">
@@ -190,9 +201,12 @@ app.innerHTML = `
         <section class="menu-page" id="menu-world" role="tabpanel" data-menu-page="world" hidden>
           <div class="menu-page-heading"><strong>World & Saves</strong><small>Your deterministic world is stored locally as compact player changes.</small></div>
           <section class="session-panel" aria-label="Play sessions">
-          <button class="session-option active" data-session="singleplayer"><strong>Local Expedition</strong><small>Current world · offline</small></button>
+          <button class="session-option active" data-session="singleplayer"><strong>Local Expedition</strong><small class="session-current">Expedition 1 · offline</small></button>
           <button class="session-option multiplayer-entry" data-session="multiplayer" disabled><strong>Multiplayer</strong><small>Coming later</small></button>
           </section>
+          <div class="world-slots" role="group" aria-label="Local expedition slots">
+            ${WORLD_SLOT_IDS.map((slot) => `<button class="world-slot" data-world-slot="${slot}"><span>Slot ${slot}</span><strong>Expedition ${slot}</strong><small>Empty world</small></button>`).join('')}
+          </div>
           <div class="save-tools">
           <button class="save-btn">Save</button>
           <button class="load-btn">Load</button>
@@ -340,7 +354,8 @@ let grassBladeMesh: THREE.InstancedMesh | null = null
 const grassBladeKeys: string[] = []
 let needUpdateBounds = false
 const INITIAL_GRASS_CAPACITY = 12000
-const SAVE_KEY = 'astra-voxel-ark-world-v1'
+let activeWorldSlot = sanitizeWorldSlotId(localStorage.getItem(ACTIVE_WORLD_SLOT_KEY))
+localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
 const CHUNK_SIZE = 8
 const optimizedChunks = new ChunkManager(CHUNK_SIZE)
 const lowFidelityTerrainMaterial = lowPowerMode
@@ -1319,14 +1334,19 @@ function applySavedWorld(data: SavedWorld) {
   updateProgressionUi()
 }
 
+function getActiveWorldSaveKey() {
+  return getWorldSlotSaveKey(activeWorldSlot)
+}
+
 function saveWorld() {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
   updateSaveMeta()
+  updateWorldSlotUi()
   showToast('World saved')
 }
 
 function loadWorld() {
-  const raw = localStorage.getItem(SAVE_KEY)
+  const raw = localStorage.getItem(getActiveWorldSaveKey())
   if (!raw) {
     updateSaveMeta('No local save yet. Autosave starts after you begin exploring.')
     showToast('No save yet')
@@ -1335,6 +1355,7 @@ function loadWorld() {
   try {
     applySavedWorld(JSON.parse(raw) as SavedWorld)
     updateSaveMeta()
+    updateWorldSlotUi()
     showToast('World loaded')
     return true
   } catch {
@@ -1349,7 +1370,7 @@ function exportWorld() {
   const link = document.createElement('a')
   const date = new Date().toISOString().slice(0, 10)
   link.href = URL.createObjectURL(blob)
-  link.download = `astravoxel-ark-save-${date}.json`
+  link.download = `astravoxel-ark-expedition-${activeWorldSlot}-${date}.json`
   link.click()
   URL.revokeObjectURL(link.href)
   showToast('Save exported')
@@ -1361,8 +1382,9 @@ function importWorld(file: File) {
     try {
       const data = JSON.parse(String(reader.result)) as SavedWorld
       applySavedWorld(data)
-      localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+      localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
       updateSaveMeta()
+      updateWorldSlotUi()
       updateHotbar()
       showToast('Save imported')
     } catch {
@@ -1375,7 +1397,7 @@ function importWorld(file: File) {
 function resetWorld() {
   clearWorldBlocks()
   setStarterInventory()
-  localStorage.removeItem(SAVE_KEY)
+  localStorage.removeItem(getActiveWorldSaveKey())
   updateSaveMeta('New world · not saved yet')
   crystalPower = 68
   carriedCrystal = 0
@@ -1390,6 +1412,7 @@ function resetWorld() {
   velocityY = 0
   updateHotbar()
   updateProgressionUi()
+  updateWorldSlotUi()
   showToast('New world')
 }
 
@@ -1400,9 +1423,9 @@ function updateSaveMeta(message?: string) {
     saveMeta.textContent = message
     return
   }
-  const raw = localStorage.getItem(SAVE_KEY)
+  const raw = localStorage.getItem(getActiveWorldSaveKey())
   if (!raw) {
-    saveMeta.textContent = 'No local save yet. Autosave starts after you begin exploring.'
+    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · New world. Autosave starts after you begin exploring.`
     return
   }
   try {
@@ -1412,7 +1435,7 @@ function updateSaveMeta(message?: string) {
       ? savedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'time unavailable'
     const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
-    saveMeta.textContent = `Saved locally · ${timeLabel} · ${exploredCount} explored chunks · v${saved.version ?? '?'}`
+    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Saved ${timeLabel} · ${exploredCount} explored chunks · v${saved.version ?? '?'}`
   } catch {
     saveMeta.textContent = 'Local save needs attention. Export it before resetting the world.'
   }
@@ -2113,6 +2136,72 @@ const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value'
 const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
+const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
+const pauseSessionLabel = document.querySelector<HTMLElement>('.pause-session-label')!
+const sessionCurrentLabel = document.querySelector<HTMLElement>('.session-current')!
+const startPrimaryButton = start.querySelector<HTMLButtonElement>('.panel > button:not(.start-multiplayer)')!
+
+function updateWorldSlotUi() {
+  const activeLabel = getWorldSlotLabel(activeWorldSlot)
+  pauseSessionLabel.textContent = `${activeLabel} · Offline`
+  sessionCurrentLabel.textContent = `${activeLabel} · offline`
+  startPrimaryButton.textContent = localStorage.getItem(getActiveWorldSaveKey())
+    ? `Continue ${activeLabel}`
+    : `Start ${activeLabel}`
+
+  worldSlotButtons.forEach((button) => {
+    const slot = sanitizeWorldSlotId(button.dataset.worldSlot)
+    const active = slot === activeWorldSlot
+    const raw = localStorage.getItem(getWorldSlotSaveKey(slot))
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+    button.querySelector('strong')!.textContent = getWorldSlotLabel(slot)
+    const status = button.querySelector('small')!
+    if (!raw) {
+      status.textContent = active ? 'Active · New world' : 'Empty world'
+      return
+    }
+    try {
+      const saved = JSON.parse(raw) as Partial<SavedWorld>
+      const savedAt = typeof saved.savedAt === 'number' ? new Date(saved.savedAt) : null
+      const dateLabel = savedAt && !Number.isNaN(savedAt.getTime())
+        ? savedAt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        : 'Saved'
+      const explored = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : 0
+      status.textContent = `${active ? 'Active · ' : ''}${dateLabel} · ${explored} chunks`
+    } catch {
+      status.textContent = `${active ? 'Active · ' : ''}Needs attention`
+    }
+  })
+}
+
+function switchWorldSlot(nextSlot: WorldSlotId) {
+  if (nextSlot === activeWorldSlot) return
+  const previousSlot = activeWorldSlot
+  localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
+  activeWorldSlot = nextSlot
+  localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
+  const targetExists = Boolean(localStorage.getItem(getActiveWorldSaveKey()))
+  if (!targetExists) {
+    resetWorld()
+  } else if (!loadWorld()) {
+    activeWorldSlot = previousSlot
+    localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
+    loadWorld()
+    updateWorldSlotUi()
+    showToast(`${getWorldSlotLabel(nextSlot)} could not be opened`)
+    return
+  }
+  updateHotbar()
+  updateProgressionUi()
+  updateSaveMeta()
+  updateWorldSlotUi()
+  showToast(`${getWorldSlotLabel(activeWorldSlot)} ready`)
+}
+
+worldSlotButtons.forEach((button) => {
+  button.addEventListener('click', () => switchWorldSlot(sanitizeWorldSlotId(button.dataset.worldSlot)))
+})
 
 function setPauseMenuTab(tab: PauseMenuTab) {
   activePauseMenuTab = tab
@@ -2201,10 +2290,11 @@ recipeList.addEventListener('click', (event) => {
 
 document.querySelector<HTMLButtonElement>('.session-option[data-session="singleplayer"]')!.querySelector('strong')!.textContent = localSession.session.label
 document.querySelector<HTMLButtonElement>('.multiplayer-entry')!.title = multiplayerSession.session.label
-if (localStorage.getItem(SAVE_KEY)) loadWorld()
+if (localStorage.getItem(getActiveWorldSaveKey())) loadWorld()
 else updateSaveMeta()
 updateHotbar()
 updateProgressionUi()
+updateWorldSlotUi()
 type HudDensity = 'roomy' | 'compact' | 'minimal'
 let hudLayoutFrame = 0
 let hasStarted = false
@@ -3286,8 +3376,9 @@ let lastIdleFrameAt = -Infinity
 
 function scheduleAutoSave() {
   idleTasks.schedule(() => {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+    localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
     updateSaveMeta()
+    updateWorldSlotUi()
   })
 }
 
@@ -3498,7 +3589,7 @@ window.addEventListener('resize', () => {
 
 window.addEventListener('pagehide', () => {
   idleTasks.cancel()
-  if (hasStarted) localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  if (hasStarted) localStorage.setItem(getActiveWorldSaveKey(), JSON.stringify(serializeWorld()))
   terrainWorker?.dispose()
   particleEffects.dispose()
 }, { once: true })
