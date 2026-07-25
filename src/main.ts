@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
 import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
-import { sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
+import { PlayerCollisionResolver, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
 import { ChunkManager } from './world/ChunkManager'
 import { buildChunkMeshData } from './render/ChunkMeshBuilder'
@@ -1484,6 +1484,25 @@ function isSolidBlockAt(x: number, y: number, z: number) {
   return !!id && id !== 'water'
 }
 
+const playerCollision = new PlayerCollisionResolver({
+  lookup: isSolidBlockAt,
+  collider: {
+    radius: PLAYER_RADIUS,
+    bodyHeightBelowEye: PLAYER_HEIGHT,
+    headClearance: PLAYER_HEAD_CLEARANCE,
+    eyeHeight: PLAYER_EYE_HEIGHT,
+    stepHeight: STEP_HEIGHT,
+  },
+  floorMinY: -2,
+  floorMaxY: 18,
+})
+
+if (isSmokeTest) {
+  void import('./player/CollisionSmoke').then(({ assertCollisionSmoke }) => {
+    assertCollisionSmoke()
+  }).catch((error) => console.error(error))
+}
+
 function restorePlayerState(state: PlayerStateSnapshot) {
   const [x, y, z] = state.position
   controls.object.position.set(x, y, z)
@@ -1495,113 +1514,23 @@ function restorePlayerState(state: PlayerStateSnapshot) {
   // Search upward before falling back to the Ark spawn so load never traps the player.
   for (let offset = 0; offset <= 12; offset++) {
     controls.object.position.y = y + offset
-    if (!playerCollidesAt(controls.object.position)) return
+    if (!playerCollision.collidesAt(controls.object.position)) return
   }
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
   controls.object.rotation.set(0, 0, 0)
 }
 
-function playerOverlapsBlockAt(pos: THREE.Vector3, x: number, y: number, z: number, clearance = 0) {
-  const playerBottom = pos.y - PLAYER_HEIGHT - clearance
-  const playerTop = pos.y + PLAYER_HEAD_CLEARANCE + clearance
-  const overlapsXZ =
-    Math.abs(pos.x - x) < PLAYER_RADIUS + 0.5 + clearance &&
-    Math.abs(pos.z - z) < PLAYER_RADIUS + 0.5 + clearance
-  const overlapsY = playerBottom < y + 0.5 && playerTop > y - 0.5
-  return overlapsXZ && overlapsY
-}
-
-function playerCollidesAt(pos: THREE.Vector3, clearance = 0) {
-  const minX = Math.floor(pos.x - PLAYER_RADIUS - 0.5 - clearance)
-  const maxX = Math.ceil(pos.x + PLAYER_RADIUS + 0.5 + clearance)
-  const minY = Math.floor(pos.y - PLAYER_HEIGHT - 0.5 - clearance)
-  const maxY = Math.ceil(pos.y + PLAYER_HEAD_CLEARANCE + 0.5 + clearance)
-  const minZ = Math.floor(pos.z - PLAYER_RADIUS - 0.5 - clearance)
-  const maxZ = Math.ceil(pos.z + PLAYER_RADIUS + 0.5 + clearance)
-
-  for (let x = minX; x <= maxX; x++) {
-    for (let y = minY; y <= maxY; y++) {
-      for (let z = minZ; z <= maxZ; z++) {
-        if (!isSolidBlockAt(x, y, z)) continue
-        if (playerOverlapsBlockAt(pos, x, y, z, clearance)) return true
-      }
-    }
-  }
-  return false
-}
-
-function findFloorAt(x: number, z: number, maxEyeY = Infinity) {
-  let floor = PLAYER_EYE_HEIGHT
-  const minX = Math.floor(x - PLAYER_RADIUS)
-  const maxX = Math.ceil(x + PLAYER_RADIUS)
-  const minZ = Math.floor(z - PLAYER_RADIUS)
-  const maxZ = Math.ceil(z + PLAYER_RADIUS)
-  for (let y = 18; y >= -2; y--) {
-    for (let bx = minX; bx <= maxX; bx++) {
-      for (let bz = minZ; bz <= maxZ; bz++) {
-        const eyeY = y + PLAYER_EYE_HEIGHT
-        if (eyeY <= maxEyeY + 0.05 && isSolidBlockAt(bx, y, bz)) return eyeY
-      }
-    }
-  }
-  return floor
-}
-
-const stepProbe = new THREE.Vector3()
-const xCollisionProbe = new THREE.Vector3()
-const zCollisionProbe = new THREE.Vector3()
-const verticalCollisionProbe = new THREE.Vector3()
-
-function tryStepTo(pos: THREE.Vector3, x: number, z: number) {
-  if (!canJump || velocityY > 0.01) return false
-  stepProbe.set(x, pos.y + STEP_HEIGHT, z)
-  if (playerCollidesAt(stepProbe)) return false
-  const steppedFloor = findFloorAt(x, z, pos.y + STEP_HEIGHT)
-  if (steppedFloor <= pos.y + STEP_HEIGHT + 0.05 && steppedFloor > pos.y + 0.05) {
-    pos.set(x, steppedFloor, z)
-    velocityY = 0
-    return true
-  }
-  return false
-}
-
 function movePlayerHorizontal(delta: THREE.Vector3) {
   const pos = controls.object.position
-  if (delta.lengthSq() === 0) return
-
-  const xTarget = pos.x + delta.x
-  xCollisionProbe.set(xTarget, pos.y, pos.z)
-  if (!playerCollidesAt(xCollisionProbe) || tryStepTo(pos, xTarget, pos.z)) pos.x = xTarget
-
-  const zTarget = pos.z + delta.z
-  zCollisionProbe.set(pos.x, pos.y, zTarget)
-  if (!playerCollidesAt(zCollisionProbe) || tryStepTo(pos, pos.x, zTarget)) pos.z = zTarget
+  const result = playerCollision.moveHorizontal(pos, delta, canJump && velocityY <= 0.01)
+  if (result.stepped) velocityY = 0
 }
 
 function movePlayerVertical(deltaY: number) {
-  if (deltaY === 0) return
   const pos = controls.object.position
-  const startY = pos.y
-  const targetY = startY + deltaY
-  verticalCollisionProbe.set(pos.x, targetY, pos.z)
-
-  if (!playerCollidesAt(verticalCollisionProbe)) {
-    pos.y = targetY
-    return
-  }
-
-  let open = 0
-  let blocked = 1
-  for (let i = 0; i < 8; i++) {
-    const mid = (open + blocked) / 2
-    verticalCollisionProbe.set(pos.x, startY + deltaY * mid, pos.z)
-    if (playerCollidesAt(verticalCollisionProbe)) blocked = mid
-    else open = mid
-  }
-
-  pos.y = startY + deltaY * open
-  velocityY = 0
-  if (deltaY < 0) canJump = true
+  const result = playerCollision.moveVertical(pos, deltaY)
+  if (result.collided) velocityY = 0
+  if (result.grounded) canJump = true
 }
 
 // 放置预览 ghost box
@@ -2857,7 +2786,7 @@ function absorbCrystalPower(blockId: BlockId, showFeedback = true) {
 }
 
 function wouldTrapPlayer(blockPosition: THREE.Vector3) {
-  return playerOverlapsBlockAt(
+  return playerCollision.overlapsBlockAt(
     controls.object.position,
     blockPosition.x,
     blockPosition.y,
@@ -3588,10 +3517,10 @@ function animate() {
   const terrainQueueIsUnderPressure = currentFps > 0 && (currentFps < 28 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
   const terrainQueueBudget = terrainQueueIsUnderPressure ? (terrainQueueFrameSkip++ % 4 === 0 ? 1 : 0) : TERRAIN_CHUNKS_PER_FRAME
   if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
-  const floor = findFloorAt(pos.x, pos.z, pos.y)
+  const floor = playerCollision.findFloorAt(pos.x, pos.z, pos.y)
   if (pos.y < floor) { pos.y = floor; velocityY = 0; canJump = true }
   else if (pos.y > floor + 0.05) canJump = false
-  if (playerCollidesAt(pos)) pos.y = Math.max(pos.y, floor)
+  if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)
   updateTouchMining()
   stabilizeFirstPersonLook()
 

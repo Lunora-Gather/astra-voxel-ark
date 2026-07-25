@@ -73,6 +73,14 @@ normal objects, so the per-frame crosshair query does not allocate temporary vec
 the returned coordinates and block id directly instead of reparsing a block key and performing a
 second lookup. The heavier picker smoke module is loaded only by Electron smoke URLs.
 
+## Player collision hot path
+
+`src/player/Collision.ts` owns the integer-centered block and eye-point player collision contract.
+Horizontal wall sliding, one-block stepping, vertical landing, load-time escape and placement safety all
+share one resolver with reusable probes and result objects. Ground lookup starts at the highest block
+that can actually fit below the current eye height instead of scanning from the fixed world ceiling,
+and it verifies the player's true footprint so merely adjacent raised blocks cannot cause hovering.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is

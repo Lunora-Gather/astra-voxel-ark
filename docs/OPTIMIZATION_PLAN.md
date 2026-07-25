@@ -80,7 +80,7 @@ Recommended extraction order:
 2. `Settings` and local storage settings — integrated.
 3. `AudioSystem` — integrated.
 4. `BlockPicker` and placement helpers — picker integrated; placement policy remains in the game adapter.
-5. `PlayerController` and collision helpers.
+5. `PlayerController` and collision helpers — collision resolver integrated; input/velocity controller remains.
 6. `TerrainGenerator`.
 7. `ChunkManager`.
 8. Renderer and effects modules.
@@ -111,7 +111,7 @@ High-impact tasks:
 
 Recommended checks:
 
-- Unit tests for terrain determinism, save/load validation, inventory, and placement collision. Block picking now has runtime smoke coverage for axes, diagonals, normals, reach and result reuse.
+- Unit tests for terrain determinism, save/load validation and inventory. Block picking now has runtime smoke coverage for axes, diagonals, normals, reach and result reuse; collision covers walls, footprint support, stepping and landing.
 - Integration smoke tests for break/place/save/load.
 - Performance smoke test that records average FPS, minimum FPS, chunk count, block count, draw calls, geometries, and textures.
 - Separate package workflow for Linux, Windows, and Android artifacts.
