@@ -65,6 +65,14 @@ Malformed data falls back to the current device defaults; out-of-range view dist
 detected device tier; and failed writes leave the previous stored settings intact while the selected
 setting still applies for the current session.
 
+## Interaction hot path
+
+`src/player/BlockPicker.ts` owns the exact integer-centered voxel DDA used by aiming, mining,
+placement previews and middle-click material selection. The live picker reuses its direction, hit and
+normal objects, so the per-frame crosshair query does not allocate temporary vectors. Consumers use
+the returned coordinates and block id directly instead of reparsing a block key and performing a
+second lookup. The heavier picker smoke module is loaded only by Electron smoke URLs.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is

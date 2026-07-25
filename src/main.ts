@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
 import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
-import { sanitizePlayerState, type PlayerStateSnapshot } from './player'
+import { sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
 import { ChunkManager } from './world/ChunkManager'
 import { buildChunkMeshData } from './render/ChunkMeshBuilder'
@@ -811,17 +811,6 @@ function removeInstancedBlockVisual(k: string, ref: InstancedBlockRef) {
   ref.mesh.instanceMatrix.needsUpdate = true
   ref.mesh.boundingSphere = null
   needUpdateBounds = true
-}
-
-function getBlockKeyFromHit(hit: THREE.Intersection<THREE.Object3D>) {
-  if (hit.object instanceof THREE.InstancedMesh) {
-    const id = hit.object.userData.id as BlockId | undefined
-    const instanceId = hit.instanceId
-    if (!id || instanceId === undefined) return undefined
-    return instancedBlockKeys.get(id)?.[instanceId]
-  }
-  const p = hit.object.position
-  return blockKey(Math.round(p.x), Math.round(p.y), Math.round(p.z))
 }
 
 function getBlockPositionFromKey(key: string, target: THREE.Vector3) {
@@ -2731,72 +2720,36 @@ window.addEventListener('blur', () => {
   clearTouchButtonPresses()
 })
 
-type PickHit = {
-  key: string
-  distance: number
-  normal: THREE.Vector3
-}
-const pickDirection = new THREE.Vector3()
-const pickNormal = new THREE.Vector3()
 const placeNormal = new THREE.Vector3()
 const placePosition = new THREE.Vector3()
 const hitBlockPosition = new THREE.Vector3()
 const upNormal = new THREE.Vector3(0, 1, 0)
+const blockPicker = new VoxelBlockPicker({ maxDistance: RAYCAST_REACH })
+
+if (isSmokeTest) {
+  void import('./player/BlockPickerSmoke').then(({ assertBlockPickerSmoke }) => {
+    assertBlockPickerSmoke()
+  }).catch((error) => console.error(error))
+}
+
+function lookupPickBlock(x: number, y: number, z: number) {
+  return blockData.get(blockKey(x, y, z)) ?? null
+}
 
 function pickBlock() {
-  camera.getWorldDirection(pickDirection).normalize()
-  const origin = controls.object.position
-  let ix = Math.floor(origin.x + 0.5)
-  let iy = Math.floor(origin.y + 0.5)
-  let iz = Math.floor(origin.z + 0.5)
-  const stepX = pickDirection.x >= 0 ? 1 : -1
-  const stepY = pickDirection.y >= 0 ? 1 : -1
-  const stepZ = pickDirection.z >= 0 ? 1 : -1
-  const tDeltaX = Math.abs(1 / (pickDirection.x || Number.EPSILON))
-  const tDeltaY = Math.abs(1 / (pickDirection.y || Number.EPSILON))
-  const tDeltaZ = Math.abs(1 / (pickDirection.z || Number.EPSILON))
-  let tMaxX = (((stepX > 0 ? ix + 0.5 : ix - 0.5) - origin.x) / (pickDirection.x || Number.EPSILON))
-  let tMaxY = (((stepY > 0 ? iy + 0.5 : iy - 0.5) - origin.y) / (pickDirection.y || Number.EPSILON))
-  let tMaxZ = (((stepZ > 0 ? iz + 0.5 : iz - 0.5) - origin.z) / (pickDirection.z || Number.EPSILON))
-  let traveled = 0
-  pickNormal.set(0, 0, 0)
-
-  while (traveled <= RAYCAST_REACH) {
-    const key = blockKey(ix, iy, iz)
-    if (blocks.has(key) && traveled > 0.05) {
-      return { key, distance: traveled, normal: pickNormal.clone() } satisfies PickHit
-    }
-    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-      ix += stepX
-      traveled = tMaxX
-      tMaxX += tDeltaX
-      pickNormal.set(-stepX, 0, 0)
-    } else if (tMaxY < tMaxZ) {
-      iy += stepY
-      traveled = tMaxY
-      tMaxY += tDeltaY
-      pickNormal.set(0, -stepY, 0)
-    } else {
-      iz += stepZ
-      traveled = tMaxZ
-      tMaxZ += tDeltaZ
-      pickNormal.set(0, 0, -stepZ)
-    }
-  }
-  return undefined
+  return blockPicker.pickFromCamera(camera, lookupPickBlock, controls.object.position) ?? undefined
 }
 
 function breakTargetBlock() {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return
-  const minedKey = hit.key
-  const blockId = blockData.get(minedKey)
-  if (!blockId) return
+  const minedKey = blockKey(hit.x, hit.y, hit.z)
+  const blockId = hit.id
   if (!progression.canMine(blockId)) {
     showToast(`${progression.requiredToolName(blockId)} required`)
     return
   }
-  getBlockPositionFromKey(minedKey, hitBlockPosition)
+  hitBlockPosition.set(hit.x, hit.y, hit.z)
   if (hitBlockPosition.y > 0) {
     const canAbsorbCharge = !playerPlacedBlocks.has(minedKey)
     // 破坏粒子
@@ -2824,10 +2777,10 @@ function breakTargetBlock() {
 function placeTargetBlock() {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return
-  const hitKey = hit.key
+  const hitKey = blockKey(hit.x, hit.y, hit.z)
   const selectedBlock = BLOCKS[selected].id
-  getBlockPositionFromKey(hitKey, hitBlockPosition)
-  const hitBlockId = blockData.get(hitKey)
+  hitBlockPosition.set(hit.x, hit.y, hit.z)
+  const hitBlockId = hit.id
   const canReplaceWater = hitBlockId === 'water' && selectedBlock !== 'water'
 
   if (countBlocksInInventory(selectedBlock) <= 0) {
@@ -2923,11 +2876,8 @@ renderer.domElement.addEventListener('mousedown', (e) => {
     e.preventDefault()
     const hit = pickBlock()
     if (hit && hit.distance <= RAYCAST_REACH) {
-      const hitId = blockData.get(hit.key)
-      if (hitId) {
-        const idx = BLOCKS.findIndex((b) => b.id === hitId)
-        if (idx >= 0) selectHotbarSlot(idx, 'pointer')
-      }
+      const idx = BLOCKS.findIndex((b) => b.id === hit.id)
+      if (idx >= 0) selectHotbarSlot(idx, 'pointer')
     }
   }
 })
@@ -3515,8 +3465,8 @@ function animate() {
   const aimingActive = hasStarted && !isPaused && (controls.isLocked || mobileActive)
   const hit = aimingActive ? pickBlock() : undefined
   if (hit && hit.distance <= RAYCAST_REACH) {
-    getBlockPositionFromKey(hit.key, hitBlockPosition)
-    const hitBlockId = blockData.get(hit.key)
+    hitBlockPosition.set(hit.x, hit.y, hit.z)
+    const hitBlockId = hit.id
     const canReplaceWater = hitBlockId === 'water' && BLOCKS[selected].id !== 'water'
     targetOutlineMesh.position.copy(hitBlockPosition)
     targetOutlineMesh.visible = true
