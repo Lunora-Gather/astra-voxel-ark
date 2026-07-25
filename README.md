@@ -22,6 +22,10 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Ubuntu Linux and Windows desktop shells via Electron Builder
 - 18-block hotbar with terrain, wood, water, crystal, glow, clay, metal and rare blocks
 - Beacon Trail exploration loop: collect landmark shards, repair visible Ark Core modules and strengthen night survival
+- Single-player progression with tool tiers, crafting recipes, expedition objectives and claimable rewards
+- Four deterministic biomes with layered copper, gold, crystal and obsidian resources
+- Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling
+- Health, cold-night damage and Ark recovery
 - Dreamy day-night cycle
 - Soft fog, shadows, stars, clouds, sparkles, animated water, swaying grass and emissive blocks
 - Procedural pixel textures for every block type
@@ -87,6 +91,8 @@ This repo includes GitHub Actions workflows for GitHub Pages and app package art
 
 - `GAME_DESIGN.md` — full design direction
 - `PACKAGING.md` — platform packaging notes
+- `docs/SINGLEPLAYER_ARCHITECTURE.md` — gameplay boundaries and the reserved multiplayer seam
+- `docs/PERFORMANCE_ARCHITECTURE.md` — device tiers, Worker terrain, residency and frame budgets
 
 ## Roadmap
 

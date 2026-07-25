@@ -64,80 +64,83 @@ type QuadVertices = {
 
 function getQuadVertices(quad: GreedyQuad): QuadVertices {
   const { x, y, z, width, height } = quad
+  const minX = x - 0.5
+  const minY = y - 0.5
+  const minZ = z - 0.5
 
   if (quad.direction === 'px') {
-    const planeX = x + 1
+    const planeX = x + 0.5
     return {
       normal: [1, 0, 0],
       vertices: [
-        [planeX, y, z],
-        [planeX, y + height, z],
-        [planeX, y + height, z + width],
-        [planeX, y, z + width],
+        [planeX, minY, minZ],
+        [planeX, minY + height, minZ],
+        [planeX, minY + height, minZ + width],
+        [planeX, minY, minZ + width],
       ],
     }
   }
 
   if (quad.direction === 'nx') {
-    const planeX = x
+    const planeX = x - 0.5
     return {
       normal: [-1, 0, 0],
       vertices: [
-        [planeX, y, z],
-        [planeX, y, z + width],
-        [planeX, y + height, z + width],
-        [planeX, y + height, z],
+        [planeX, minY, minZ],
+        [planeX, minY, minZ + width],
+        [planeX, minY + height, minZ + width],
+        [planeX, minY + height, minZ],
       ],
     }
   }
 
   if (quad.direction === 'py') {
-    const planeY = y + 1
+    const planeY = y + 0.5
     return {
       normal: [0, 1, 0],
       vertices: [
-        [x, planeY, z],
-        [x + width, planeY, z],
-        [x + width, planeY, z + height],
-        [x, planeY, z + height],
+        [minX, planeY, minZ],
+        [minX + width, planeY, minZ],
+        [minX + width, planeY, minZ + height],
+        [minX, planeY, minZ + height],
       ],
     }
   }
 
   if (quad.direction === 'ny') {
-    const planeY = y
+    const planeY = y - 0.5
     return {
       normal: [0, -1, 0],
       vertices: [
-        [x, planeY, z],
-        [x, planeY, z + height],
-        [x + width, planeY, z + height],
-        [x + width, planeY, z],
+        [minX, planeY, minZ],
+        [minX, planeY, minZ + height],
+        [minX + width, planeY, minZ + height],
+        [minX + width, planeY, minZ],
       ],
     }
   }
 
   if (quad.direction === 'pz') {
-    const planeZ = z + 1
+    const planeZ = z + 0.5
     return {
       normal: [0, 0, 1],
       vertices: [
-        [x, y, planeZ],
-        [x + width, y, planeZ],
-        [x + width, y + height, planeZ],
-        [x, y + height, planeZ],
+        [minX, minY, planeZ],
+        [minX + width, minY, planeZ],
+        [minX + width, minY + height, planeZ],
+        [minX, minY + height, planeZ],
       ],
     }
   }
 
-  const planeZ = z
+  const planeZ = z - 0.5
   return {
     normal: [0, 0, -1],
     vertices: [
-      [x, y, planeZ],
-      [x, y + height, planeZ],
-      [x + width, y + height, planeZ],
-      [x + width, y, planeZ],
+      [minX, minY, planeZ],
+      [minX, minY + height, planeZ],
+      [minX + width, minY + height, planeZ],
+      [minX + width, minY, planeZ],
     ],
   }
 }

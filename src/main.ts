@@ -4,9 +4,21 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey, terrainNoise } from './worldMath'
+import { ProgressionSystem, RECIPES, SurvivalVitals, type ProgressionSnapshot, type SurvivalVitalsSnapshot } from './singleplayer'
+import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
+import { getBiomeAt } from './world/Biomes'
+import { ChunkManager } from './world/ChunkManager'
+import { buildChunkMeshData } from './render/ChunkMeshBuilder'
+import { ChunkMeshRenderer } from './render/ChunkMeshRenderer'
+import { isGreedyMeshEligible } from './render/BlockRenderLayers'
+import { applyPointLightBudget } from './render/lightBudget'
+import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
+import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
+import { buildProceduralChunkPlan, ProceduralTerrainWorkerClient, selectChunksForEviction, type ProceduralChunkPlan } from './world'
+import { IdleTaskQueue } from './platform/IdleTaskQueue'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v1.4.1 Beacon Trail'
+const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
 const smokeParams = new URLSearchParams(window.location.hash.slice(1))
 const isSmokeTest = smokeParams.has('smoke')
 const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
@@ -19,7 +31,18 @@ const hasTouchCapability = hasCoarsePointer || navigator.maxTouchPoints > 0
 const isTouchPrimaryDevice = hasCoarsePointer && (isSmallScreen || isMobileUserAgent)
 const isTouchDevice = smokeTouchMode || (!smokeDesktopMode && isTouchPrimaryDevice)
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const lowPowerMode = isTouchDevice || hasTouchCapability || isSmallScreen || prefersReducedMotion
+const requestedRuntimeTier = smokeParams.get('device-tier')
+const forcedRuntimeTier: RuntimeTier | null = isSmokeTest && (
+  requestedRuntimeTier === 'ultra-low' || requestedRuntimeTier === 'low' ||
+  requestedRuntimeTier === 'standard' || requestedRuntimeTier === 'high'
+) ? requestedRuntimeTier : null
+const runtimeProfile = detectRuntimeDeviceProfile({
+  touchPrimary: isTouchDevice || hasTouchCapability,
+  reducedMotion: prefersReducedMotion,
+  forcedTier: forcedRuntimeTier,
+})
+const runtimeLimits = runtimeProfile.limits
+const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
 
 app.innerHTML = `
   <div class="hud">
@@ -50,6 +73,11 @@ app.innerHTML = `
             </span>
             <span class="metric-value threat-val">--</span>
           </div>
+          <div class="survival-metric health-metric">
+            <span class="metric-label">Hull Integrity</span>
+            <div class="charge-bar-container"><div class="health-bar"></div></div>
+            <span class="metric-value health-val">100%</span>
+          </div>
         </div>
       </div>
       <div class="tutorial">
@@ -60,7 +88,7 @@ app.innerHTML = `
         <span class="compass-distance">Beacon scanning</span>
       </div>
       <div class="wayfinder-badge">
-        <span class="wayfinder-label">Ark Core</span>
+        <span class="wayfinder-label">Expedition</span>
         <span class="wayfinder-value">Scanning</span>
       </div>
     </div>
@@ -80,9 +108,9 @@ app.innerHTML = `
         <div class="perf-divider"></div>
         <div class="perf-metric"><span class="perf-label">Queue</span><span class="perf-dirty">0</span></div>
         <div class="perf-divider"></div>
-        <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${lowPowerMode ? 'Low' : 'Full'}</span></div>
+        <div class="perf-metric"><span class="perf-label">Mode</span><span class="perf-mode">${runtimeProfile.tier}</span></div>
       </div>
-      <div class="world-badge"><span class="badge-pulse"></span>${GAME_VERSION_LABEL}</div>
+      <div class="world-badge"><span class="badge-pulse"></span><span class="world-biome">Star Meadow</span></div>
     </div>
 
     <button class="help-toggle-btn" aria-label="Toggle Help">?</button>
@@ -140,6 +168,18 @@ app.innerHTML = `
             <span>Show performance HUD</span>
           </label>
         </div>
+        <section class="expedition-panel" aria-label="Single-player expedition">
+          <div class="expedition-heading">
+            <div><span class="eyebrow">SINGLE PLAYER</span><strong>Wayfinder Progression</strong></div>
+            <span class="tool-tier-value">Hand Tools</span>
+          </div>
+          <div class="objective-list"></div>
+          <div class="recipe-list"></div>
+        </section>
+        <section class="session-panel" aria-label="Play sessions">
+          <button class="session-option active" data-session="singleplayer"><strong>Local Expedition</strong><small>Current world · offline</small></button>
+          <button class="session-option multiplayer-entry" data-session="multiplayer" disabled><strong>Multiplayer</strong><small>Coming later</small></button>
+        </section>
         <div class="save-tools">
           <button class="save-btn">Save</button>
           <button class="load-btn">Load</button>
@@ -150,7 +190,7 @@ app.innerHTML = `
         </div>
       </div>
     </div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.4</h2><p>Beacon Trail - repair the Ark Core through landmark shards and warded nights</p><button>Start Exploring</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><button>Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div>
   </div>
 `
 
@@ -158,19 +198,27 @@ const scene = new THREE.Scene()
 const nightSkyColor = new THREE.Color(0x17213d)
 const daySkyColor = new THREE.Color(0xaedcff)
 const skyColor = new THREE.Color(0xaedcff)
-const sceneFog = new THREE.FogExp2(skyColor, 0.018)
+const sceneFog = new THREE.FogExp2(
+  skyColor,
+  runtimeProfile.tier === 'ultra-low' ? 0.04 : lowPowerMode ? 0.03 : 0.018,
+)
 scene.background = skyColor
 scene.fog = sceneFog
 
+const PLAYER_SPAWN = { x: 0, y: 12, z: 18 } as const
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 600)
-camera.position.set(0, 12, 18)
+camera.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
 camera.rotation.order = 'YXZ'
 
-const renderer = new THREE.WebGLRenderer({ antialias: !lowPowerMode, powerPreference: lowPowerMode ? 'low-power' : 'high-performance' })
+const renderer = new THREE.WebGLRenderer({
+  antialias: runtimeProfile.tier === 'standard' || runtimeProfile.tier === 'high',
+  powerPreference: lowPowerMode ? 'low-power' : 'high-performance',
+  precision: runtimeProfile.tier === 'ultra-low' ? 'mediump' : 'highp',
+})
 renderer.setSize(window.innerWidth, window.innerHeight)
-let renderQuality = lowPowerMode ? 0.85 : 1
+let renderQuality = runtimeLimits.initialRenderScale
 function applyRenderQuality() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio * renderQuality, lowPowerMode ? 1.1 : 1.5))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio * renderQuality, runtimeLimits.maxPixelRatio))
 }
 applyRenderQuality()
 renderer.shadowMap.enabled = !lowPowerMode
@@ -279,15 +327,40 @@ let needUpdateBounds = false
 const INITIAL_GRASS_CAPACITY = 12000
 const SAVE_KEY = 'astra-voxel-ark-world-v1'
 const CHUNK_SIZE = 8
+const optimizedChunks = new ChunkManager(CHUNK_SIZE)
+const lowFidelityTerrainMaterial = lowPowerMode
+  ? new THREE.MeshLambertMaterial({ vertexColors: true })
+  : null
+const chunkMeshRenderer = new ChunkMeshRenderer({
+  scene: world,
+  materials,
+  mergedMaterial: lowFidelityTerrainMaterial,
+  blockColors: new Map(BLOCKS.map(({ id, color }) => [id, color])),
+  castShadow: !lowPowerMode,
+  receiveShadow: !lowPowerMode,
+})
+const particleEffects = new ParticleEffectsPipeline({
+  scene,
+  flags: {
+    diagnostics: false,
+    chunkMeshDiagnostics: false,
+    chunkMeshRenderer: true,
+    terrainWorker: false,
+    particlePool: true,
+    lightBudget: true,
+  },
+  poolSize: runtimeLimits.particlePoolSize,
+  lowPowerMode,
+})
 const INITIAL_TERRAIN_LOAD_RADIUS = 1
 const TERRAIN_MAX_RADIUS = 6
 const TERRAIN_CHUNKS_PER_FRAME = 1
 const TERRAIN_SCAN_INTERVAL = 0.2
 let terrainLoadRadius = 1
 const RAYCAST_REACH = 8
-const GRASS_ANIMATION_BUDGET = lowPowerMode ? 55 : 140
-const MIN_RENDER_QUALITY = lowPowerMode ? 0.68 : 0.78
-const MAX_RENDER_QUALITY = lowPowerMode ? 0.95 : 1
+const GRASS_ANIMATION_BUDGET = runtimeLimits.grassAnimationBudget
+const MIN_RENDER_QUALITY = runtimeLimits.minRenderScale
+const MAX_RENDER_QUALITY = runtimeLimits.maxRenderScale
 const QUALITY_STEP = 0.06
 type QualityPreset = 'low' | 'balanced' | 'high'
 const WALK_SPEED = 7.6
@@ -312,6 +385,7 @@ type SavedBlock = [number, number, number, BlockId]
 type SavedWorld = {
   version: number
   savedAt: number
+  format?: 'snapshot' | 'delta'
   blocks: SavedBlock[]
   terrainChunks?: string[]
   removedBlocks?: string[]
@@ -325,6 +399,8 @@ type SavedWorld = {
     glowShards?: number
     collectedShardBlocks?: string[]
   }
+  progression?: Partial<ProgressionSnapshot>
+  vitals?: Partial<SurvivalVitalsSnapshot>
 }
 type BlockSource = 'terrain' | 'player' | 'save'
 type ChunkBucket = {
@@ -356,17 +432,28 @@ type ChunkMetadata = {
 const chunks = new Map<string, ChunkMetadata>()
 const dirtyChunkKeys = new Set<string>()
 const generatedTerrainChunks = new Set<string>()
+const discoveredTerrainChunks = new Set<string>()
 const queuedTerrainChunks = new Set<string>()
 const terrainGenerationQueue: Array<{ cx: number; cz: number }> = []
+const completedTerrainPlans: ProceduralChunkPlan[] = []
+let terrainWorkerInFlight = 0
+let terrainGenerationEpoch = 0
+const terrainWorker = typeof Worker !== 'undefined' ? new ProceduralTerrainWorkerClient() : null
+const idleTasks = new IdleTaskQueue()
 let lastTerrainEnsureScanKey = ''
 let lastTerrainCenterKey = ''
 let pendingTerrainEnsure: { x: number; z: number } | null = null
 let lastTerrainEnsureAt = -Infinity
+let lastTerrainEvictionAt = -Infinity
 const removedTerrainBlocks = new Set<string>()
 const playerPlacedBlocks = new Set<string>()
 const landmarkShardBlocks = new Set<string>()
 const collectedShardBlocks = new Set<string>()
 const inventoryCounts = new Map<BlockId, number>()
+const progression = new ProgressionSystem()
+const survivalVitals = new SurvivalVitals()
+const localSession = new LocalSessionGateway()
+const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
 let velocityY = 0
 let canJump = false
@@ -415,7 +502,8 @@ grassBladeMaterial.onBeforeCompile = (shader) => {
 const outlinedBlockIds = new Set<BlockId>(['wood', 'leaves', 'crystal', 'glow', 'brick', 'obsidian', 'copper', 'gold'])
 const enableBlockOutlines = !lowPowerMode
 const enableBlockShadows = !lowPowerMode
-const MAX_GLOW_LIGHTS = lowPowerMode ? 0 : Number.POSITIVE_INFINITY
+const MAX_GLOW_LIGHTS = Math.max(runtimeLimits.activePointLights * 3, runtimeLimits.activePointLights)
+const MAX_ACTIVE_GLOW_LIGHTS = runtimeLimits.activePointLights
 
 const grassBladeGeo = grassBladeGeometry.clone()
 grassBladeGeo.translate(0, 0.29, 0)
@@ -439,6 +527,16 @@ const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
   water: 4,
   crystal: 2,
   glow: 2,
+}
+const progressionInventory = {
+  count: (id: BlockId) => inventoryCounts.get(id) ?? 0,
+  add: (id: BlockId, amount: number) => addToInventory(id, amount),
+  remove: (id: BlockId, amount: number) => {
+    const count = inventoryCounts.get(id) ?? 0
+    if (count < amount) return false
+    inventoryCounts.set(id, count - amount)
+    return true
+  },
 }
 const SOLID_NEIGHBOR_OFFSETS = [
   [1, 0, 0],
@@ -490,6 +588,10 @@ function isOpaqueBlockId(id: BlockId | undefined): boolean {
   return Boolean(id) && !TRANSPARENT_BLOCK_IDS.has(id as BlockId)
 }
 
+function usesChunkMesh(id: BlockId) {
+  return isGreedyMeshEligible(id) && !Array.isArray(materials.get(id))
+}
+
 function hasExposedFace(x: number, y: number, z: number, id: BlockId) {
   const isOpaque = isOpaqueBlockId(id)
   return SOLID_NEIGHBOR_OFFSETS.some(([dx, dy, dz]) => {
@@ -535,6 +637,7 @@ function ensureGlowLightAt(k: string, x: number, y: number, z: number, id: Block
     lowPowerMode ? 5 : 8,
   )
   light.position.set(x, y + 0.2, z)
+  light.userData.blockId = id
   scene.add(light)
   glowLightsByBlock.set(k, light)
   glowLights.push(light)
@@ -546,6 +649,14 @@ function refreshBlockVisualAt(k: string) {
   const [x, y, z] = k.split(',').map(Number)
   const visual = blocks.get(k)
   const shouldRender = hasExposedFace(x, y, z, id)
+
+  if (usesChunkMesh(id)) {
+    if (isInstancedBlockRef(visual)) removeInstancedBlockVisual(k, visual)
+    blocks.set(k, undefined)
+    if (shouldRender) ensureGlowLightAt(k, x, y, z, id)
+    else removeGlowLightAt(k)
+    return
+  }
 
   if (shouldRender && !isInstancedBlockRef(visual)) {
     blocks.set(k, addInstancedBlockVisual(k, x, y, z, id))
@@ -563,6 +674,34 @@ function refreshBlockVisualAt(k: string) {
 function refreshBlockAndNeighbors(x: number, y: number, z: number) {
   refreshBlockVisualAt(blockKey(x, y, z))
   SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshBlockVisualAt(blockKey(x + dx, y + dy, z + dz)))
+}
+
+let blockBatchDepth = 0
+const batchedVisualKeys = new Set<string>()
+
+function beginBlockBatch() {
+  blockBatchDepth += 1
+}
+
+function endBlockBatch() {
+  blockBatchDepth = Math.max(0, blockBatchDepth - 1)
+  if (blockBatchDepth > 0) return
+  for (const key of batchedVisualKeys) refreshBlockVisualAt(key)
+  batchedVisualKeys.clear()
+}
+
+function markBatchedBlockAndNeighbors(x: number, y: number, z: number) {
+  batchedVisualKeys.add(blockKey(x, y, z))
+  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => batchedVisualKeys.add(blockKey(x + dx, y + dy, z + dz)))
+}
+
+function withBlockBatch<T>(run: () => T) {
+  beginBlockBatch()
+  try {
+    return run()
+  } finally {
+    endBlockBatch()
+  }
 }
 
 function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id: BlockId) {
@@ -770,6 +909,31 @@ function rebuildDirtyChunkVisibleFaceSummaries(limit = Number.POSITIVE_INFINITY)
   }
 }
 
+const chunkMeshTriangles = new Map<string, number>()
+
+function rebuildOptimizedChunkMeshes(limit: number, timeBudgetMs = Number.POSITIVE_INFINITY) {
+  const dirtyChunks = optimizedChunks.getDirtyChunks().slice(0, Math.max(0, limit))
+  const startedAt = performance.now()
+  const lookupOpaqueBlock = (x: number, y: number, z: number) => {
+    const block = optimizedChunks.getBlock(x, y, z)
+    return block && isOpaqueBlockId(block.id) ? block.id : null
+  }
+
+  for (const chunk of dirtyChunks) {
+    const meshBlocks = optimizedChunks.getChunkBlocks(chunk.cx, chunk.cz).filter((block) => usesChunkMesh(block.id))
+    if (meshBlocks.length === 0) {
+      chunkMeshRenderer.removeChunk(chunk.key)
+      chunkMeshTriangles.delete(chunk.key)
+    } else {
+      const meshData = buildChunkMeshData(meshBlocks, lookupOpaqueBlock, { includeNonGreedyBlocks: true })
+      chunkMeshRenderer.upsertChunk(chunk.key, meshData.geometryGroups)
+      chunkMeshTriangles.set(chunk.key, meshData.stats.triangleCount)
+    }
+    optimizedChunks.clearDirtyChunk(chunk.key)
+    if (performance.now() - startedAt >= timeBudgetMs) break
+  }
+}
+
 function seededNoise(...values: number[]) {
   return hashNoise(values.reduce((seed, value) => seed * 31 + value, 17))
 }
@@ -863,7 +1027,12 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
   blocks.set(k, undefined)
   blockMutationVersion++
   blockData.set(k, id)
+  optimizedChunks.setBlock({ x, y, z, id })
   registerBlockInChunk(x, y, z, id, k)
+  if (blockBatchDepth > 0) {
+    markBatchedBlockAndNeighbors(x, y, z)
+    return
+  }
   refreshBlockAndNeighbors(x, y, z)
 
   const visual = blocks.get(k)
@@ -887,8 +1056,10 @@ function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
   blocks.delete(k)
   blockMutationVersion++
   blockData.delete(k)
+  optimizedChunks.deleteBlock(x, y, z)
   if (id) unregisterBlockFromChunk(x, y, z, id, k)
-  refreshBlockAndNeighbors(x, y, z)
+  if (blockBatchDepth > 0) markBatchedBlockAndNeighbors(x, y, z)
+  else refreshBlockAndNeighbors(x, y, z)
 }
 
 function setStarterInventory() {
@@ -951,7 +1122,11 @@ function clearWorldBlocks() {
     grassBladeMesh.boundingSphere = null
   }
   grassBladeKeys.length = 0
+  terrainGenerationEpoch += 1
+  completedTerrainPlans.length = 0
+  terrainWorkerInFlight = 0
   generatedTerrainChunks.clear()
+  discoveredTerrainChunks.clear()
   queuedTerrainChunks.clear()
   terrainGenerationQueue.length = 0
   lastTerrainEnsureScanKey = ''
@@ -960,18 +1135,22 @@ function clearWorldBlocks() {
   removedTerrainBlocks.clear()
   playerPlacedBlocks.clear()
   landmarkShardBlocks.clear()
+  optimizedChunks.clear()
+  chunkMeshRenderer.clear()
 }
 
 function serializeWorld(): SavedWorld {
   const savedBlocks: SavedBlock[] = []
-  blockData.forEach((id, key) => {
-    savedBlocks.push([...key.split(',').map(Number), id] as SavedBlock)
+  playerPlacedBlocks.forEach((key) => {
+    const id = blockData.get(key)
+    if (id) savedBlocks.push([...key.split(',').map(Number), id] as SavedBlock)
   })
   return {
-    version: 4,
+    version: 6,
     savedAt: Date.now(),
+    format: 'delta',
     blocks: savedBlocks,
-    terrainChunks: [...generatedTerrainChunks],
+    terrainChunks: [...discoveredTerrainChunks],
     removedBlocks: [...removedTerrainBlocks],
     playerPlacedBlocks: [...playerPlacedBlocks],
     inventory: Object.fromEntries(BLOCKS.map(({ id }) => [id, inventoryCounts.get(id) ?? 0])) as Partial<Record<BlockId, number>>,
@@ -983,6 +1162,8 @@ function serializeWorld(): SavedWorld {
       glowShards: collectedGlowShards,
       collectedShardBlocks: [...collectedShardBlocks],
     },
+    progression: progression.snapshot(),
+    vitals: survivalVitals.snapshot(),
   }
 }
 
@@ -1058,29 +1239,72 @@ function rebuildLandmarkShardBlocks() {
 function applySavedWorld(data: SavedWorld) {
   if (!Array.isArray(data.blocks)) throw new Error('Bad save')
   const savedBlocks = data.blocks.filter(isValidSavedBlock)
+  const isDeltaSave = data.format === 'delta' || data.version >= 6
   clearWorldBlocks()
   readSavedInventory(data.inventory)
   readSavedExploration(data.exploration)
-  savedBlocks.forEach(([x, y, z, id]) => addBlock(x, y, z, id, 'save'))
-  if (Array.isArray(data.terrainChunks)) {
-    data.terrainChunks.filter(isValidTerrainChunkKey).forEach((key) => generatedTerrainChunks.add(key))
-  } else {
-    savedBlocks.forEach(([x, , z]) => generatedTerrainChunks.add(terrainChunkKeyForBlock(x, z)))
-  }
+
   if (Array.isArray(data.removedBlocks)) {
     data.removedBlocks.filter(isValidBlockKey).forEach((key) => removedTerrainBlocks.add(key))
   }
+
+  if (isDeltaSave) {
+    const terrainKeys = Array.isArray(data.terrainChunks)
+      ? data.terrainChunks.filter(isValidTerrainChunkKey)
+      : []
+    if (terrainKeys.length > 0) {
+      terrainKeys.forEach((key) => discoveredTerrainChunks.add(key))
+      terrainKeys.forEach((key) => {
+        const [cx, cz] = key.split(',').map(Number)
+        const spawnCx = chunkCoord(PLAYER_SPAWN.x)
+        const spawnCz = chunkCoord(PLAYER_SPAWN.z)
+        if (Math.max(Math.abs(cx - spawnCx), Math.abs(cz - spawnCz)) <= INITIAL_TERRAIN_LOAD_RADIUS) {
+          generateTerrainChunk(cx, cz)
+        }
+      })
+    } else {
+      generateWorld()
+    }
+    withBlockBatch(() => {
+      savedBlocks.forEach(([x, y, z, id]) => {
+        const key = blockKey(x, y, z)
+        if (blocks.has(key)) removeBlockAtKey(key)
+        addBlock(x, y, z, id, 'save')
+      })
+    })
+  } else {
+    withBlockBatch(() => {
+      savedBlocks.forEach(([x, y, z, id]) => addBlock(x, y, z, id, 'save'))
+    })
+    if (Array.isArray(data.terrainChunks)) {
+      data.terrainChunks.filter(isValidTerrainChunkKey).forEach((key) => {
+        generatedTerrainChunks.add(key)
+        discoveredTerrainChunks.add(key)
+      })
+    } else {
+      savedBlocks.forEach(([x, , z]) => {
+        const key = terrainChunkKeyForBlock(x, z)
+        generatedTerrainChunks.add(key)
+        discoveredTerrainChunks.add(key)
+      })
+    }
+  }
+
   playerPlacedBlocks.clear()
   if (Array.isArray(data.playerPlacedBlocks)) {
     data.playerPlacedBlocks.filter(isValidBlockKey).forEach((key) => {
       if (blockData.has(key)) playerPlacedBlocks.add(key)
     })
   }
+  progression.restore(data.progression)
+  survivalVitals.restore(data.vitals)
+  progression.setShardCount(collectedGlowShards)
   rebuildLandmarkShardBlocks()
   crystalPower = typeof data.survival?.crystalPower === 'number' ? Math.max(0, Math.min(100, data.survival.crystalPower)) : 68
   carriedCrystal = typeof data.survival?.carriedCrystal === 'number' ? Math.max(0, Math.floor(data.survival.carriedCrystal)) : 0
-  controls.object.position.set(0, 12, 18)
+  controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
   velocityY = 0
+  updateProgressionUi()
 }
 
 function saveWorld() {
@@ -1140,10 +1364,13 @@ function resetWorld() {
   carriedCrystal = 0
   collectedGlowShards = 0
   collectedShardBlocks.clear()
+  progression.reset()
+  survivalVitals.reset()
   generateWorld()
-  controls.object.position.set(0, 12, 18)
+  controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
   velocityY = 0
   updateHotbar()
+  updateProgressionUi()
   showToast('New world')
 }
 
@@ -1255,14 +1482,6 @@ function movePlayerVertical(deltaY: number) {
   if (deltaY < 0) canJump = true
 }
 
-// 破坏粒子系统
-type Particle = { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number }
-const particles: Particle[] = []
-const breakParticleGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.15)
-const breakParticleMaterials = new Map<BlockId, THREE.MeshStandardMaterial>()
-const breakParticleOffset = new THREE.Vector3()
-const shardBurstMaterial = new THREE.MeshBasicMaterial({ color: 0xfff3a8, transparent: true, opacity: 0.92 })
-
 // 放置预览 ghost box
 const previewGeometry = new THREE.BoxGeometry(1, 1, 1)
 const previewMaterial = new THREE.MeshStandardMaterial({
@@ -1286,52 +1505,16 @@ targetOutlineMesh.renderOrder = 12
 targetOutlineMesh.visible = false
 scene.add(targetOutlineMesh)
 
-const BLOCK_COLOR_MAP = new Map<BlockId, number>(BLOCKS.map((b) => [b.id, b.color]))
-function getBreakParticleMaterial(blockId: BlockId) {
-  let material = breakParticleMaterials.get(blockId)
-  if (!material) {
-    material = new THREE.MeshStandardMaterial({ color: BLOCK_COLOR_MAP.get(blockId) ?? 0xffffff, roughness: 0.8 })
-    breakParticleMaterials.set(blockId, material)
-  }
-  return material
-}
-
 function createBreakParticles(position: THREE.Vector3, blockId: BlockId) {
-  if (cosmeticEffectsReduced && particles.length > 18) return
-  const material = getBreakParticleMaterial(blockId)
-  const particleCount = cosmeticEffectsReduced ? 3 : 6
-  for (let i = 0; i < particleCount; i++) {
-    const mesh = new THREE.Mesh(breakParticleGeometry, material)
-    breakParticleOffset.set((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4)
-    mesh.position.copy(position).add(breakParticleOffset)
-    scene.add(mesh)
-    particles.push({
-      mesh,
-      vx: (Math.random() - 0.5) * 5.5,
-      vy: 1.5 + Math.random() * 3.5,
-      vz: (Math.random() - 0.5) * 5.5,
-      life: cosmeticEffectsReduced ? 0.5 : 0.8,
-    })
-  }
+  particleEffects.createBreakBurst({
+    position,
+    blockId,
+    count: cosmeticEffectsReduced ? 3 : 6,
+  })
 }
 
 function createShardBurst(position: THREE.Vector3) {
-  if (cosmeticEffectsReduced && particles.length > 24) return
-  const particleCount = cosmeticEffectsReduced ? 8 : 16
-  for (let i = 0; i < particleCount; i++) {
-    const mesh = new THREE.Mesh(sparkleGeo, shardBurstMaterial)
-    breakParticleOffset.set((Math.random() - 0.5) * 0.7, (Math.random() - 0.2) * 0.7, (Math.random() - 0.5) * 0.7)
-    mesh.position.copy(position).add(breakParticleOffset)
-    mesh.scale.setScalar(1.4 + Math.random() * 1.8)
-    scene.add(mesh)
-    particles.push({
-      mesh,
-      vx: (Math.random() - 0.5) * 7,
-      vy: 2.8 + Math.random() * 4.5,
-      vz: (Math.random() - 0.5) * 7,
-      life: cosmeticEffectsReduced ? 0.55 : 0.9,
-    })
-  }
+  particleEffects.createShardBurst(position, cosmeticEffectsReduced ? 8 : 16)
 }
 
 // 简单音效 (Web Audio API)
@@ -1388,54 +1571,6 @@ function terrainHeightAt(x: number, z: number) {
   return Math.max(1, Math.floor(terrainNoise(x, z) + 5.2 - distance * 0.012))
 }
 
-function addExplorationMarks(cx: number, cz: number) {
-  if (cx === 0 && cz === 0) return
-  const roll = hashNoise(cx * 92821 + cz * 68917 + 17)
-  if (roll > 0.28) return
-
-  const startX = cx * CHUNK_SIZE
-  const startZ = cz * CHUNK_SIZE
-  const originX = startX + 2 + Math.floor(hashNoise(cx * 317 + cz * 911 + 3) * 4)
-  const originZ = startZ + 2 + Math.floor(hashNoise(cx * 613 + cz * 271 + 5) * 4)
-  const originY = terrainHeightAt(originX, originZ) + 1
-  if (originY <= 4) return
-
-  const addLandmarkBlock = (x: number, y: number, z: number, id: BlockId) => {
-    addBlock(x, y, z, id)
-    const key = blockKey(x, y, z)
-    if ((id === 'glow' || id === 'crystal') && blockData.get(key) === id && !collectedShardBlocks.has(key)) {
-      landmarkShardBlocks.add(key)
-    }
-  }
-
-  if (roll < 0.11) {
-    const offsets: Array<[number, number, number, BlockId]> = [
-      [0, 0, 0, 'moss'], [1, 0, 0, 'stone'], [-1, 0, 0, 'moss'], [0, 0, 1, 'stone'],
-      [0, 1, 0, 'brick'], [1, 1, 0, 'moss'], [0, 1, 1, 'brick'], [0, 2, 0, 'glow'],
-      [-1, 0, 1, 'gravel'], [1, 0, 1, 'gravel'],
-    ]
-    offsets.forEach(([dx, dy, dz, id]) => addLandmarkBlock(originX + dx, originY + dy, originZ + dz, id))
-    return
-  }
-
-  if (roll < 0.2) {
-    const clusterSize = 4 + Math.floor(hashNoise(cx * 149 + cz * 463 + 29) * 4)
-    for (let i = 0; i < clusterSize; i++) {
-      const dx = Math.floor(hashNoise(cx * 101 + cz * 103 + i * 37) * 3) - 1
-      const dz = Math.floor(hashNoise(cx * 107 + cz * 109 + i * 41) * 3) - 1
-      const dy = i > 3 ? 1 : 0
-      addLandmarkBlock(originX + dx, originY + dy, originZ + dz, i === 0 ? 'glow' : 'crystal')
-    }
-    return
-  }
-
-  addLandmarkBlock(originX, originY, originZ, 'obsidian')
-  addLandmarkBlock(originX, originY + 1, originZ, 'stone')
-  addLandmarkBlock(originX, originY + 2, originZ, 'crystal')
-  addLandmarkBlock(originX + 1, originY, originZ, 'gravel')
-  addLandmarkBlock(originX - 1, originY, originZ, 'gravel')
-}
-
 function generateTerrainChunk(cx: number, cz: number) {
   const key = terrainChunkKey(cx, cz)
   if (!isTerrainChunkInBounds(cx, cz)) {
@@ -1443,25 +1578,32 @@ function generateTerrainChunk(cx: number, cz: number) {
     return false
   }
   if (generatedTerrainChunks.has(key)) return false
-  queuedTerrainChunks.delete(key)
+  return applyTerrainPlan(buildProceduralChunkPlan(cx, cz, CHUNK_SIZE))
+}
 
-  const startX = cx * CHUNK_SIZE
-  const startZ = cz * CHUNK_SIZE
-  for (let x = startX; x < startX + CHUNK_SIZE; x++) {
-    for (let z = startZ; z < startZ + CHUNK_SIZE; z++) {
-      const height = terrainHeightAt(x, z)
-      for (let y = 0; y <= height; y++) {
-        const id: BlockId = y === height ? 'grass' : y > height - 3 ? 'dirt' : 'stone'
-        addBlock(x, y, z, id)
-      }
-      if (height < 3) addBlock(x, 3, z, 'water')
-      if (height > 3 && seededNoise(x, height, z, 11) < 0.065) addGrassTuft(x, height, z)
-      if (height > 4 && seededNoise(x, height, z, 12) < 0.03) makeTree(x, height + 1, z)
-      if (height > 2 && seededNoise(x, height, z, 13) < 0.016) addBlock(x, height + 1, z, seededNoise(x, height, z, 14) > 0.5 ? 'crystal' : 'glow')
-    }
+function applyTerrainPlan(plan: ProceduralChunkPlan) {
+  const key = terrainChunkKey(plan.cx, plan.cz)
+  if (!isTerrainChunkInBounds(plan.cx, plan.cz) || generatedTerrainChunks.has(key)) {
+    queuedTerrainChunks.delete(key)
+    return false
   }
-  addExplorationMarks(cx, cz)
+  queuedTerrainChunks.delete(key)
+  withBlockBatch(() => {
+    plan.blocks.forEach(({ x, y, z, id }) => addBlock(x, y, z, id))
+    if (runtimeProfile.tier !== 'ultra-low') {
+      plan.grassTufts.forEach(([x, y, z]) => {
+        if (blockData.has(blockKey(x, y, z))) addGrassTuft(x, y, z)
+      })
+    }
+  })
+  plan.landmarkShardKeys.forEach((shardKey) => {
+    const id = blockData.get(shardKey)
+    if ((id === 'glow' || id === 'crystal') && !collectedShardBlocks.has(shardKey)) landmarkShardBlocks.add(shardKey)
+  })
+  const firstDiscovery = !discoveredTerrainChunks.has(key)
   generatedTerrainChunks.add(key)
+  discoveredTerrainChunks.add(key)
+  if (firstDiscovery) progression.recordExploredChunk()
   return true
 }
 
@@ -1475,9 +1617,35 @@ function queueTerrainChunk(cx: number, cz: number) {
 
 function processTerrainQueue(limit = TERRAIN_CHUNKS_PER_FRAME) {
   let generated = 0
-  while (generated < limit && terrainGenerationQueue.length > 0) {
+  while (generated < limit && completedTerrainPlans.length > 0) {
+    if (applyTerrainPlan(completedTerrainPlans.shift()!)) generated += 1
+  }
+  if (!terrainWorker) {
+    while (generated < limit && terrainGenerationQueue.length > 0) {
+      const next = terrainGenerationQueue.shift()!
+      if (generateTerrainChunk(next.cx, next.cz)) generated += 1
+    }
+    return
+  }
+
+  while (terrainWorkerInFlight < runtimeLimits.terrainWorkerConcurrency && terrainGenerationQueue.length > 0) {
     const next = terrainGenerationQueue.shift()!
-    if (generateTerrainChunk(next.cx, next.cz)) generated++
+    const key = terrainChunkKey(next.cx, next.cz)
+    if (generatedTerrainChunks.has(key)) {
+      queuedTerrainChunks.delete(key)
+      continue
+    }
+    const requestEpoch = terrainGenerationEpoch
+    terrainWorkerInFlight += 1
+    void terrainWorker.build(next.cx, next.cz, CHUNK_SIZE).then((plan) => {
+      if (requestEpoch !== terrainGenerationEpoch) return
+      terrainWorkerInFlight = Math.max(0, terrainWorkerInFlight - 1)
+      completedTerrainPlans.push(plan)
+    }).catch(() => {
+      if (requestEpoch !== terrainGenerationEpoch) return
+      terrainWorkerInFlight = Math.max(0, terrainWorkerInFlight - 1)
+      completedTerrainPlans.push(buildProceduralChunkPlan(next.cx, next.cz, CHUNK_SIZE))
+    })
   }
 }
 
@@ -1497,19 +1665,43 @@ function ensureTerrainChunksAround(x: number, z: number, radius = terrainLoadRad
   pending.forEach(({ cx, cz }) => queueTerrainChunk(cx, cz))
 }
 
-function generateWorld() {
-  lastTerrainEnsureScanKey = ''
-  ensureTerrainChunksAround(0, 0, INITIAL_TERRAIN_LOAD_RADIUS)
-  processTerrainQueue(terrainGenerationQueue.length)
+function evictTerrainChunk(cx: number, cz: number) {
+  const key = terrainChunkKey(cx, cz)
+  if (!generatedTerrainChunks.has(key)) return false
+  const residentBlocks = optimizedChunks.getChunkBlocks(cx, cz)
+  withBlockBatch(() => {
+    residentBlocks.forEach(({ x, y, z }) => {
+      const blockKeyValue = blockKey(x, y, z)
+      if (!playerPlacedBlocks.has(blockKeyValue)) removeBlockAtKey(blockKeyValue)
+    })
+  })
+  generatedTerrainChunks.delete(key)
+  queuedTerrainChunks.delete(key)
+  chunkMeshRenderer.removeChunk(key)
+  chunkMeshTriangles.delete(key)
+  return true
 }
 
-function makeTree(x: number, y: number, z: number) {
-  const trunk = 3 + Math.floor(seededNoise(x, y, z, 21) * 2)
-  for (let i = 0; i < trunk; i++) addBlock(x, y + i, z, 'wood')
-  const top = y + trunk
-  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -1; dy <= 1; dy++) {
-    if (Math.abs(dx) + Math.abs(dz) + Math.abs(dy) < 4 && seededNoise(x, y, z, dx, dy, dz, 22) > 0.12) addBlock(x + dx, top + dy, z + dz, 'leaves')
+function evictDistantTerrainChunks(x: number, z: number) {
+  const center = { cx: chunkCoord(x), cz: chunkCoord(z) }
+  const keepRadius = terrainLoadRadius + runtimeLimits.residentChunkPadding
+  const candidates = selectChunksForEviction(
+    generatedTerrainChunks,
+    center,
+    keepRadius,
+    runtimeLimits.evictionBatchSize,
+  )
+  candidates.forEach(({ cx, cz }) => evictTerrainChunk(cx, cz))
+}
+
+function generateWorld() {
+  lastTerrainEnsureScanKey = ''
+  ensureTerrainChunksAround(PLAYER_SPAWN.x, PLAYER_SPAWN.z, INITIAL_TERRAIN_LOAD_RADIUS)
+  while (terrainGenerationQueue.length > 0) {
+    const next = terrainGenerationQueue.shift()!
+    generateTerrainChunk(next.cx, next.cz)
   }
+  rebuildOptimizedChunkMeshes(Number.POSITIVE_INFINITY)
 }
 
 setStarterInventory()
@@ -1561,14 +1753,14 @@ resetButton.addEventListener('click', () => {
 if (localStorage.getItem(SAVE_KEY)) loadWorld()
 
 const platform = new THREE.Mesh(
-  new THREE.CylinderGeometry(40, 48, 2, 96),
+  new THREE.CylinderGeometry(40, 48, 2, runtimeProfile.tier === 'ultra-low' ? 32 : lowPowerMode ? 48 : runtimeProfile.tier === 'standard' ? 64 : 96),
   new THREE.MeshStandardMaterial({ color: 0x55657b, roughness: 0.9 })
 )
 platform.position.y = -2
 platform.receiveShadow = !lowPowerMode
 scene.add(platform)
 
-const maxStars = lowPowerMode ? 60 : 260
+const maxStars = runtimeProfile.tier === 'ultra-low' ? 20 : lowPowerMode ? 40 : runtimeProfile.tier === 'standard' ? 160 : 260
 const starPositions = new Float32Array(maxStars * 3)
 for (let i = 0; i < maxStars; i++) {
   starPositions[i * 3] = (Math.random() - 0.5) * 180
@@ -1584,7 +1776,7 @@ scene.add(stars)
 const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 1 })
 const cloudGeo = new THREE.SphereGeometry(1, 16, 8)
 const clouds = new THREE.Group()
-const maxClouds = lowPowerMode ? 6 : 18
+const maxClouds = runtimeProfile.tier === 'ultra-low' ? 2 : lowPowerMode ? 3 : runtimeProfile.tier === 'standard' ? 12 : 18
 for (let i = 0; i < maxClouds; i++) {
   const cloud = new THREE.Group()
   const x = (Math.random() - 0.5) * 95
@@ -1604,7 +1796,7 @@ scene.add(clouds)
 const sparkles = new THREE.Group()
 const sparkleGeo = new THREE.IcosahedronGeometry(0.055, 0)
 const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.82 })
-const maxSparkles = lowPowerMode ? 24 : 120
+const maxSparkles = runtimeProfile.tier === 'ultra-low' ? 0 : lowPowerMode ? 6 : runtimeProfile.tier === 'standard' ? 72 : 120
 for (let i = 0; i < maxSparkles; i++) {
   const sparkle = new THREE.Mesh(sparkleGeo, sparkleMat)
   sparkle.position.set((Math.random() - 0.5) * 62, 5 + Math.random() * 18, (Math.random() - 0.5) * 62)
@@ -1850,7 +2042,67 @@ const fovInput = document.querySelector<HTMLInputElement>('.fov-input')!
 const fovValue = document.querySelector<HTMLOutputElement>('.fov-value')!
 const viewDistanceSelect = document.querySelector<HTMLSelectElement>('.view-distance-select')!
 const qualityButtons = [...document.querySelectorAll<HTMLButtonElement>('.quality-btn')]
+viewDistanceSelect.querySelectorAll<HTMLOptionElement>('option').forEach((option) => {
+  option.disabled = Number(option.value) > runtimeLimits.maxViewDistance
+})
 const perfToggle = document.querySelector<HTMLInputElement>('.perf-toggle')!
+const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value')!
+const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
+const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
+const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
+
+function formatIngredients(ingredients: Array<{ id: BlockId; amount: number }>) {
+  return ingredients.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
+}
+
+function updateProgressionUi() {
+  if (!toolTierValue || !objectiveList || !recipeList) return
+  toolTierValue.textContent = progression.getToolName()
+  objectiveList.innerHTML = progression.getObjectives().map((objective) => `
+    <article class="objective-card ${objective.complete ? 'complete' : ''} ${objective.claimed ? 'claimed' : ''}">
+      <div><strong>${objective.name}</strong><small>${objective.description} · ${Math.min(objective.current, objective.target)}/${objective.target}</small></div>
+      <button data-claim-objective="${objective.id}" ${!objective.complete || objective.claimed ? 'disabled' : ''}>${objective.claimed ? 'Claimed' : 'Claim'}</button>
+    </article>
+  `).join('')
+  recipeList.innerHTML = RECIPES.map((recipe) => {
+    const crafted = progression.snapshot().crafted[recipe.id] ?? 0
+    const completed = Boolean(recipe.once && crafted > 0)
+    return `
+      <article class="recipe-card ${completed ? 'complete' : ''}">
+        <div><strong>${recipe.name}</strong><small>${recipe.description}</small><em>${formatIngredients(recipe.ingredients)}</em></div>
+        <button data-craft-recipe="${recipe.id}" ${completed || !progression.canCraft(recipe, progressionInventory) ? 'disabled' : ''}>${completed ? 'Built' : 'Craft'}</button>
+      </article>
+    `
+  }).join('')
+}
+
+objectiveList.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-claim-objective]')
+  if (!button) return
+  const objective = progression.claimObjective(button.dataset.claimObjective ?? '', progressionInventory)
+  if (!objective) return
+  showToast(`${objective.name} reward claimed`)
+  updateHotbar()
+  updateProgressionUi()
+})
+
+recipeList.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-craft-recipe]')
+  if (!button) return
+  const recipe = progression.craft(button.dataset.craftRecipe ?? '', progressionInventory)
+  if (!recipe) {
+    showToast('Missing crafting materials')
+    return
+  }
+  playSound('select', 0.28)
+  showToast(`${recipe.name} crafted`)
+  updateHotbar()
+  updateProgressionUi()
+})
+
+document.querySelector<HTMLButtonElement>('.session-option[data-session="singleplayer"]')!.querySelector('strong')!.textContent = localSession.session.label
+document.querySelector<HTMLButtonElement>('.multiplayer-entry')!.title = multiplayerSession.session.label
+updateProgressionUi()
 type HudDensity = 'roomy' | 'compact' | 'minimal'
 let hudLayoutFrame = 0
 let hasStarted = false
@@ -1896,9 +2148,21 @@ function readStoredSettings(): GameSettings {
 }
 
 function qualityBounds() {
-  if (qualityPreset === 'low') return { min: lowPowerMode ? 0.55 : 0.6, max: lowPowerMode ? 0.72 : 0.78, start: lowPowerMode ? 0.62 : 0.7 }
-  if (qualityPreset === 'high') return { min: lowPowerMode ? 0.78 : 0.86, max: lowPowerMode ? 0.98 : 1, start: lowPowerMode ? 0.88 : 1 }
-  return { min: MIN_RENDER_QUALITY, max: MAX_RENDER_QUALITY, start: lowPowerMode ? 0.85 : 0.94 }
+  if (qualityPreset === 'low') {
+    return {
+      min: runtimeLimits.minRenderScale,
+      max: Math.min(runtimeLimits.maxRenderScale, 0.72),
+      start: Math.min(runtimeLimits.initialRenderScale, 0.68),
+    }
+  }
+  if (qualityPreset === 'high') {
+    return {
+      min: Math.min(runtimeLimits.maxRenderScale, Math.max(runtimeLimits.minRenderScale, 0.76)),
+      max: runtimeLimits.maxRenderScale,
+      start: runtimeLimits.maxRenderScale,
+    }
+  }
+  return { min: MIN_RENDER_QUALITY, max: MAX_RENDER_QUALITY, start: runtimeLimits.initialRenderScale }
 }
 
 function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
@@ -1941,7 +2205,7 @@ function applySettings(settings: GameSettings, persist = false) {
   fovInput.value = String(Math.round(fov))
   fovValue.textContent = String(Math.round(fov))
 
-  terrainLoadRadius = Math.round(clampNumber(settings.viewDistance, 1, 3))
+  terrainLoadRadius = Math.round(clampNumber(settings.viewDistance, 1, runtimeLimits.maxViewDistance))
   viewDistanceSelect.value = String(terrainLoadRadius)
   lastTerrainEnsureScanKey = ''
   pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
@@ -1967,6 +2231,7 @@ function resetInputState() {
 function openPauseMenu() {
   if (!hasStarted) return
   isPaused = true
+  updateProgressionUi()
   pauseMenu.classList.remove('hidden')
   document.body.classList.add('menu-open')
   resetInputState()
@@ -2241,6 +2506,10 @@ function breakTargetBlock() {
   const minedKey = hit.key
   const blockId = blockData.get(minedKey)
   if (!blockId) return
+  if (!progression.canMine(blockId)) {
+    showToast(`${progression.requiredToolName(blockId)} required`)
+    return
+  }
   getBlockPositionFromKey(minedKey, hitBlockPosition)
   if (hitBlockPosition.y > 0) {
     const canAbsorbCharge = !playerPlacedBlocks.has(minedKey)
@@ -2259,9 +2528,11 @@ function breakTargetBlock() {
     }
     removeBlockAtKey(minedKey, 'player')
     addToInventory(blockId)
+    progression.recordMine()
     const collectedShard = collectExplorationShard(minedKey, blockId)
     if (canAbsorbCharge) absorbCrystalPower(blockId, !collectedShard)
     updateHotbar()
+    updateProgressionUi()
   }
 }
 
@@ -2288,8 +2559,10 @@ function placeTargetBlock() {
     removeBlockAtKey(hitKey)
     addBlock(hitBlockPosition.x, hitBlockPosition.y, hitBlockPosition.z, selectedBlock, 'player')
     consumeInventory(selectedBlock)
+    progression.recordPlacement()
     selectNextAvailableBlock()
     updateHotbar()
+    updateProgressionUi()
     return
   }
 
@@ -2307,8 +2580,10 @@ function placeTargetBlock() {
   playSound('place', 0.25)
   addBlock(placePosition.x, placePosition.y, placePosition.z, selectedBlock, 'player')
   consumeInventory(selectedBlock)
+  progression.recordPlacement()
   selectNextAvailableBlock()
   updateHotbar()
+  updateProgressionUi()
 }
 
 function collectExplorationShard(blockKey: string, blockId: BlockId) {
@@ -2323,6 +2598,7 @@ function collectExplorationShard(blockKey: string, blockId: BlockId) {
   landmarkShardBlocks.delete(blockKey)
   collectedShardBlocks.add(blockKey)
   collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedGlowShards + 1)
+  progression.setShardCount(collectedGlowShards)
   const moduleName = ARK_MODULE_NAMES[Math.max(0, collectedGlowShards - 1)] ?? 'Core'
   showToast(collectedGlowShards >= EXPLORATION_GOAL_SHARDS
     ? `Ark Core restored: ${EXPLORATION_GOAL_SHARDS}/${EXPLORATION_GOAL_SHARDS} shards`
@@ -2553,7 +2829,7 @@ function cancelTouchMining() {
 
 function updateTouchMining() {
   if (!touchMining) return
-  const progress = Math.min((performance.now() - touchMiningStartedAt) / TOUCH_MINE_MS, 1)
+  const progress = Math.min((performance.now() - touchMiningStartedAt) / progression.getMiningDuration(TOUCH_MINE_MS), 1)
   mineRing.style.setProperty('--progress', `${Math.round(progress * 360)}deg`)
   if (progress < 1 || touchMiningComplete) return
   touchMiningComplete = true
@@ -2652,6 +2928,9 @@ const crystalValEl = document.querySelector<HTMLElement>('.crystal-val')
 const threatValEl = document.querySelector<HTMLElement>('.threat-val')
 const survivalBadgeEl = document.querySelector<HTMLElement>('.survival-badge')
 const coldVignetteEl = document.querySelector<HTMLElement>('.cold-vignette')
+const healthBarEl = document.querySelector<HTMLElement>('.health-bar')
+const healthValEl = document.querySelector<HTMLElement>('.health-val')
+const worldBiomeEl = document.querySelector<HTMLElement>('.world-biome')
 const moveDirection = new THREE.Vector3()
 const targetMoveVelocity = new THREE.Vector3()
 const smoothedMoveVelocity = new THREE.Vector3()
@@ -2672,9 +2951,10 @@ function updateAdaptiveQuality(avgMs: number, elapsedTime: number) {
   if (elapsedTime - lastQualityAdjustAt < 2.5) return
   const previousQuality = renderQuality
   const bounds = qualityBounds()
-  if ((currentFps > 0 && currentFps < 38) || avgMs > 28) {
+  const targetFrameMs = 1000 / runtimeLimits.targetFps
+  if ((currentFps > 0 && currentFps < runtimeLimits.targetFps * 0.82) || avgMs > targetFrameMs * 1.18) {
     renderQuality = Math.max(bounds.min, renderQuality - QUALITY_STEP)
-  } else if (currentFps >= 56 && avgMs < 18) {
+  } else if (currentFps >= runtimeLimits.targetFps * 0.96 && avgMs < targetFrameMs * 0.92) {
     renderQuality = Math.min(bounds.max, renderQuality + QUALITY_STEP)
   }
   if (Math.abs(renderQuality - previousQuality) >= 0.01) {
@@ -2689,6 +2969,16 @@ let lastSurvivalThreat = ''
 let lastSurvivalProtectionLabel = ''
 let lastSurvivalStyle = ''
 let lastShardSignalAt = -Infinity
+let lastBiomeUiAt = -Infinity
+
+function respawnPlayer() {
+  survivalVitals.respawn()
+  carriedCrystal = Math.max(0, carriedCrystal - 1)
+  crystalPower = Math.max(35, crystalPower)
+  controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
+  velocityY = 0
+  showToast('Wayfinder recovered at the Ark')
+}
 
 function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const deepNight = day < 0.23
@@ -2707,6 +2997,8 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const lowPower = crystalPower < 35
   const danger = deepNight && lowPower
   const coldIntensity = danger ? Math.min(1, (35 - crystalPower) / 35) * (1 - day / 0.23) : 0
+  const vitalsUpdate = survivalVitals.update(dt, coldIntensity, day > 0.45 && crystalPower > 50)
+  if (vitalsUpdate.died) respawnPlayer()
   const carriedLabel = carriedCrystal > 0 ? ` · x${carriedCrystal}` : ''
   const shardWardLabel = shardWardLevel > 0 ? ` · Ward ${shardWardLevel}` : ''
   const protectionLabel = `${carriedLabel}${shardWardLabel}`
@@ -2716,7 +3008,8 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   }
 
   renderer.toneMappingExposure = 1.08 - coldIntensity * 0.28
-  sceneFog.density = 0.015 + (1 - day) * 0.012 + coldIntensity * 0.035
+  const baseFogDensity = runtimeProfile.tier === 'ultra-low' ? 0.04 : lowPowerMode ? 0.03 : 0.015
+  sceneFog.density = baseFogDensity + (1 - day) * 0.012 + coldIntensity * 0.035
 
   let phase = 'Day'
   let threat = carriedCrystal > 0 ? 'Protected' : shardWardLevel > 0 ? 'Beacon Ward' : 'Safe'
@@ -2750,6 +3043,9 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const threatText = `${phase} · ${threat}`
 
   if (!threatValEl || !crystalBarEl || !crystalValEl || !survivalBadgeEl) return
+  const health = Math.round(survivalVitals.getHealth())
+  if (healthBarEl) healthBarEl.style.width = `${health}%`
+  if (healthValEl) healthValEl.textContent = `${health}%`
   if (
     elapsedTime - lastSurvivalUiAt < 0.25 &&
     chargeInt === lastSurvivalCharge &&
@@ -2809,13 +3105,23 @@ function cullPointLights(elapsedTime: number) {
   if (elapsedTime - lastLightCullAt < 0.2) return
   lastLightCullAt = elapsedTime
   const playerPos = controls.object.position
-  glowLights.forEach((light) => {
+  const candidates: Array<{ key: string; light: THREE.PointLight; priority: number }> = []
+  glowLightsByBlock.forEach((light, key) => {
     const dx = light.position.x - playerPos.x
     const dy = light.position.y - playerPos.y
     const dz = light.position.z - playerPos.z
     const distSq = dx * dx + dy * dy + dz * dz
-    light.visible = distSq <= LIGHT_CULL_DISTANCE_SQ
+    if (distSq > LIGHT_CULL_DISTANCE_SQ) {
+      light.visible = false
+      return
+    }
+    candidates.push({
+      key,
+      light,
+      priority: light.userData.blockId === 'glow' ? 2 : 1,
+    })
   })
+  applyPointLightBudget(playerPos, candidates, MAX_ACTIVE_GLOW_LIGHTS)
 }
 
 function updateInstancedBounds() {
@@ -2864,24 +3170,40 @@ function updateFrameStats(dt: number, elapsedTime: number) {
     chunksEl.textContent = String(chunks.size)
   }
   if (terrainChunksEl) {
-    terrainChunksEl.textContent = `${generatedTerrainChunks.size}/${Math.round(Math.PI * TERRAIN_MAX_RADIUS * TERRAIN_MAX_RADIUS)}`
+    terrainChunksEl.textContent = `${generatedTerrainChunks.size}/${discoveredTerrainChunks.size}`
   }
   if (dirtyEl) {
-    dirtyEl.textContent = `${terrainGenerationQueue.length}/${dirtyChunkKeys.size}`
+    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${dirtyChunkKeys.size}/${optimizedChunks.getDirtyChunks().length}`
   }
 }
 
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes
 let lastAutoSaveAt = 0
+let lastIdleFrameAt = -Infinity
+
+function scheduleAutoSave() {
+  idleTasks.schedule(() => {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  })
+}
 
 function animate() {
+  requestAnimationFrame(animate)
+  if (document.hidden) {
+    clock.getDelta()
+    return
+  }
+  const now = performance.now()
+  if ((!hasStarted || isPaused) && now - lastIdleFrameAt < 100) return
+  if (!hasStarted || isPaused) lastIdleFrameAt = now
   const dt = Math.min(clock.getDelta(), 0.05)
   const elapsedTime = clock.elapsedTime
   if (hasStarted && elapsedTime - lastAutoSaveAt > AUTO_SAVE_INTERVAL) {
     lastAutoSaveAt = elapsedTime
-    localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+    scheduleAutoSave()
   }
   rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
+  rebuildOptimizedChunkMeshes(runtimeLimits.meshBatchSize, runtimeLimits.meshBudgetMs)
   updateInstancedBounds()
   updateFrameStats(dt, elapsedTime)
   cullPointLights(elapsedTime)
@@ -2889,24 +3211,12 @@ function animate() {
     lastShardSignalAt = elapsedTime
     updateShardSignal()
   }
-
-  // 更新粒子
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i]
-    p.life -= dt
-    if (p.life <= 0) {
-      scene.remove(p.mesh)
-      removeArrayItemAtUnordered(particles, i)
-      continue
-    }
-    p.mesh.position.x += p.vx * dt
-    p.mesh.position.y += p.vy * dt
-    p.mesh.position.z += p.vz * dt
-    p.vy -= 15 * dt
-    p.mesh.rotation.x += dt * 2
-    p.mesh.rotation.y += dt * 1.5
-    p.mesh.scale.setScalar(Math.max(0, p.life / 0.6))
+  if (worldBiomeEl && elapsedTime - lastBiomeUiAt > 0.75) {
+    lastBiomeUiAt = elapsedTime
+    worldBiomeEl.textContent = `${getBiomeAt(controls.object.position.x, controls.object.position.z).name} · ${progression.getToolName()}`
   }
+
+  particleEffects.update(dt)
 
   const aimingActive = hasStarted && !isPaused && (controls.isLocked || mobileActive)
   const hit = aimingActive ? pickBlock() : undefined
@@ -3027,6 +3337,10 @@ function animate() {
     pendingTerrainEnsure = null
     lastTerrainEnsureAt = elapsedTime
   }
+  if (elapsedTime - lastTerrainEvictionAt >= (lowPowerMode ? 1.2 : 2)) {
+    evictDistantTerrainChunks(pos.x, pos.z)
+    lastTerrainEvictionAt = elapsedTime
+  }
   const terrainQueueIsUnderPressure = currentFps > 0 && (currentFps < 28 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
   const terrainQueueBudget = terrainQueueIsUnderPressure ? (terrainQueueFrameSkip++ % 4 === 0 ? 1 : 0) : TERRAIN_CHUNKS_PER_FRAME
   if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
@@ -3060,7 +3374,6 @@ function animate() {
     sparkleAnimationCursor = (sparkleAnimationCursor + 1) % sparkleCount
   }
   renderer.render(scene, camera)
-  requestAnimationFrame(animate)
 }
 animate()
 
@@ -3070,3 +3383,10 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight)
   applyRenderQuality()
 })
+
+window.addEventListener('pagehide', () => {
+  idleTasks.cancel()
+  if (hasStarted) localStorage.setItem(SAVE_KEY, JSON.stringify(serializeWorld()))
+  terrainWorker?.dispose()
+  particleEffects.dispose()
+}, { once: true })

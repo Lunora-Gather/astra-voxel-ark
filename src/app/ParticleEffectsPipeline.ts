@@ -41,12 +41,13 @@ export class ParticleEffectsPipeline {
       scene,
       shardGeometry,
       new THREE.MeshStandardMaterial({ color: 0xb9fff0, emissive: 0x4fffe1, emissiveIntensity: 0.6, roughness: 0.35 }),
-      Math.max(8, Math.floor(poolSize / 3)),
+      Math.max(8, Math.min(24, Math.floor(poolSize / 6))),
     )
 
+    const perBlockPoolSize = Math.max(2, Math.floor(poolSize / BLOCKS.length))
     for (const block of BLOCKS) {
       const material = new THREE.MeshStandardMaterial({ color: BLOCK_COLOR_MAP.get(block.id) ?? 0xffffff, roughness: 0.8 })
-      this.blockPools.set(block.id, new MeshParticlePool(scene, geometry, material, poolSize))
+      this.blockPools.set(block.id, new MeshParticlePool(scene, geometry, material, perBlockPoolSize))
     }
   }
 
