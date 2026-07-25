@@ -23,9 +23,9 @@ export class ProceduralTerrainWorkerClient {
     })
   }
 
-  build(cx: number, cz: number, chunkSize: number) {
+  build(cx: number, cz: number, chunkSize: number, worldSeed = 0) {
     const id = this.nextId++
-    const request: ProceduralTerrainRequest = { id, type: 'build-procedural-chunk', cx, cz, chunkSize }
+    const request: ProceduralTerrainRequest = { id, type: 'build-procedural-chunk', cx, cz, chunkSize, worldSeed }
     return new Promise<ProceduralChunkPlan>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
       this.worker.postMessage(request)

@@ -1,6 +1,7 @@
 import type { BlockId } from '../blocks'
 import { getBiomeAt } from './Biomes'
 import { terrainNoise } from '../worldMath'
+import { getWorldSeedOffsets, normalizeWorldSeed } from './WorldSeed'
 
 export type ProceduralBlock = { x: number; y: number; z: number; id: BlockId }
 export type ProceduralChunkPlan = {
@@ -11,7 +12,8 @@ export type ProceduralChunkPlan = {
   landmarkShardKeys: string[]
 }
 
-export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number): ProceduralChunkPlan {
+export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number, worldSeed = 0): ProceduralChunkPlan {
+  const normalizedSeed = normalizeWorldSeed(worldSeed)
   const blockMap = new Map<string, ProceduralBlock>()
   const grassTufts: Array<[number, number, number]> = []
   const landmarkShardKeys: string[] = []
@@ -24,38 +26,39 @@ export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: numb
 
   for (let x = startX; x < startX + chunkSize; x += 1) {
     for (let z = startZ; z < startZ + chunkSize; z += 1) {
-      const height = proceduralTerrainHeightAt(x, z)
-      const biome = getBiomeAt(x, z)
+      const height = proceduralTerrainHeightAt(x, z, normalizedSeed)
+      const biome = getBiomeAt(x, z, normalizedSeed)
       for (let y = 0; y <= height; y += 1) {
-        add(x, y, z, terrainBlockAt(x, y, z, height, biome.surface, biome.subsurface))
+        add(x, y, z, terrainBlockAt(x, y, z, height, biome.surface, biome.subsurface, normalizedSeed))
       }
       if (height < 3) add(x, 3, z, 'water')
-      if (height > 3 && seededNoise(x, height, z, 11) < 0.065) grassTufts.push([x, height, z])
-      if (height > 4 && seededNoise(x, height, z, 12) < biome.treeChance) {
-        addTree(add, x, height + 1, z, biome.treeTrunk)
+      if (height > 3 && seededNoise(normalizedSeed, x, height, z, 11) < 0.065) grassTufts.push([x, height, z])
+      if (height > 4 && seededNoise(normalizedSeed, x, height, z, 12) < biome.treeChance) {
+        addTree(add, x, height + 1, z, biome.treeTrunk, normalizedSeed)
       }
-      if (height > 2 && seededNoise(x, height, z, 13) < 0.016) {
-        add(x, height + 1, z, seededNoise(x, height, z, 14) > 0.5 ? 'crystal' : 'glow')
+      if (height > 2 && seededNoise(normalizedSeed, x, height, z, 13) < 0.016) {
+        add(x, height + 1, z, seededNoise(normalizedSeed, x, height, z, 14) > 0.5 ? 'crystal' : 'glow')
       }
     }
   }
 
-  addLandmark(add, landmarkShardKeys, cx, cz, chunkSize)
+  addLandmark(add, landmarkShardKeys, cx, cz, chunkSize, normalizedSeed)
   return { cx, cz, blocks: [...blockMap.values()], grassTufts, landmarkShardKeys }
 }
 
-export function proceduralTerrainHeightAt(x: number, z: number) {
-  return Math.max(1, Math.floor(terrainNoise(x, z) + 5.2 - Math.hypot(x, z) * 0.012))
+export function proceduralTerrainHeightAt(x: number, z: number, worldSeed = 0) {
+  const [offsetX, offsetZ] = getWorldSeedOffsets(worldSeed)
+  return Math.max(1, Math.floor(terrainNoise(x + offsetX, z + offsetZ) + 5.2 - Math.hypot(x, z) * 0.012))
 }
 
-function terrainBlockAt(x: number, y: number, z: number, height: number, surface: BlockId, subsurface: BlockId): BlockId {
+function terrainBlockAt(x: number, y: number, z: number, height: number, surface: BlockId, subsurface: BlockId, worldSeed: number): BlockId {
   const depth = height - y
-  const oreRoll = seededNoise(x, y, z, 91)
+  const oreRoll = seededNoise(worldSeed, x, y, z, 91)
   if (depth === 0) return height <= 3 ? 'sand' : surface
   if (depth <= 2) {
     if (height <= 4) return 'sand'
-    if (seededNoise(x, y, z, 93) < 0.12) return 'clay'
-    return seededNoise(x, y, z, 94) < 0.1 ? 'gravel' : subsurface
+    if (seededNoise(worldSeed, x, y, z, 93) < 0.12) return 'clay'
+    return seededNoise(worldSeed, x, y, z, 94) < 0.1 ? 'gravel' : subsurface
   }
   if (y <= 2 && oreRoll < 0.09) return 'obsidian'
   if (depth >= 5 && oreRoll < 0.012) return 'gold'
@@ -64,12 +67,12 @@ function terrainBlockAt(x: number, y: number, z: number, height: number, surface
   return 'stone'
 }
 
-function addTree(add: (x: number, y: number, z: number, id: BlockId) => void, x: number, y: number, z: number, trunkId: BlockId) {
-  const trunk = 3 + Math.floor(seededNoise(x, y, z, 21) * 2)
+function addTree(add: (x: number, y: number, z: number, id: BlockId) => void, x: number, y: number, z: number, trunkId: BlockId, worldSeed: number) {
+  const trunk = 3 + Math.floor(seededNoise(worldSeed, x, y, z, 21) * 2)
   for (let i = 0; i < trunk; i += 1) add(x, y + i, z, trunkId)
   const top = y + trunk
   for (let dx = -2; dx <= 2; dx += 1) for (let dz = -2; dz <= 2; dz += 1) for (let dy = -1; dy <= 1; dy += 1) {
-    if (Math.abs(dx) + Math.abs(dz) + Math.abs(dy) < 4 && seededNoise(x, y, z, dx, dy, dz, 22) > 0.12) {
+    if (Math.abs(dx) + Math.abs(dz) + Math.abs(dy) < 4 && seededNoise(worldSeed, x, y, z, dx, dy, dz, 22) > 0.12) {
       add(x + dx, top + dy, z + dz, 'leaves')
     }
   }
@@ -81,13 +84,14 @@ function addLandmark(
   cx: number,
   cz: number,
   chunkSize: number,
+  worldSeed: number,
 ) {
   if (cx === 0 && cz === 0) return
-  const roll = hashNoise(cx * 92821 + cz * 68917 + 17)
+  const roll = seededHash(cx * 92821 + cz * 68917 + 17, worldSeed)
   if (roll > 0.28) return
-  const originX = cx * chunkSize + 2 + Math.floor(hashNoise(cx * 317 + cz * 911 + 3) * 4)
-  const originZ = cz * chunkSize + 2 + Math.floor(hashNoise(cx * 613 + cz * 271 + 5) * 4)
-  const originY = proceduralTerrainHeightAt(originX, originZ) + 1
+  const originX = cx * chunkSize + 2 + Math.floor(seededHash(cx * 317 + cz * 911 + 3, worldSeed) * 4)
+  const originZ = cz * chunkSize + 2 + Math.floor(seededHash(cx * 613 + cz * 271 + 5, worldSeed) * 4)
+  const originY = proceduralTerrainHeightAt(originX, originZ, worldSeed) + 1
   if (originY <= 4) return
   const landmark = (dx: number, dy: number, dz: number, id: BlockId) => {
     const x = originX + dx
@@ -107,10 +111,10 @@ function addLandmark(
     return
   }
   if (roll < 0.2) {
-    const clusterSize = 4 + Math.floor(hashNoise(cx * 149 + cz * 463 + 29) * 4)
+    const clusterSize = 4 + Math.floor(seededHash(cx * 149 + cz * 463 + 29, worldSeed) * 4)
     for (let i = 0; i < clusterSize; i += 1) {
-      const dx = Math.floor(hashNoise(cx * 101 + cz * 103 + i * 37) * 3) - 1
-      const dz = Math.floor(hashNoise(cx * 107 + cz * 109 + i * 41) * 3) - 1
+      const dx = Math.floor(seededHash(cx * 101 + cz * 103 + i * 37, worldSeed) * 3) - 1
+      const dz = Math.floor(seededHash(cx * 107 + cz * 109 + i * 41, worldSeed) * 3) - 1
       landmark(dx, i > 3 ? 1 : 0, dz, i === 0 ? 'glow' : 'crystal')
     }
     return
@@ -122,8 +126,13 @@ function addLandmark(
   landmark(-1, 0, 0, 'gravel')
 }
 
-function seededNoise(...values: number[]) {
-  return hashNoise(values.reduce((seed, value) => seed * 31 + value, 17))
+function seededNoise(worldSeed: number, ...values: number[]) {
+  const legacySeed = values.reduce((seed, value) => seed * 31 + value, 17)
+  return seededHash(legacySeed, worldSeed)
+}
+
+function seededHash(value: number, worldSeed: number) {
+  return hashNoise(value + (worldSeed === 0 ? 0 : worldSeed * 0.61803398875))
 }
 
 function hashNoise(seed: number) {

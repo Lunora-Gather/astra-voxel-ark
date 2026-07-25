@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
-import { blockKey, terrainNoise } from './worldMath'
+import { blockKey } from './worldMath'
 import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals, type InventorySnapshot, type ProgressionSnapshot, type SurvivalVitalsSnapshot } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
 import { sanitizePlayerState, type PlayerStateSnapshot } from './player'
@@ -19,8 +19,12 @@ import {
   ACTIVE_WORLD_SLOT_KEY,
   WORLD_SLOT_IDS,
   buildProceduralChunkPlan,
+  createWorldSeed,
+  formatWorldSeed,
+  proceduralTerrainHeightAt,
   getWorldSlotLabel,
   getWorldSlotSaveKey,
+  normalizeWorldSeed,
   ProceduralTerrainWorkerClient,
   sanitizeWorldSlotId,
   selectChunksForEviction,
@@ -205,6 +209,7 @@ app.innerHTML = `
         </section>
         <section class="menu-page" id="menu-world" role="tabpanel" data-menu-page="world" hidden>
           <div class="menu-page-heading"><strong>World & Saves</strong><small>Your deterministic world is stored locally as compact player changes.</small></div>
+          <button class="world-seed" type="button" title="Copy world seed"><span>World seed</span><strong>--------</strong><small>Tap to copy</small></button>
           <section class="session-panel" aria-label="Play sessions">
           <button class="session-option active" data-session="singleplayer"><strong>Local Expedition</strong><small class="session-current">Expedition 1 · offline</small></button>
           <button class="session-option multiplayer-entry" data-session="multiplayer" disabled><strong>Multiplayer</strong><small>Coming later</small></button>
@@ -217,7 +222,7 @@ app.innerHTML = `
           <button class="load-btn">Load</button>
           <button class="export-btn">Export</button>
           <button class="import-btn">Import</button>
-          <button class="reset-btn">Reset</button>
+          <button class="reset-btn">New World</button>
           <input class="import-input" type="file" accept="application/json,.json" />
           </div>
           <div class="save-meta" aria-live="polite">Checking local save…</div>
@@ -427,6 +432,7 @@ type SavedWorld = {
   playerPlacedBlocks?: string[]
   inventory?: InventorySnapshot
   selectedBlock?: BlockId
+  worldSeed?: number
   player?: Partial<PlayerStateSnapshot>
   worldTime?: number
   survival?: {
@@ -500,6 +506,7 @@ let collectedGlowShards = 0
 let lastSurvivalToastAt = 0
 let simulationElapsedTime = 0
 let lastAutoSaveAt = 0
+let worldSeed = createWorldSeed()
 const EXPLORATION_GOAL_SHARDS = 6
 const SHARD_WARD_PROTECTION = 0.03
 const ARK_MODULE_NAMES = ['Signal', 'Power', 'Shield', 'Chart', 'Lift', 'Core']
@@ -966,7 +973,8 @@ function rebuildOptimizedChunkMeshes(limit: number, timeBudgetMs = Number.POSITI
 }
 
 function seededNoise(...values: number[]) {
-  return hashNoise(values.reduce((seed, value) => seed * 31 + value, 17))
+  const legacySeed = values.reduce((seed, value) => seed * 31 + value, 17)
+  return hashNoise(legacySeed + (worldSeed === 0 ? 0 : worldSeed * 0.61803398875))
 }
 
 const grassPos = new THREE.Vector3()
@@ -1164,7 +1172,7 @@ function serializeWorld(): SavedWorld {
     if (id) savedBlocks.push([...key.split(',').map(Number), id] as SavedBlock)
   })
   return {
-    version: 7,
+    version: 8,
     savedAt: Date.now(),
     format: 'delta',
     blocks: savedBlocks,
@@ -1173,6 +1181,7 @@ function serializeWorld(): SavedWorld {
     playerPlacedBlocks: [...playerPlacedBlocks],
     inventory: inventory.snapshot(),
     selectedBlock: BLOCKS[selected]?.id ?? BLOCKS[0].id,
+    worldSeed,
     player: {
       position: controls.object.position.toArray() as [number, number, number],
       rotation: [controls.object.rotation.x, controls.object.rotation.y],
@@ -1220,23 +1229,24 @@ function isValidBlockKey(key: unknown): key is string {
 function getLandmarkShardKeysForChunk(cx: number, cz: number) {
   const shardKeys: string[] = []
   if (cx === 0 && cz === 0) return shardKeys
-  const roll = hashNoise(cx * 92821 + cz * 68917 + 17)
+  const seededHash = (value: number) => hashNoise(value + (worldSeed === 0 ? 0 : worldSeed * 0.61803398875))
+  const roll = seededHash(cx * 92821 + cz * 68917 + 17)
   if (roll > 0.28) return shardKeys
 
   const startX = cx * CHUNK_SIZE
   const startZ = cz * CHUNK_SIZE
-  const originX = startX + 2 + Math.floor(hashNoise(cx * 317 + cz * 911 + 3) * 4)
-  const originZ = startZ + 2 + Math.floor(hashNoise(cx * 613 + cz * 271 + 5) * 4)
+  const originX = startX + 2 + Math.floor(seededHash(cx * 317 + cz * 911 + 3) * 4)
+  const originZ = startZ + 2 + Math.floor(seededHash(cx * 613 + cz * 271 + 5) * 4)
   const originY = terrainHeightAt(originX, originZ) + 1
   if (originY <= 4) return shardKeys
 
   if (roll < 0.11) {
     shardKeys.push(blockKey(originX, originY + 2, originZ))
   } else if (roll < 0.2) {
-    const clusterSize = 4 + Math.floor(hashNoise(cx * 149 + cz * 463 + 29) * 4)
+    const clusterSize = 4 + Math.floor(seededHash(cx * 149 + cz * 463 + 29) * 4)
     for (let i = 0; i < clusterSize; i++) {
-      const dx = Math.floor(hashNoise(cx * 101 + cz * 103 + i * 37) * 3) - 1
-      const dz = Math.floor(hashNoise(cx * 107 + cz * 109 + i * 41) * 3) - 1
+      const dx = Math.floor(seededHash(cx * 101 + cz * 103 + i * 37) * 3) - 1
+      const dz = Math.floor(seededHash(cx * 107 + cz * 109 + i * 41) * 3) - 1
       const dy = i > 3 ? 1 : 0
       shardKeys.push(blockKey(originX + dx, originY + dy, originZ + dz))
     }
@@ -1264,6 +1274,7 @@ function applySavedWorld(data: SavedWorld) {
   if (!Array.isArray(data.blocks)) throw new Error('Bad save')
   const savedBlocks = data.blocks.filter(isValidSavedBlock)
   const isDeltaSave = data.format === 'delta' || data.version >= 6
+  worldSeed = normalizeWorldSeed(data.worldSeed, 0)
   const playerState = sanitizePlayerState(data.player, {
     position: [PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z],
     rotation: [0, 0],
@@ -1409,7 +1420,8 @@ function resetWorld() {
   clearWorldBlocks()
   setStarterInventory()
   localStorage.removeItem(getActiveWorldSaveKey())
-  updateSaveMeta('New world · not saved yet')
+  worldSeed = createWorldSeed()
+  updateSaveMeta()
   crystalPower = 68
   carriedCrystal = 0
   collectedGlowShards = 0
@@ -1436,7 +1448,7 @@ function updateSaveMeta(message?: string) {
   }
   const raw = localStorage.getItem(getActiveWorldSaveKey())
   if (!raw) {
-    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · New world. Autosave starts after you begin exploring.`
+    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(worldSeed)} · New world`
     return
   }
   try {
@@ -1446,7 +1458,8 @@ function updateSaveMeta(message?: string) {
       ? savedAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'time unavailable'
     const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
-    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Saved ${timeLabel} · ${exploredCount} explored chunks · v${saved.version ?? '?'}`
+    const savedSeed = normalizeWorldSeed(saved.worldSeed, 0)
+    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(savedSeed)} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
   } catch {
     saveMeta.textContent = 'Local save needs attention. Export it before resetting the world.'
   }
@@ -1662,8 +1675,7 @@ function hashNoise(seed: number) {
 }
 
 function terrainHeightAt(x: number, z: number) {
-  const distance = Math.sqrt(x * x + z * z)
-  return Math.max(1, Math.floor(terrainNoise(x, z) + 5.2 - distance * 0.012))
+  return proceduralTerrainHeightAt(x, z, worldSeed)
 }
 
 function generateTerrainChunk(cx: number, cz: number) {
@@ -1673,7 +1685,7 @@ function generateTerrainChunk(cx: number, cz: number) {
     return false
   }
   if (generatedTerrainChunks.has(key)) return false
-  return applyTerrainPlan(buildProceduralChunkPlan(cx, cz, CHUNK_SIZE))
+  return applyTerrainPlan(buildProceduralChunkPlan(cx, cz, CHUNK_SIZE, worldSeed))
 }
 
 function applyTerrainPlan(plan: ProceduralChunkPlan) {
@@ -1732,14 +1744,14 @@ function processTerrainQueue(limit = TERRAIN_CHUNKS_PER_FRAME) {
     }
     const requestEpoch = terrainGenerationEpoch
     terrainWorkerInFlight += 1
-    void terrainWorker.build(next.cx, next.cz, CHUNK_SIZE).then((plan) => {
+    void terrainWorker.build(next.cx, next.cz, CHUNK_SIZE, worldSeed).then((plan) => {
       if (requestEpoch !== terrainGenerationEpoch) return
       terrainWorkerInFlight = Math.max(0, terrainWorkerInFlight - 1)
       completedTerrainPlans.push(plan)
     }).catch(() => {
       if (requestEpoch !== terrainGenerationEpoch) return
       terrainWorkerInFlight = Math.max(0, terrainWorkerInFlight - 1)
-      completedTerrainPlans.push(buildProceduralChunkPlan(next.cx, next.cz, CHUNK_SIZE))
+      completedTerrainPlans.push(buildProceduralChunkPlan(next.cx, next.cz, CHUNK_SIZE, worldSeed))
     })
   }
 }
@@ -1839,7 +1851,7 @@ resetButton.addEventListener('click', () => {
   const now = performance.now()
   if (now > resetConfirmUntil) {
     resetConfirmUntil = now + 3000
-    showToast('Tap Reset again to confirm')
+    showToast('Tap New World again to confirm')
     return
   }
   resetConfirmUntil = 0
@@ -2189,6 +2201,7 @@ const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
 const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
+const worldSeedButton = document.querySelector<HTMLButtonElement>('.world-seed')!
 const pauseSessionLabel = document.querySelector<HTMLElement>('.pause-session-label')!
 const sessionCurrentLabel = document.querySelector<HTMLElement>('.session-current')!
 const startPrimaryButton = start.querySelector<HTMLButtonElement>('.panel > button:not(.start-multiplayer)')!
@@ -2200,6 +2213,7 @@ function updateWorldSlotUi() {
   startPrimaryButton.textContent = localStorage.getItem(getActiveWorldSaveKey())
     ? `Continue ${activeLabel}`
     : `Start ${activeLabel}`
+  worldSeedButton.querySelector('strong')!.textContent = formatWorldSeed(worldSeed)
 
   worldSlotButtons.forEach((button) => {
     const slot = sanitizeWorldSlotId(button.dataset.worldSlot)
@@ -2226,6 +2240,18 @@ function updateWorldSlotUi() {
     }
   })
 }
+
+worldSeedButton.addEventListener('click', () => {
+  const seedText = String(worldSeed)
+  if (!navigator.clipboard?.writeText) {
+    showToast(`Seed ${formatWorldSeed(worldSeed)}`)
+    return
+  }
+  void navigator.clipboard.writeText(seedText).then(
+    () => showToast('World seed copied'),
+    () => showToast(`Seed ${formatWorldSeed(worldSeed)}`),
+  )
+})
 
 function switchWorldSlot(nextSlot: WorldSlotId) {
   if (nextSlot === activeWorldSlot) return
@@ -3501,7 +3527,7 @@ function animate() {
   }
   if (worldBiomeEl && elapsedTime - lastBiomeUiAt > 0.75) {
     lastBiomeUiAt = elapsedTime
-    worldBiomeEl.textContent = `${getBiomeAt(controls.object.position.x, controls.object.position.z).name} · ${progression.getToolName()}`
+    worldBiomeEl.textContent = `${getBiomeAt(controls.object.position.x, controls.object.position.z, worldSeed).name} · ${progression.getToolName()}`
   }
 
   particleEffects.update(dt)

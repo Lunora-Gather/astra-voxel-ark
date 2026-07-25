@@ -1,4 +1,5 @@
 import type { BlockId } from '../blocks'
+import { getWorldSeedOffsets } from './WorldSeed'
 
 export type BiomeId = 'star-meadow' | 'moon-coast' | 'amber-reach' | 'crystal-highlands'
 
@@ -46,9 +47,12 @@ export const BIOMES: Record<BiomeId, BiomeDefinition> = {
   },
 }
 
-export function getBiomeAt(x: number, z: number): BiomeDefinition {
-  const continental = waveNoise(x * 0.018, z * 0.018)
-  const detail = waveNoise((x + 137) * 0.041, (z - 83) * 0.041)
+export function getBiomeAt(x: number, z: number, worldSeed = 0): BiomeDefinition {
+  const [offsetX, offsetZ] = getWorldSeedOffsets(worldSeed)
+  const sampleX = x + offsetX
+  const sampleZ = z + offsetZ
+  const continental = waveNoise(sampleX * 0.018, sampleZ * 0.018)
+  const detail = waveNoise((sampleX + 137) * 0.041, (sampleZ - 83) * 0.041)
   const value = continental * 0.72 + detail * 0.28
   if (value < 0.25) return BIOMES['moon-coast']
   if (value < 0.5) return BIOMES['star-meadow']

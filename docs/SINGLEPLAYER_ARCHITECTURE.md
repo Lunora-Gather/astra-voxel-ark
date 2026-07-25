@@ -19,17 +19,18 @@ When multiplayer work begins, add a separate gateway implementation and explicit
 
 ## Save compatibility
 
-World save version 7 stores deterministic terrain as generated chunk coordinates plus player
+World save version 8 stores deterministic terrain as generated chunk coordinates plus player
 deltas (placed and removed blocks), the player's position and view direction, selected backpack
-material, and paused-safe world time. The version 6 delta loader, version 5 snapshot loader and older compatibility defaults remain
+material, world seed, and paused-safe world time. The version 7 and 6 delta loaders, version 5 snapshot loader and older compatibility defaults remain
 available:
 
 - missing player state resumes at the Ark spawn;
+- missing world seed uses legacy seed `00000000`, preserving pre-v8 terrain exactly;
 - missing progression starts at hand tools with empty statistics;
 - missing vitals starts at full health;
 - existing blocks, inventory, survival charge and shard progress retain their old behavior.
 
-Three local expedition slots share the same v7 schema. Slot 1 intentionally keeps the original
+Three local expedition slots share the same v8 schema. Slot 1 intentionally keeps the original
 `astra-voxel-ark-world-v1` storage key, so an existing installation opens its previous world without
 a migration copy. Slots 2 and 3 use isolated keys, while the active slot is stored separately.
 

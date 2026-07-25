@@ -278,6 +278,8 @@ async function readState(win, label) {
         mineProgressVisible: visible('.mine-progress'),
         panelFullyVisible: fullyVisible(rectOf('.pause-panel')),
         saveButtonFullyVisible: fullyVisible(rectOf('.pause-menu .save-tools button')),
+        worldSeedFullyVisible: fullyVisible(rectOf('.world-seed')),
+        worldSeedLabel: document.querySelector('.world-seed strong')?.textContent?.trim() || null,
         outside: rects.filter((rect) => !fullyVisible(rect)),
         settings: {
           sensitivity: document.querySelector('.sensitivity-input')?.value,
@@ -335,6 +337,7 @@ function assertWorldMenuState(state) {
   if (!state.saveButtonFullyVisible) fail('Save buttons should fit on the World tab', state)
   if (state.worldSlotsVisible !== 3 || state.activeWorldSlots !== 1) fail('World tab should expose three slots with one active slot', state)
   if (!state.worldSlotsFullyVisible) fail('World slot controls should fit in the viewport', state)
+  if (!state.worldSeedFullyVisible || !/^[0-9A-F]{8}$/.test(state.worldSeedLabel || '')) fail('World seed control should be visible and formatted', state)
 }
 
 function assertTouchLandscapeState(state) {
@@ -393,6 +396,7 @@ function assertSavedWorld(payload, label) {
   if (!Array.isArray(payload.player.rotation) || payload.player.rotation.length !== 2) fail(`${label}: saved world should include player rotation`, payload)
   if (typeof payload.worldTime !== 'number') fail(`${label}: saved world should include simulation time`, payload)
   if (typeof payload.selectedBlock !== 'string') fail(`${label}: saved world should include selected material`, payload)
+  if (typeof payload.worldSeed !== 'number') fail(`${label}: saved world should include a numeric world seed`, payload)
 }
 
 async function smokeSaveLoad(win, scenario) {
@@ -400,15 +404,20 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.save-btn')
   const saved = await readSavedWorld(win)
   assertSavedWorld(saved, `${scenario.label}:save`)
+  if (saved.worldSeed === 0) fail('A newly created world should receive a non-legacy seed', { saved })
   await click(win, '.reset-btn')
   await click(win, '.reset-btn')
   const cleared = await readSavedWorld(win)
   if (cleared) fail('Reset should remove the local saved world', { cleared })
+  const rerolledWorld = await readState(win, `${scenario.label}:rerolled-world`)
+  const previousSeedLabel = saved.worldSeed.toString(16).toUpperCase().padStart(8, '0')
+  if (rerolledWorld.worldSeedLabel === previousSeedLabel) fail('New World should reroll the active world seed', { previousSeedLabel, rerolledWorld })
   const resumeState = {
     ...saved,
     player: { position: [2, 15, 12], rotation: [0.2, 0.4] },
     worldTime: 42,
   }
+  delete resumeState.worldSeed
   await writeSavedWorld(win, resumeState)
   await click(win, '.load-btn')
   await new Promise((resolve) => setTimeout(resolve, 220))
@@ -425,6 +434,7 @@ async function smokeSaveLoad(win, scenario) {
   if (loaded.worldTime !== resumeState.worldTime) {
     fail('Paused world should not advance simulation time', { expected: resumeState.worldTime, actual: loaded.worldTime })
   }
+  if (loaded.worldSeed !== 0) fail('Pre-v8 saves without a seed should retain legacy terrain seed 0', { loaded })
   await waitForLoad(win, scenarioUrl(scenario, 'saved-boot'))
   const booted = await readSavedWorld(win)
   assertSavedWorld(booted, `${scenario.label}:saved-boot`)
@@ -441,6 +451,9 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.save-btn')
   const savedSecondSlot = await readStorageJson(win, secondSaveKey)
   assertSavedWorld(savedSecondSlot, `${scenario.label}:slot-2-save`)
+  if (savedSecondSlot.worldSeed === 0 || savedSecondSlot.worldSeed === loaded.worldSeed) {
+    fail('A fresh second slot should own an independent non-legacy world seed', { first: loaded.worldSeed, second: savedSecondSlot.worldSeed })
+  }
   await click(win, '.world-slot[data-world-slot="1"]')
   const restoredFirstSlot = await readSavedWorld(win)
   assertSavedWorld(restoredFirstSlot, `${scenario.label}:slot-1-return`)

@@ -177,6 +177,10 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .menu-page-heading { display: grid; gap: 3px; margin: 1px 2px 12px; }
 .menu-page-heading strong { font-size: 14px; }
 .menu-page-heading small { color: rgba(255,255,255,.55); font-size: 10px; line-height: 1.45; }
+.world-seed { pointer-events: auto; display: flex; align-items: center; width: 100%; gap: 10px; padding: 9px 11px; color: rgba(255,255,255,.76); border: 1px solid rgba(169,239,255,.14); border-radius: 12px; background: rgba(115,214,255,.055); cursor: pointer; }
+.world-seed span { font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.world-seed strong { margin-left: auto; color: #fff3a8; font: 900 11px/1 monospace; letter-spacing: .08em; }
+.world-seed small { color: rgba(255,255,255,.4); font-size: 8px; }
 .settings-grid { display: grid; gap: 12px; }
 .setting-row { display: grid; grid-template-columns: minmax(130px, 1fr) auto; align-items: center; gap: 8px 12px; padding: 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07); }
 .setting-row > span, .setting-check span { font-size: 12px; font-weight: 900; color: rgba(255,255,255,.9); }

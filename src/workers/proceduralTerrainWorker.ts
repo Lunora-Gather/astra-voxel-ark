@@ -6,6 +6,7 @@ export type ProceduralTerrainRequest = {
   cx: number
   cz: number
   chunkSize: number
+  worldSeed: number
 }
 
 export type ProceduralTerrainResponse = {
@@ -20,7 +21,7 @@ self.onmessage = (event: MessageEvent<ProceduralTerrainRequest>) => {
   const response: ProceduralTerrainResponse = {
     id: request.id,
     type: 'procedural-chunk-built',
-    plan: buildProceduralChunkPlan(request.cx, request.cz, request.chunkSize),
+    plan: buildProceduralChunkPlan(request.cx, request.cz, request.chunkSize, request.worldSeed),
   }
   self.postMessage(response)
 }

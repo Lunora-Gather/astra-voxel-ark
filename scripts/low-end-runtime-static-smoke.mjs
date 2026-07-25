@@ -14,7 +14,10 @@ const expectations = [
   [main.includes('evictDistantTerrainChunks'), 'chunk eviction integration'],
   [main.includes('IdleTaskQueue'), 'idle autosave integration'],
   [terrain.includes('buildProceduralChunkPlan'), 'deterministic procedural plan'],
+  [terrain.includes('worldSeed'), 'seeded procedural terrain'],
   [worker.includes('procedural-chunk-built'), 'worker response contract'],
+  [worker.includes('request.worldSeed'), 'worker world seed propagation'],
+  [main.includes('createWorldSeed'), 'world seed lifecycle'],
 ]
 
 const missing = expectations.filter(([present]) => !present).map(([, label]) => label)
