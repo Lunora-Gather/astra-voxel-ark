@@ -362,7 +362,10 @@ const sceneFog = new THREE.FogExp2(
 scene.background = skyColor
 scene.fog = sceneFog
 
-const camera = new THREE.PerspectiveCamera(startupSettings.fov, window.innerWidth / window.innerHeight, 0.1, 600)
+// Fog fully hides geometry long before 600 units; a tier-sized far plane tightens
+// frustum culling and improves depth precision on low-end GPUs.
+const cameraFarPlane = runtimeProfile.tier === 'ultra-low' ? 220 : lowPowerMode ? 280 : 420
+const camera = new THREE.PerspectiveCamera(startupSettings.fov, window.innerWidth / window.innerHeight, 0.1, cameraFarPlane)
 camera.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
 camera.rotation.order = 'YXZ'
 camera.rotation.set(PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw, 0)
@@ -380,6 +383,9 @@ function applyRenderQuality() {
 applyRenderQuality()
 renderer.shadowMap.enabled = startupSettings.quality !== 'eco' && startupSettings.quality !== 'low' && !lowPowerMode
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
+// The world is static between edits and the sun crawls, so re-render shadows on a cadence instead of every frame.
+renderer.shadowMap.autoUpdate = false
+renderer.shadowMap.needsUpdate = true
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.08
 app.appendChild(renderer.domElement)
@@ -426,8 +432,6 @@ moon.position.set(-35, 42, -25)
 scene.add(moon)
 
 const cubeGeometry = new THREE.BoxGeometry(1, 1, 1)
-const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry)
-const edgeMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.055 })
 const materials = createBlockMaterials()
 const waterMaterialRaw = materials.get('water')
 const waterMaterial = (Array.isArray(waterMaterialRaw) ? waterMaterialRaw[0] : waterMaterialRaw) as THREE.MeshStandardMaterial
@@ -456,6 +460,8 @@ if (waterMaterial) {
 }
 
 const world = new THREE.Group()
+// World-space content never moves as a group; skip per-frame matrix recomposition.
+world.matrixAutoUpdate = false
 scene.add(world)
 type InstancedBlockRef = {
   kind: 'instanced'
@@ -469,17 +475,19 @@ type InstancedBlockRef = {
 type BlockVisual = THREE.Mesh | InstancedBlockRef | undefined
 const blocks = new Map<PackedBlockKey, BlockVisual>()
 const blockData = new Map<PackedBlockKey, BlockId>()
-const INITIAL_INSTANCED_MESH_CAPACITY = 15000
+// Only non-greedy blocks (water, leaves) ever reach the instanced path, so start small and grow on demand.
+const INITIAL_INSTANCED_MESH_CAPACITY = 2048
 const instancedBlockMeshes = new Map<BlockId, THREE.InstancedMesh>()
 const instancedBlockKeys = new Map<BlockId, PackedBlockKey[]>()
 const instancedBlockCapacities = new Map<BlockId, number>()
+const instancedBoundsDirtyIds = new Set<BlockId>()
 const instancedMatrix = new THREE.Matrix4()
 const hiddenInstanceMatrix = new THREE.Matrix4().makeTranslation(0, -100000, 0)
 const glowLightBudget = new PointLightBudgetController<PackedBlockKey>()
 let grassBladeMesh: THREE.InstancedMesh | null = null
 const grassBladeKeys: PackedBlockKey[] = []
-let needUpdateBounds = false
-const INITIAL_GRASS_CAPACITY = 12000
+const grassTuftIndicesByAnchor = new Map<PackedBlockKey, number[]>()
+let grassBoundsDirty = false
 let activeWorldSlot = sanitizeWorldSlotId(localStorage.getItem(ACTIVE_WORLD_SLOT_KEY))
 localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
 const worldSlotNameStore = new WorldSlotNameStore()
@@ -525,34 +533,6 @@ function adaptiveBudget(base: number, minimum: number) {
   return Math.max(guardedMinimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale * guardScale))
 }
 type BlockSource = 'terrain' | 'player' | 'save'
-type ChunkBucket = {
-  id: BlockId
-  material: THREE.Material | THREE.Material[]
-  blockKeys: Set<PackedBlockKey>
-}
-type ChunkMeshBucketStats = {
-  blockCount: number
-  visibleBlockCount: number
-  visibleFaceCount: number
-}
-type ChunkVisibleFaceSummary = {
-  revision: number
-  solidBlockCount: number
-  visibleSolidBlockCount: number
-  visibleFaceCount: number
-  specialBlockCount: number
-  buckets: Map<BlockId, ChunkMeshBucketStats>
-}
-type ChunkMetadata = {
-  key: string
-  x: number
-  y: number
-  z: number
-  buckets: Map<BlockId, ChunkBucket>
-  visibleFaceSummary: ChunkVisibleFaceSummary
-}
-const chunks = new Map<string, ChunkMetadata>()
-const dirtyChunkKeys = new Set<string>()
 const generatedTerrainChunks = new Set<string>()
 const discoveredTerrainChunks = new Set<string>()
 const queuedTerrainChunks = new Set<string>()
@@ -650,19 +630,19 @@ grassBladeMaterial.onBeforeCompile = (shader) => {
     `
   )
 }
-const outlinedBlockIds = new Set<BlockId>(['wood', 'leaves', 'crystal', 'glow', 'brick', 'obsidian', 'copper', 'gold'])
-const enableBlockOutlines = !lowPowerMode
 const enableBlockShadows = !lowPowerMode
 const MAX_GLOW_LIGHTS = Math.max(runtimeLimits.activePointLights * 3, runtimeLimits.activePointLights)
 const MAX_ACTIVE_GLOW_LIGHTS = runtimeLimits.activePointLights
 
 const grassBladeGeo = grassBladeGeometry.clone()
 grassBladeGeo.translate(0, 0.29, 0)
-grassBladeMesh = new THREE.InstancedMesh(grassBladeGeo, grassBladeMaterial, INITIAL_GRASS_CAPACITY)
+// The tier budget is a hard cap in addGrassTuft, so the buffer never needs to grow past it.
+grassBladeMesh = new THREE.InstancedMesh(grassBladeGeo, grassBladeMaterial, Math.max(3, GRASS_ANIMATION_BUDGET * 3))
 grassBladeMesh.count = 0
 grassBladeMesh.castShadow = false
 grassBladeMesh.receiveShadow = enableBlockShadows
 grassBladeMesh.frustumCulled = true
+grassBladeMesh.matrixAutoUpdate = false
 world.add(grassBladeMesh)
 let blockMutationVersion = 0
 let cosmeticEffectsReduced = false
@@ -687,38 +667,26 @@ const SOLID_NEIGHBOR_OFFSETS = [
   [0, 0, 1],
   [0, 0, -1],
 ] as const
-const EMPTY_CHUNK_VISIBLE_FACE_SUMMARY = {
-  revision: 0,
-  solidBlockCount: 0,
-  visibleSolidBlockCount: 0,
-  visibleFaceCount: 0,
-  specialBlockCount: 0,
-  buckets: new Map<BlockId, ChunkMeshBucketStats>(),
-} satisfies ChunkVisibleFaceSummary
 
-function removeArrayItemAtUnordered<T>(array: T[], index: number) {
-  const last = array.pop()
-  if (index < array.length && last !== undefined) array[index] = last
-}
+const instancedShadowCasterIds = new Set<BlockId>(['wood', 'leaves', 'crystal', 'glow'])
 
-function removeArrayItemUnordered<T>(array: T[], item: T) {
-  const index = array.indexOf(item)
-  if (index >= 0) removeArrayItemAtUnordered(array, index)
-}
-
-BLOCKS.forEach(({ id }) => {
-  const instancedMesh = new THREE.InstancedMesh(cubeGeometry, materials.get(id)!, INITIAL_INSTANCED_MESH_CAPACITY)
+function getOrCreateInstancedBlockMesh(id: BlockId) {
+  let instancedMesh = instancedBlockMeshes.get(id)
+  if (instancedMesh) return instancedMesh
+  instancedMesh = new THREE.InstancedMesh(cubeGeometry, materials.get(id)!, INITIAL_INSTANCED_MESH_CAPACITY)
   instancedMesh.count = 0
-  instancedMesh.castShadow = enableBlockShadows && (id === 'wood' || id === 'leaves' || id === 'crystal' || id === 'glow')
+  instancedMesh.castShadow = enableBlockShadows && instancedShadowCasterIds.has(id)
   instancedMesh.receiveShadow = enableBlockShadows
   instancedMesh.frustumCulled = true
+  instancedMesh.matrixAutoUpdate = false
   instancedMesh.userData.block = true
   instancedMesh.userData.id = id
   instancedBlockMeshes.set(id, instancedMesh)
   instancedBlockKeys.set(id, [])
   instancedBlockCapacities.set(id, INITIAL_INSTANCED_MESH_CAPACITY)
   world.add(instancedMesh)
-})
+  return instancedMesh
+}
 
 function isInstancedBlockRef(visual: BlockVisual | undefined): visual is InstancedBlockRef {
   return Boolean(visual && !(visual instanceof THREE.Mesh) && visual.kind === 'instanced')
@@ -729,8 +697,14 @@ function isOpaqueBlockId(id: BlockId | undefined): boolean {
   return Boolean(id) && !TRANSPARENT_BLOCK_IDS.has(id as BlockId)
 }
 
+// Multi-face blocks (grass, wood, spruce, birch) mesh greedily too; the builder splits
+// their quads by face slot so the renderer can keep the per-face materials.
+const multiFaceBlockIds = new Set<BlockId>(
+  BLOCKS.filter(({ id }) => Array.isArray(materials.get(id))).map(({ id }) => id),
+)
+
 function usesChunkMesh(id: BlockId) {
-  return isGreedyMeshEligible(id) && !Array.isArray(materials.get(id))
+  return isGreedyMeshEligible(id)
 }
 
 function hasExposedFace(x: number, y: number, z: number, id: BlockId) {
@@ -744,22 +718,6 @@ function hasExposedFace(x: number, y: number, z: number, id: BlockId) {
       return neighborId !== id && !isOpaqueBlockId(neighborId)
     }
   })
-}
-
-function countExposedFaces(x: number, y: number, z: number, id: BlockId) {
-  const isOpaque = isOpaqueBlockId(id)
-  let exposedFaces = 0
-  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => {
-    const neighborId = blockData.get(packBlockKey(x + dx, y + dy, z + dz))
-    if (!neighborId) {
-      exposedFaces++
-    } else if (isOpaque) {
-      if (!isOpaqueBlockId(neighborId)) exposedFaces++
-    } else {
-      if (neighborId !== id && !isOpaqueBlockId(neighborId)) exposedFaces++
-    }
-  })
-  return exposedFaces
 }
 
 function removeGlowLightAt(k: PackedBlockKey) {
@@ -845,9 +803,9 @@ function withBlockBatch<T>(run: () => T) {
 }
 
 function addInstancedBlockVisual(k: PackedBlockKey, x: number, y: number, z: number, id: BlockId) {
-  let instancedMesh = instancedBlockMeshes.get(id)
+  let instancedMesh = getOrCreateInstancedBlockMesh(id)
   const keysForType = instancedBlockKeys.get(id)
-  if (!instancedMesh || !keysForType) return undefined
+  if (!keysForType) return undefined
   if (instancedMesh.count >= (instancedBlockCapacities.get(id) ?? INITIAL_INSTANCED_MESH_CAPACITY)) {
     instancedMesh = growInstancedBlockMesh(id, instancedMesh, keysForType)
   }
@@ -857,8 +815,7 @@ function addInstancedBlockVisual(k: PackedBlockKey, x: number, y: number, z: num
   instancedMesh.setMatrixAt(index, instancedMatrix)
   instancedMesh.count = index + 1
   instancedMesh.instanceMatrix.needsUpdate = true
-  instancedMesh.boundingSphere = null
-  needUpdateBounds = true
+  instancedBoundsDirtyIds.add(id)
   keysForType[index] = k
   return { kind: 'instanced', id, mesh: instancedMesh, index, x, y, z } satisfies InstancedBlockRef
 }
@@ -871,13 +828,13 @@ function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysF
   newMesh.castShadow = oldMesh.castShadow
   newMesh.receiveShadow = oldMesh.receiveShadow
   newMesh.frustumCulled = true
+  newMesh.matrixAutoUpdate = false
   newMesh.userData.block = true
   newMesh.userData.id = id
 
-  for (let index = 0; index < oldMesh.count; index++) {
-    oldMesh.getMatrixAt(index, instancedMatrix)
-    newMesh.setMatrixAt(index, instancedMatrix)
-  }
+  ;(newMesh.instanceMatrix.array as Float32Array).set(
+    (oldMesh.instanceMatrix.array as Float32Array).subarray(0, oldMesh.count * 16),
+  )
   newMesh.instanceMatrix.needsUpdate = true
 
   world.remove(oldMesh)
@@ -910,8 +867,7 @@ function removeInstancedBlockVisual(k: PackedBlockKey, ref: InstancedBlockRef) {
   ref.mesh.count = Math.max(0, lastIndex)
   keysForType.pop()
   ref.mesh.instanceMatrix.needsUpdate = true
-  ref.mesh.boundingSphere = null
-  needUpdateBounds = true
+  instancedBoundsDirtyIds.add(ref.id)
 }
 
 function getBlockPositionFromKey(key: PackedBlockKey, target: THREE.Vector3) {
@@ -922,119 +878,12 @@ function chunkCoord(value: number) {
   return Math.floor(value / CHUNK_SIZE)
 }
 
-function chunkKey(cx: number, cy: number, cz: number) {
-  return `${cx},${cy},${cz}`
-}
-
-function chunkKeyForBlock(x: number, y: number, z: number) {
-  return chunkKey(chunkCoord(x), chunkCoord(y), chunkCoord(z))
-}
-
 function terrainChunkKey(cx: number, cz: number) {
   return `${cx},${cz}`
 }
 
 function terrainChunkKeyForBlock(x: number, z: number) {
   return terrainChunkKey(chunkCoord(x), chunkCoord(z))
-}
-
-function markChunkDirty(key: string) {
-  dirtyChunkKeys.add(key)
-}
-
-function markBlockAndNeighborChunksDirty(x: number, y: number, z: number) {
-  markChunkDirty(chunkKeyForBlock(x, y, z))
-  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => markChunkDirty(chunkKeyForBlock(x + dx, y + dy, z + dz)))
-}
-
-function getOrCreateChunk(x: number, y: number, z: number) {
-  const cx = chunkCoord(x)
-  const cy = chunkCoord(y)
-  const cz = chunkCoord(z)
-  const key = chunkKey(cx, cy, cz)
-  let chunk = chunks.get(key)
-  if (!chunk) {
-    chunk = { key, x: cx, y: cy, z: cz, buckets: new Map(), visibleFaceSummary: { ...EMPTY_CHUNK_VISIBLE_FACE_SUMMARY, buckets: new Map() } }
-    chunks.set(key, chunk)
-  }
-  return chunk
-}
-
-function registerBlockInChunk(x: number, y: number, z: number, id: BlockId, key: PackedBlockKey) {
-  const chunk = getOrCreateChunk(x, y, z)
-  let bucket = chunk.buckets.get(id)
-  if (!bucket) {
-    bucket = { id, material: materials.get(id)!, blockKeys: new Set() }
-    chunk.buckets.set(id, bucket)
-  }
-  bucket.blockKeys.add(key)
-  markBlockAndNeighborChunksDirty(x, y, z)
-}
-
-function unregisterBlockFromChunk(x: number, y: number, z: number, id: BlockId, key: PackedBlockKey) {
-  const cKey = chunkKeyForBlock(x, y, z)
-  const chunk = chunks.get(cKey)
-  if (!chunk) {
-    markChunkDirty(cKey)
-    return
-  }
-
-  const bucket = chunk.buckets.get(id)
-  if (bucket) {
-    bucket.blockKeys.delete(key)
-    if (bucket.blockKeys.size === 0) chunk.buckets.delete(id)
-  }
-  if (chunk.buckets.size === 0) chunks.delete(cKey)
-  markBlockAndNeighborChunksDirty(x, y, z)
-}
-
-function rebuildChunkVisibleFaceSummary(chunk: ChunkMetadata) {
-  const bucketStats = new Map<BlockId, ChunkMeshBucketStats>()
-  let solidBlockCount = 0
-  let visibleSolidBlockCount = 0
-  let visibleFaceCount = 0
-  let specialBlockCount = 0
-
-  chunk.buckets.forEach((bucket, id) => {
-    const stats: ChunkMeshBucketStats = {
-      blockCount: bucket.blockKeys.size,
-      visibleBlockCount: 0,
-      visibleFaceCount: 0,
-    }
-
-    bucket.blockKeys.forEach((key) => {
-      const { x, y, z } = unpackBlockKeyInto(key, decodedBlockPosition)
-      const exposedFaces = countExposedFaces(x, y, z, id)
-      solidBlockCount++
-      if (exposedFaces > 0) {
-        visibleSolidBlockCount++
-        visibleFaceCount += exposedFaces
-        stats.visibleBlockCount++
-        stats.visibleFaceCount += exposedFaces
-      }
-    })
-    bucketStats.set(id, stats)
-  })
-
-  chunk.visibleFaceSummary = {
-    revision: blockMutationVersion,
-    solidBlockCount,
-    visibleSolidBlockCount,
-    visibleFaceCount,
-    specialBlockCount,
-    buckets: bucketStats,
-  }
-}
-
-function rebuildDirtyChunkVisibleFaceSummaries(limit = Number.POSITIVE_INFINITY) {
-  let rebuilt = 0
-  for (const key of dirtyChunkKeys) {
-    const chunk = chunks.get(key)
-    if (chunk) rebuildChunkVisibleFaceSummary(chunk)
-    dirtyChunkKeys.delete(key)
-    rebuilt++
-    if (rebuilt >= limit) break
-  }
 }
 
 const chunkMeshTriangles = new Map<string, number>()
@@ -1060,7 +909,7 @@ function rebuildOptimizedChunkMeshes(limit: number, timeBudgetMs = Number.POSITI
       chunkMeshRenderer.removeChunk(chunk.key)
       chunkMeshTriangles.delete(chunk.key)
     } else {
-      const meshData = buildChunkMeshData(chunkMeshBlockBuffer, lookupOptimizedOpaqueBlock, { includeNonGreedyBlocks: true })
+      const meshData = buildChunkMeshData(chunkMeshBlockBuffer, lookupOptimizedOpaqueBlock, { includeNonGreedyBlocks: true, multiFaceIds: multiFaceBlockIds })
       chunkMeshRenderer.upsertChunk(chunk.key, meshData.geometryGroups)
       chunkMeshTriangles.set(chunk.key, meshData.stats.triangleCount)
     }
@@ -1081,90 +930,74 @@ const grassEuler = new THREE.Euler()
 const grassMatrix = new THREE.Matrix4()
 const grassColor = new THREE.Color()
 
-function growGrassBladeMesh() {
-  if (!grassBladeMesh) return
-  const oldMesh = grassBladeMesh
-  const oldCapacity = oldMesh.instanceMatrix.array.length / 16
-  const newCapacity = oldCapacity * 2
-  const newMesh = new THREE.InstancedMesh(oldMesh.geometry, oldMesh.material, newCapacity)
-  newMesh.count = oldMesh.count
-  newMesh.castShadow = oldMesh.castShadow
-  newMesh.receiveShadow = oldMesh.receiveShadow
-  newMesh.frustumCulled = oldMesh.frustumCulled
-  
-  for (let i = 0; i < oldMesh.count; i++) {
-    oldMesh.getMatrixAt(i, grassMatrix)
-    newMesh.setMatrixAt(i, grassMatrix)
-    if (oldMesh.instanceColor) {
-      oldMesh.getColorAt(i, grassColor)
-      newMesh.setColorAt(i, grassColor)
-    }
-  }
-  newMesh.instanceMatrix.needsUpdate = true
-  if (newMesh.instanceColor) newMesh.instanceColor.needsUpdate = true
-  world.remove(oldMesh)
-  world.add(newMesh)
-  grassBladeMesh = newMesh
-}
-
 function addGrassTuft(x: number, y: number, z: number, variant: FloraVariantId = 0) {
   if (!grassBladeMesh) return
   if (grassBladeMesh.count + 3 > GRASS_ANIMATION_BUDGET * 3) return
   const anchorKey = packBlockKey(x, y, z)
+  let tuftIndices = grassTuftIndicesByAnchor.get(anchorKey)
+  if (!tuftIndices) {
+    tuftIndices = []
+    grassTuftIndicesByAnchor.set(anchorKey, tuftIndices)
+  }
   const flora = getFloraDefinition(variant)
   const baseX = x + (seededNoise(x, y, z, 1) - 0.5) * 0.35
   const baseY = y + 0.56
   const baseZ = z + (seededNoise(x, y, z, 2) - 0.5) * 0.35
-  
-  const capacity = grassBladeMesh.instanceMatrix.array.length / 16
+
   for (let i = 0; i < 3; i++) {
-    let index = grassBladeMesh.count
-    if (index >= capacity) {
-      growGrassBladeMesh()
-    }
-    index = grassBladeMesh.count
-    
+    const index = grassBladeMesh.count
+
     const rotY = (Math.PI / 3) * i + seededNoise(x, y, z, i, 4) * 0.22
     const scale = 0.72 + seededNoise(x, y, z, i, 5) * 0.35
-    
+
     grassPos.set(baseX, baseY, baseZ)
     grassEuler.set(0, rotY, 0)
     grassRot.setFromEuler(grassEuler)
     grassScale.set(scale * flora.widthScale, scale * flora.heightScale, scale * flora.widthScale)
     grassMatrix.compose(grassPos, grassRot, grassScale)
-    
+
     grassBladeMesh.setMatrixAt(index, grassMatrix)
     grassBladeMesh.setColorAt(index, grassColor.setHex(flora.color))
     grassBladeMesh.count = index + 1
     grassBladeKeys[index] = anchorKey
+    tuftIndices.push(index)
   }
   grassBladeMesh.instanceMatrix.needsUpdate = true
   if (grassBladeMesh.instanceColor) grassBladeMesh.instanceColor.needsUpdate = true
-  needUpdateBounds = true
+  grassBoundsDirty = true
 }
 
 function removeGrassTuftsAt(anchorKey: PackedBlockKey) {
   if (!grassBladeMesh) return
-  for (let i = grassBladeMesh.count - 1; i >= 0; i--) {
-    if (grassBladeKeys[i] === anchorKey) {
-      const lastIndex = grassBladeMesh.count - 1
-      if (i !== lastIndex) {
-        grassBladeMesh.getMatrixAt(lastIndex, grassMatrix)
-        grassBladeMesh.setMatrixAt(i, grassMatrix)
-        if (grassBladeMesh.instanceColor) {
-          grassBladeMesh.getColorAt(lastIndex, grassColor)
-          grassBladeMesh.setColorAt(i, grassColor)
-        }
-        grassBladeKeys[i] = grassBladeKeys[lastIndex]
+  const tuftIndices = grassTuftIndicesByAnchor.get(anchorKey)
+  if (!tuftIndices || tuftIndices.length === 0) return
+  // Highest-first keeps every pending index valid while tail blades swap downward.
+  tuftIndices.sort((a, b) => b - a)
+  for (const index of tuftIndices) {
+    const lastIndex = grassBladeMesh.count - 1
+    if (index !== lastIndex) {
+      grassBladeMesh.getMatrixAt(lastIndex, grassMatrix)
+      grassBladeMesh.setMatrixAt(index, grassMatrix)
+      if (grassBladeMesh.instanceColor) {
+        grassBladeMesh.getColorAt(lastIndex, grassColor)
+        grassBladeMesh.setColorAt(index, grassColor)
       }
-      grassBladeMesh.setMatrixAt(lastIndex, hiddenInstanceMatrix)
-      grassBladeMesh.count = lastIndex
-      grassBladeKeys.pop()
+      const movedAnchor = grassBladeKeys[lastIndex]
+      grassBladeKeys[index] = movedAnchor
+      const movedIndices = grassTuftIndicesByAnchor.get(movedAnchor)
+      if (movedIndices) {
+        const movedPosition = movedIndices.indexOf(lastIndex)
+        if (movedPosition >= 0) movedIndices[movedPosition] = index
+      }
     }
+    grassBladeMesh.setMatrixAt(lastIndex, hiddenInstanceMatrix)
+    grassBladeMesh.count = lastIndex
+    grassBladeKeys.pop()
   }
+  grassTuftIndicesByAnchor.delete(anchorKey)
   grassBladeMesh.instanceMatrix.needsUpdate = true
   if (grassBladeMesh.instanceColor) grassBladeMesh.instanceColor.needsUpdate = true
-  needUpdateBounds = true
+  grassBoundsDirty = true
 }
 
 function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSource = 'terrain') {
@@ -1179,7 +1012,6 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
   blockMutationVersion++
   blockData.set(k, id)
   optimizedChunks.setBlock({ x, y, z, id })
-  registerBlockInChunk(x, y, z, id, k)
   if (blockBatchDepth > 0) {
     markBatchedBlockAndNeighbors(x, y, z)
     return
@@ -1198,7 +1030,6 @@ function removeBlockAtKey(k: PackedBlockKey, source: 'player' | 'system' = 'syst
     if (playerPlacedBlocks.has(k)) playerPlacedBlocks.delete(k)
     else removedTerrainBlocks.add(k)
   }
-  const id = blockData.get(k) ?? (isInstancedBlockRef(visual) ? visual.id : undefined)
   removeGlowLightAt(k)
   if (isInstancedBlockRef(visual)) {
     removeInstancedBlockVisual(k, visual)
@@ -1208,7 +1039,6 @@ function removeBlockAtKey(k: PackedBlockKey, source: 'player' | 'system' = 'syst
   blockMutationVersion++
   blockData.delete(k)
   optimizedChunks.deleteBlock(x, y, z)
-  if (id) unregisterBlockFromChunk(x, y, z, id, k)
   if (blockBatchDepth > 0) markBatchedBlockAndNeighbors(x, y, z)
   else refreshBlockAndNeighbors(x, y, z)
 }
@@ -1255,14 +1085,16 @@ function clearWorldBlocks() {
     mesh.boundingSphere = null
   })
   instancedBlockKeys.forEach((keysForType) => { keysForType.length = 0 })
+  instancedBoundsDirtyIds.clear()
   glowLightBudget.clear()
-  chunks.clear()
   if (grassBladeMesh) {
     grassBladeMesh.count = 0
     grassBladeMesh.instanceMatrix.needsUpdate = true
     grassBladeMesh.boundingSphere = null
   }
   grassBladeKeys.length = 0
+  grassTuftIndicesByAnchor.clear()
+  grassBoundsDirty = false
   terrainGenerationEpoch += 1
   completedTerrainPlans.length = 0
   terrainWorkerInFlight = 0
@@ -2053,6 +1885,8 @@ const platform = new THREE.Mesh(
 platform.position.y = -3.2
 platform.rotation.x = -Math.PI / 2
 platform.renderOrder = -1
+platform.updateMatrix()
+platform.matrixAutoUpdate = false
 scene.add(platform)
 
 const maxStars = runtimeProfile.tier === 'ultra-low' ? 20 : lowPowerMode ? 40 : runtimeProfile.tier === 'standard' ? 160 : 260
@@ -2066,6 +1900,7 @@ const starBufferGeo = new THREE.BufferGeometry()
 starBufferGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
 const starPointMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, sizeAttenuation: true })
 const stars = new THREE.Points(starBufferGeo, starPointMat)
+stars.matrixAutoUpdate = false
 scene.add(stars)
 
 const maxClouds = runtimeProfile.tier === 'ultra-low' ? 2 : lowPowerMode ? 3 : runtimeProfile.tier === 'standard' ? 12 : 18
@@ -2875,6 +2710,7 @@ function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
 
 function syncShadowBudget() {
   const enabled = qualityPreset !== 'eco' && qualityPreset !== 'low' && !lowPowerMode && performanceGuard.budget.shadows
+  if (enabled && !renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true
   renderer.shadowMap.enabled = enabled
   sun.castShadow = enabled
 }
@@ -3200,6 +3036,7 @@ window.addEventListener('blur', () => {
   cancelMining()
 })
 
+const crosshairEl = document.querySelector<HTMLDivElement>('.crosshair')
 const placeNormal = new THREE.Vector3()
 const placePosition = new THREE.Vector3()
 const buildFacing = new THREE.Vector3()
@@ -3239,8 +3076,8 @@ function breakTargetBlock(expectedKey?: PackedBlockKey) {
     createBreakParticles(hitBlockPosition, blockId)
     playGameSound('break', 0.3)
     // Crosshair flash on break hit
-    const crosshair = document.querySelector<HTMLDivElement>('.crosshair')!
-    if (crosshair) {
+    if (crosshairEl) {
+      const crosshair = crosshairEl
       const originalFilter = crosshair.style.filter
       crosshair.style.filter = 'drop-shadow(0 0 20px rgba(255,255,255,1)) brightness(1.8)'
       setTimeout(() => {
@@ -3619,9 +3456,8 @@ function cancelMining() {
   mineRing.style.setProperty('--progress', '0deg')
 }
 
-function updateMining() {
+function updateMining(hit: ReturnType<typeof pickBlock>) {
   if (!miningSession.active) return
-  const hit = pickBlock()
   const currentKey = hit && hit.distance <= RAYCAST_REACH ? packBlockKey(hit.x, hit.y, hit.z) : null
   const update = miningSession.update(performance.now(), currentKey)
   if (update.status === 'cancelled') {
@@ -3964,17 +3800,24 @@ function cullPointLights(elapsedTime: number) {
 }
 
 function updateInstancedBounds() {
-  if (!needUpdateBounds) return
-  needUpdateBounds = false
-  instancedBlockMeshes.forEach((mesh) => {
-    if (mesh.count > 0) {
-      mesh.computeBoundingBox()
-      mesh.computeBoundingSphere()
+  if (instancedBoundsDirtyIds.size > 0) {
+    instancedBoundsDirtyIds.forEach((id) => {
+      const mesh = instancedBlockMeshes.get(id)
+      if (mesh && mesh.count > 0) {
+        mesh.computeBoundingBox()
+        mesh.computeBoundingSphere()
+      } else if (mesh) {
+        mesh.boundingSphere = null
+      }
+    })
+    instancedBoundsDirtyIds.clear()
+  }
+  if (grassBoundsDirty) {
+    grassBoundsDirty = false
+    if (grassBladeMesh && grassBladeMesh.count > 0) {
+      grassBladeMesh.computeBoundingBox()
+      grassBladeMesh.computeBoundingSphere()
     }
-  })
-  if (grassBladeMesh && grassBladeMesh.count > 0) {
-    grassBladeMesh.computeBoundingBox()
-    grassBladeMesh.computeBoundingSphere()
   }
 }
 
@@ -4016,13 +3859,13 @@ function updateFrameStats(dt: number, elapsedTime: number) {
     blocksEl.textContent = String(blocks.size)
   }
   if (chunksEl) {
-    chunksEl.textContent = String(chunks.size)
+    chunksEl.textContent = String(optimizedChunks.chunkCount)
   }
   if (terrainChunksEl) {
     terrainChunksEl.textContent = `${generatedTerrainChunks.size}/${discoveredTerrainChunks.size}`
   }
   if (dirtyEl) {
-    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${dirtyChunkKeys.size}/${optimizedChunks.dirtyChunkCount}`
+    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${optimizedChunks.dirtyChunkCount}`
   }
   if (callsEl) callsEl.textContent = formatPerformanceNumber(renderer.info.render.calls)
   if (trianglesEl) trianglesEl.textContent = formatPerformanceNumber(renderer.info.render.triangles)
@@ -4040,6 +3883,21 @@ function formatPerformanceNumber(value: number) {
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes
 let lastIdleFrameAt = -Infinity
 let lastSaveActivityRefreshAt = -Infinity
+const SHADOW_REFRESH_INTERVAL_SECONDS = 0.35
+let lastShadowRefreshAtSeconds = -Infinity
+let lastShadowMutationVersion = -1
+
+function refreshShadowMapIfNeeded(nowSeconds: number) {
+  if (!renderer.shadowMap.enabled) return
+  if (
+    nowSeconds - lastShadowRefreshAtSeconds >= SHADOW_REFRESH_INTERVAL_SECONDS ||
+    blockMutationVersion !== lastShadowMutationVersion
+  ) {
+    renderer.shadowMap.needsUpdate = true
+    lastShadowRefreshAtSeconds = nowSeconds
+    lastShadowMutationVersion = blockMutationVersion
+  }
+}
 
 function scheduleAutoSave() {
   if (autoSavePending) return
@@ -4068,9 +3926,9 @@ function animate() {
   const meshBatchBudget = Math.max(1, Math.floor(runtimeLimits.meshBatchSize * workBudget.meshBatchScale))
   const meshTimeBudget = Math.max(0.4, runtimeLimits.meshBudgetMs * workBudget.meshTimeScale)
   if (!hasStarted || isPaused) {
-    rebuildDirtyChunkVisibleFaceSummaries(workBudget.visibleFaceSummaries)
     rebuildOptimizedChunkMeshes(meshBatchBudget, meshTimeBudget)
     updateInstancedBounds()
+    refreshShadowMapIfNeeded(now / 1000)
     renderer.render(scene, camera)
     return
   }
@@ -4083,7 +3941,6 @@ function animate() {
     lastSaveActivityRefreshAt = elapsedTime
     updateSaveActivityUi()
   }
-  rebuildDirtyChunkVisibleFaceSummaries(workBudget.visibleFaceSummaries)
   rebuildOptimizedChunkMeshes(meshBatchBudget, meshTimeBudget)
   updateInstancedBounds()
   updateFrameStats(dt, elapsedTime)
@@ -4285,7 +4142,7 @@ function animate() {
   }
   else if (pos.y > floor + 0.05) playerMotion.setGrounded(false)
   if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)
-  updateMining()
+  updateMining(hit)
   stabilizeFirstPersonLook()
 
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
@@ -4296,6 +4153,7 @@ function animate() {
     : adaptiveBudget(skyDecorations.cloudCount, Math.min(3, skyDecorations.cloudCount))
   const sparkleUpdates = adaptiveBudget(skyDecorations.sparkleCount, lowPowerMode ? 12 : 24)
   skyDecorations.update(dt, elapsedTime, cloudUpdates, sparkleUpdates, cosmeticEffectsReduced)
+  refreshShadowMapIfNeeded(now / 1000)
   renderer.render(scene, camera)
 }
 animate()

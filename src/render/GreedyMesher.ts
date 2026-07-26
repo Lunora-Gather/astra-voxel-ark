@@ -11,58 +11,72 @@ export type GreedyQuad = {
   height: number
 }
 
-type FaceKey = string
+// Cell keys pack (u, v) into one integer so row/column neighbours are +1 / +COORD_SPAN.
+// 17 bits per axis matches the packed block key coordinate range.
+const COORD_OFFSET = 131072
+const COORD_SPAN = 262144
 
-type FacePlane = 'xy' | 'xz' | 'zy'
-
-type ProjectedFace = {
-  face: VisibleVoxelFace
-  plane: FacePlane
-  u: number
-  v: number
-  depth: number
-}
+const DIRECTION_INDEX: Record<VoxelFaceDirection, number> = { px: 0, nx: 1, py: 2, ny: 3, pz: 4, nz: 5 }
 
 export function buildGreedyQuads(faces: Iterable<VisibleVoxelFace>) {
-  const buckets = new Map<string, ProjectedFace[]>()
+  // Two-level buckets keep keys numeric: outer by block id, inner by direction + slice depth.
+  const buckets = new Map<BlockId, Map<number, VisibleVoxelFace[]>>()
 
   for (const face of faces) {
-    const projected = projectFace(face)
-    const key = `${face.id}|${face.direction}|${projected.plane}|${projected.depth}`
-    const bucket = buckets.get(key)
-    if (bucket) bucket.push(projected)
-    else buckets.set(key, [projected])
+    let byId = buckets.get(face.id)
+    if (!byId) {
+      byId = new Map()
+      buckets.set(face.id, byId)
+    }
+    const depth = face.direction === 'px' || face.direction === 'nx'
+      ? face.x
+      : face.direction === 'py' || face.direction === 'ny'
+        ? face.y
+        : face.z
+    const sliceKey = DIRECTION_INDEX[face.direction] + (depth + COORD_OFFSET) * 8
+    const slice = byId.get(sliceKey)
+    if (slice) slice.push(face)
+    else byId.set(sliceKey, [face])
   }
 
   const quads: GreedyQuad[] = []
-  for (const bucket of buckets.values()) {
-    quads.push(...mergeProjectedFaces(bucket))
+  for (const byId of buckets.values()) {
+    for (const slice of byId.values()) {
+      mergeSliceFaces(slice, quads)
+    }
   }
   return quads
 }
 
-function mergeProjectedFaces(projectedFaces: ProjectedFace[]) {
-  const remaining = new Map<FaceKey, ProjectedFace>()
-  for (const projected of projectedFaces) {
-    remaining.set(faceKey(projected.u, projected.v), projected)
+function mergeSliceFaces(faces: VisibleVoxelFace[], quads: GreedyQuad[]) {
+  // Every face in the slice shares id, direction and depth; only (u, v) vary.
+  const cells = new Map<number, VisibleVoxelFace>()
+  const cellKeys: number[] = []
+  for (const face of faces) {
+    const key = cellKey(face)
+    if (!cells.has(key)) {
+      cells.set(key, face)
+      cellKeys.push(key)
+    }
   }
+  // Ascending numeric order is v-major, u-minor because u occupies the low bits.
+  cellKeys.sort(compareNumbers)
 
-  const quads: GreedyQuad[] = []
-  const sorted = [...projectedFaces].sort((a, b) => a.v - b.v || a.u - b.u)
-
-  for (const start of sorted) {
-    if (!remaining.has(faceKey(start.u, start.v))) continue
+  for (const startKey of cellKeys) {
+    const start = cells.get(startKey)
+    if (!start) continue
 
     let width = 1
-    while (remaining.has(faceKey(start.u + width, start.v))) {
+    while (cells.has(startKey + width)) {
       width += 1
     }
 
     let height = 1
     heightLoop:
     while (true) {
+      const rowKey = startKey + height * COORD_SPAN
       for (let du = 0; du < width; du += 1) {
-        if (!remaining.has(faceKey(start.u + du, start.v + height))) {
+        if (!cells.has(rowKey + du)) {
           break heightLoop
         }
       }
@@ -70,43 +84,40 @@ function mergeProjectedFaces(projectedFaces: ProjectedFace[]) {
     }
 
     for (let dv = 0; dv < height; dv += 1) {
+      const rowKey = startKey + dv * COORD_SPAN
       for (let du = 0; du < width; du += 1) {
-        remaining.delete(faceKey(start.u + du, start.v + dv))
+        cells.delete(rowKey + du)
       }
     }
 
-    quads.push(toQuad(start, width, height))
+    quads.push({
+      id: start.id,
+      direction: start.direction,
+      x: start.x,
+      y: start.y,
+      z: start.z,
+      width,
+      height,
+    })
   }
-
-  return quads
 }
 
-function projectFace(face: VisibleVoxelFace): ProjectedFace {
+function cellKey(face: VisibleVoxelFace) {
+  let u: number
+  let v: number
   if (face.direction === 'px' || face.direction === 'nx') {
-    return { face, plane: 'zy', u: face.z, v: face.y, depth: face.x }
+    u = face.z
+    v = face.y
+  } else if (face.direction === 'py' || face.direction === 'ny') {
+    u = face.x
+    v = face.z
+  } else {
+    u = face.x
+    v = face.y
   }
-
-  if (face.direction === 'py' || face.direction === 'ny') {
-    return { face, plane: 'xz', u: face.x, v: face.z, depth: face.y }
-  }
-
-  return { face, plane: 'xy', u: face.x, v: face.y, depth: face.z }
+  return (v + COORD_OFFSET) * COORD_SPAN + (u + COORD_OFFSET)
 }
 
-function toQuad(projected: ProjectedFace, width: number, height: number): GreedyQuad {
-  const { face, plane } = projected
-
-  if (plane === 'zy') {
-    return { id: face.id, direction: face.direction, x: face.x, y: projected.v, z: projected.u, width, height }
-  }
-
-  if (plane === 'xz') {
-    return { id: face.id, direction: face.direction, x: projected.u, y: face.y, z: projected.v, width, height }
-  }
-
-  return { id: face.id, direction: face.direction, x: projected.u, y: projected.v, z: face.z, width, height }
-}
-
-function faceKey(u: number, v: number) {
-  return `${u},${v}`
+function compareNumbers(a: number, b: number) {
+  return a - b
 }

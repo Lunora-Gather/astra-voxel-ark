@@ -5,6 +5,7 @@ import { buildLandmarkPlan, type LandmarkPlan } from './LandmarkTemplates'
 import { selectFloraVariant, type FloraVariantId } from './Flora'
 import { isSpawnAreaProtected } from './SpawnArea'
 import { getWorldSeedOffsets, normalizeWorldSeed } from './WorldSeed'
+import { packBlockKey } from './blockKey'
 
 export type ProceduralBlock = { x: number; y: number; z: number; id: BlockId }
 export type ProceduralChunkPlan = {
@@ -18,10 +19,10 @@ export type ProceduralChunkPlan = {
 
 export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number, worldSeed = 0): ProceduralChunkPlan {
   const normalizedSeed = normalizeWorldSeed(worldSeed)
-  const blockMap = new Map<string, ProceduralBlock>()
+  const blockMap = new Map<number, ProceduralBlock>()
   const grassTufts: Array<[number, number, number, FloraVariantId]> = []
   const add = (x: number, y: number, z: number, id: BlockId) => {
-    const key = `${x},${y},${z}`
+    const key = packBlockKey(x, y, z)
     if (!blockMap.has(key)) blockMap.set(key, { x, y, z, id })
   }
   const startX = cx * chunkSize

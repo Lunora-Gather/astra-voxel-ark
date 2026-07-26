@@ -11,7 +11,7 @@ The graphics setting remains an override inside the safe bounds of the detected 
 
 `src/performance/RuntimePerformanceGuard.ts` adds a second, transient layer for sustained runtime
 pressure. Sample hysteresis moves through `normal`, `strained`, and `critical` rather than reacting
-to individual slow frames. It scales visible-face summaries, greedy-mesh work, terrain cadence,
+to individual slow frames. It scales greedy-mesh rebuild batches and time budgets, terrain cadence,
 cosmetics and point lights. Critical pressure temporarily subtracts one from the effective terrain
 radius, never below the spawn-safe radius, without rewriting the player's stored view distance.
 Recovery happens one level at a time.
@@ -47,7 +47,21 @@ stale compass targets and keeping navigation memory proportional to resident ter
 
 ## Main-thread budgets
 
-- Opaque terrain uses greedy chunk meshes.
+- Opaque and emissive terrain — including multi-face blocks such as grass, wood, spruce and
+  birch — uses greedy chunk meshes. The mesher works on numeric slice and cell keys and emits
+  typed-array geometry with precomputed bounds, so rebuilds allocate no per-face strings. Per-face
+  material slots keep grass tops, sides and bottoms textured correctly while the four side
+  directions share one draw group. Only water and leaves remain per-block instanced; their
+  instanced meshes are created lazily and grow on demand instead of preallocating every block type.
+- Chunk meshes are identity-transform static objects: no per-chunk group nodes, and
+  `matrixAutoUpdate` disabled so the scene graph skips hundreds of matrix recompositions per frame.
+  Instanced bounding volumes recompute only for meshes whose population changed.
+- Grass tuft instances are indexed by their anchor block key, so mining or evicting a block frees
+  its blades without scanning the whole instance list.
+- The sun shadow map re-renders on a 350 ms cadence and immediately after world edits instead of
+  every frame; the day-cycle drift between refreshes is imperceptible.
+- The camera far plane is sized per tier to what fog already hides, tightening frustum culling and
+  depth precision on weak GPUs.
 - Mesh rebuilds have both a batch limit and a millisecond budget.
 - Live dirty-chunk selection and per-chunk block filtering fill caller-owned reusable buffers.
   Rebuild frames avoid copying the dirty Set, slicing it, building an all-block list and filtering a
@@ -127,8 +141,9 @@ contract. The actual placement action always plans and validates again independe
 
 ## Packed runtime block identity
 
-The live block map, visual references, chunk buckets, grass anchors, glow lights, mining targets,
+The live block map, visual references, grass anchors, glow lights, mining targets,
 landmark shards and player deltas use the 51-bit `PackedBlockKey` from `src/world/blockKey.ts`.
+Terrain plan deduplication in the worker uses the same packed keys.
 Aim, collision, mesh exposure checks and placement therefore perform numeric `Map`/`Set` lookups
 without allocating `"x,y,z"` strings. A mutable decode target supports iteration without temporary
 coordinate objects. Serialization stringifies keys only when producing the existing v8 JSON schema;

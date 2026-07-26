@@ -6,7 +6,6 @@ export type RuntimePerformanceSample = {
 }
 
 export type RuntimeWorkBudget = {
-  visibleFaceSummaries: number
   meshBatchScale: number
   meshTimeScale: number
   terrainFrameCadence: number
@@ -24,7 +23,6 @@ export type RuntimePerformanceTransition = {
 
 const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
   normal: {
-    visibleFaceSummaries: 12,
     meshBatchScale: 1,
     meshTimeScale: 1,
     terrainFrameCadence: 1,
@@ -34,7 +32,6 @@ const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
     shadows: true,
   },
   strained: {
-    visibleFaceSummaries: 4,
     meshBatchScale: 0.6,
     meshTimeScale: 0.7,
     terrainFrameCadence: 2,
@@ -44,7 +41,6 @@ const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
     shadows: true,
   },
   critical: {
-    visibleFaceSummaries: 1,
     meshBatchScale: 0.25,
     meshTimeScale: 0.35,
     terrainFrameCadence: 4,
