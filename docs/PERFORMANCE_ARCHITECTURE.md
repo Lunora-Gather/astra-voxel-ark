@@ -101,6 +101,10 @@ setting still applies for the current session.
 The explicit Eco preset is normalized at the same boundary: it atomically caps view distance to Near
 and frame rate to 30 FPS. The live adapter adds a 0.50–0.60 render-scale band, disables shadows and
 dynamic block point lights, and reuses the low-cost HUD composition path from pressure protection.
+Persisted quality is loaded before the WebGL renderer is allocated. Eco therefore starts with
+`mediump` shader precision, no MSAA, a low-power GPU preference and a 0.56 drawing-buffer scale;
+Low also starts without MSAA and at 0.68 scale. Unrelated settings changes no longer reset the
+adaptive render scale, so a slow device keeps the quality level it has already converged on.
 
 ## Interaction hot path
 

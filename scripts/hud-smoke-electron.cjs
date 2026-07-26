@@ -229,6 +229,9 @@ async function readState(win, label) {
         const rect = el.getBoundingClientRect();
         return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || '1') > 0.01 && rect.width > 0 && rect.height > 0;
       }).length;
+      const canvas = document.querySelector('canvas');
+      const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
+      const contextAttributes = gl?.getContextAttributes();
       const rects = ['.hud-left-stack', '.hud-right-stack', '.hotbar', '.menu-toggle-btn', '.block-info', '.joystick', '.touch-actions']
         .map(rectOf)
         .filter(Boolean);
@@ -243,6 +246,11 @@ async function readState(win, label) {
         viewport,
         bodyClasses: document.body.className,
         density: document.body.dataset.hudDensity || null,
+        startupGraphics: document.body.dataset.startupGraphics || null,
+        webglAntialias: contextAttributes?.antialias ?? null,
+        devicePixelRatio,
+        drawingBufferScale: canvas && innerWidth > 0 ? canvas.width / innerWidth : null,
+        nativeRenderScale: canvas && innerWidth > 0 && devicePixelRatio > 0 ? canvas.width / innerWidth / devicePixelRatio : null,
         runtimePressure: document.body.dataset.runtimePressure || null,
         playerMedium: document.body.dataset.playerMedium || null,
         startVisible: visible('.start'),
@@ -1029,6 +1037,24 @@ async function runScenario(win, scenario) {
     }
     if (migratedSettings.settings.sensitivity !== '95' || migratedSettings.settings.fov !== '80' || migratedSettings.settings.viewDistance !== tunedViewDistance || migratedSettings.settings.quality !== 'low' || migratedSettings.settings.frameRate !== '30' || migratedSettings.settings.volume !== '25' || migratedSettings.settings.soundEnabled !== false) {
       fail('Legacy settings should migrate and clamp to the active device limits', migratedSettings)
+    }
+    if (migratedSettings.startupGraphics !== 'low' || migratedSettings.webglAntialias !== false || migratedSettings.nativeRenderScale > 0.69) {
+      fail('Persisted Low graphics should disable startup MSAA and allocate a reduced drawing buffer before the first frame', migratedSettings)
+    }
+
+    await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(settingsKey)}, JSON.stringify({ sensitivity: 72, fov: 72, viewDistance: 3, quality: 'eco', showPerf: false, frameRate: 60, volume: 70, soundEnabled: true }))`)
+    await reloadAtUrl(win, scenarioUrl(scenario, 'startup-eco'))
+    const startupEco = await readState(win, `${scenario.label}:startup-eco`)
+    if (
+      startupEco.startupGraphics !== 'eco' ||
+      startupEco.settings.quality !== 'eco' ||
+      startupEco.settings.viewDistance !== '1' ||
+      startupEco.settings.frameRate !== '30' ||
+      !startupEco.bodyClasses.includes('eco-runtime') ||
+      startupEco.webglAntialias !== false ||
+      startupEco.nativeRenderScale > 0.57
+    ) {
+      fail('Persisted Eco graphics should apply its complete low-cost renderer profile before the first frame', startupEco)
     }
 
     await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(settingsKey)}, '{broken')`)

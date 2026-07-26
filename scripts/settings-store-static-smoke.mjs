@@ -4,6 +4,7 @@ const settings = fs.readFileSync(new URL('../src/game/settings.ts', import.meta.
 const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const style = fs.readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 const adaptiveQuality = fs.readFileSync(new URL('../src/app/AdaptiveQualityController.ts', import.meta.url), 'utf8')
+const qualityRuntime = fs.readFileSync(new URL('../src/performance/QualityRuntimeProfile.ts', import.meta.url), 'utf8')
 
 const expectations = [
   [settings.includes('class SettingsStore'), 'typed settings store'],
@@ -21,7 +22,12 @@ const expectations = [
   [main.includes('settingsStore.save(nextSettings)'), 'central settings saving'],
   [main.includes('showSettingsPersistenceWarning'), 'write failure feedback'],
   [main.includes('data-quality="eco"'), 'Eco settings control'],
-  [main.includes('return { min: 0.5, max: 0.6, start: 0.56 }'), 'Eco render-scale band'],
+  [qualityRuntime.includes('start: clamp(0.56, min, max)'), 'Eco render-scale band'],
+  [qualityRuntime.includes('antialias: !lowCostPreset'), 'persisted low-cost MSAA policy'],
+  [main.includes('const startupSettings = settingsStore.load()'), 'settings loaded before renderer creation'],
+  [main.indexOf('const startupSettings = settingsStore.load()') < main.indexOf('new THREE.WebGLRenderer'), 'startup settings precede WebGL allocation'],
+  [main.includes('antialias: startupGraphics.antialias'), 'startup renderer profile integration'],
+  [main.includes('const qualityChanged = nextSettings.quality !== qualityPreset'), 'quality-only render-scale reset'],
   [main.includes("qualityPreset === 'eco'"), 'Eco runtime integration'],
   [adaptiveQuality.includes("if (preset === 'eco') return preset"), 'Eco adaptive-quality pin'],
   [

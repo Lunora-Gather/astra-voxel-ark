@@ -39,6 +39,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Recoverable critical-pressure shadow and full-screen composite shedding for unexpectedly slow GPUs
 - Persistent 30/60 FPS frame cap plus sound volume and mute controls
 - One-tap Eco graphics preset combining Near view, 30 FPS, reduced resolution, zero block point lights and low-cost HUD compositing
+- Persisted Eco/Low startup profiles that avoid allocating MSAA and full-resolution framebuffers before the first frame
 - Optional compact performance HUD with frame, world, draw-call and GPU resource diagnostics
 - Health, safe-threshold fall damage, cold-night exposure and Ark recovery
 - Night-only Ark shelter rest near the core, advancing to dawn with bounded health and power recovery

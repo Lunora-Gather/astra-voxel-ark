@@ -36,6 +36,7 @@ import { SkyDecorationSystem } from './render/SkyDecorationSystem'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
 import { FrameRateLimiter } from './performance/FrameRateLimiter'
+import { resolveQualityRuntimeProfile } from './performance/QualityRuntimeProfile'
 import { RuntimePerformanceGuard } from './performance/RuntimePerformanceGuard'
 import {
   ACTIVE_WORLD_SLOT_KEY,
@@ -101,13 +102,30 @@ const runtimeProfile = detectRuntimeDeviceProfile({
 })
 const runtimeLimits = runtimeProfile.limits
 const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
-let frameRateLimit: 30 | 60 = runtimeLimits.targetFps === 30 ? 30 : 60
+const settingsStore = new SettingsStore({
+  maxViewDistance: runtimeLimits.maxViewDistance,
+  defaults: {
+    sensitivity: 72,
+    fov: 72,
+    viewDistance: 1,
+    quality: 'balanced',
+    showPerf: false,
+    frameRate: runtimeLimits.targetFps === 30 ? 30 : 60,
+    volume: 70,
+    soundEnabled: true,
+  },
+})
+const startupSettings = settingsStore.load()
+const startupGraphics = resolveQualityRuntimeProfile(startupSettings.quality, runtimeProfile.tier, runtimeLimits)
+let frameRateLimit: 30 | 60 = startupSettings.frameRate
 const gameplayFrameLimiter = new FrameRateLimiter(frameRateLimit)
 const performanceGuard = new RuntimePerformanceGuard(frameRateLimit)
 let currentFps = 0
 let currentAverageFrameMs = 0
 document.body.dataset.runtimeTier = runtimeProfile.tier
+document.body.dataset.startupGraphics = startupSettings.quality
 document.body.classList.toggle('constrained-runtime', lowPowerMode)
+document.body.classList.toggle('eco-runtime', startupSettings.quality === 'eco')
 
 app.innerHTML = `
   <div class="hud">
@@ -345,22 +363,22 @@ scene.fog = sceneFog
 
 const PLAYER_SPAWN = { x: 0, y: 12, z: 18 } as const
 const ARK_CORE_POSITION = { x: 0, y: 7.6, z: 10 } as const
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 600)
+const camera = new THREE.PerspectiveCamera(startupSettings.fov, window.innerWidth / window.innerHeight, 0.1, 600)
 camera.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
 camera.rotation.order = 'YXZ'
 
 const renderer = new THREE.WebGLRenderer({
-  antialias: runtimeProfile.tier === 'standard' || runtimeProfile.tier === 'high',
-  powerPreference: lowPowerMode ? 'low-power' : 'high-performance',
-  precision: runtimeProfile.tier === 'ultra-low' ? 'mediump' : 'highp',
+  antialias: startupGraphics.antialias,
+  powerPreference: startupGraphics.powerPreference,
+  precision: startupGraphics.precision,
 })
 renderer.setSize(window.innerWidth, window.innerHeight)
-let renderQuality = runtimeLimits.initialRenderScale
+let renderQuality = startupGraphics.render.start
 function applyRenderQuality() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio * renderQuality, runtimeLimits.maxPixelRatio))
 }
 applyRenderQuality()
-renderer.shadowMap.enabled = !lowPowerMode
+renderer.shadowMap.enabled = startupSettings.quality !== 'eco' && startupSettings.quality !== 'low' && !lowPowerMode
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 1.08
@@ -368,10 +386,10 @@ app.appendChild(renderer.domElement)
 
 const controls = new PointerLockControls(camera, renderer.domElement)
 scene.add(controls.object)
-let mouseLookSpeed = 0.72
+let mouseLookSpeed = startupSettings.sensitivity / 100
 let touchLookSpeed = 0.00245
-let qualityPreset: QualityPreset = 'balanced'
-let showPerformanceHud = false
+let qualityPreset: QualityPreset = startupSettings.quality
+let showPerformanceHud = startupSettings.showPerf
 const MAX_LOOK_PITCH = THREE.MathUtils.degToRad(85)
 const lookStabilizerEuler = new THREE.Euler(0, 0, 0, 'YXZ')
 controls.pointerSpeed = mouseLookSpeed
@@ -395,7 +413,7 @@ scene.add(hemi)
 
 const sun = new THREE.DirectionalLight(0xfff3c4, 2.9)
 sun.position.set(38, 55, 22)
-sun.castShadow = !lowPowerMode
+sun.castShadow = renderer.shadowMap.enabled
 sun.shadow.mapSize.set(1024, 1024)
 sun.shadow.camera.left = -56
 sun.shadow.camera.right = 56
@@ -496,7 +514,7 @@ const INITIAL_TERRAIN_LOAD_RADIUS = 1
 const TERRAIN_MAX_RADIUS = 6
 const TERRAIN_CHUNKS_PER_FRAME = 1
 const TERRAIN_SCAN_INTERVAL = 0.2
-let terrainLoadRadius = 1
+let terrainLoadRadius = startupSettings.viewDistance
 const RAYCAST_REACH = 8
 const GRASS_ANIMATION_BUDGET = runtimeLimits.grassAnimationBudget
 const MIN_RENDER_QUALITY = runtimeLimits.minRenderScale
@@ -1672,6 +1690,9 @@ if (isSmokeTest) {
   void import('./performance/RuntimePerformanceGuardSmoke').then(({ assertRuntimePerformanceGuardSmoke }) => {
     assertRuntimePerformanceGuardSmoke()
   }).catch((error) => console.error(error))
+  void import('./performance/QualityRuntimeProfileSmoke').then(({ assertQualityRuntimeProfileSmoke }) => {
+    assertQualityRuntimeProfileSmoke()
+  }).catch((error) => console.error(error))
   void import('./singleplayer/MiningSystemSmoke').then(({ assertMiningSystemSmoke }) => {
     assertMiningSystemSmoke()
   }).catch((error) => console.error(error))
@@ -1775,8 +1796,8 @@ function createShardBurst(position: THREE.Vector3) {
   particleEffects.createShardBurst(position, cosmeticEffectsReduced ? 8 : 16)
 }
 
-let soundVolume = 0.7
-let soundEnabled = true
+let soundVolume = startupSettings.volume / 100
+let soundEnabled = startupSettings.soundEnabled
 
 function isTerrainChunkInBounds(cx: number, cz: number) {
   return Math.hypot(cx, cz) <= TERRAIN_MAX_RADIUS
@@ -2797,39 +2818,8 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
 }
 
-const settingsStore = new SettingsStore({
-  maxViewDistance: runtimeLimits.maxViewDistance,
-  defaults: {
-    sensitivity: Math.round(mouseLookSpeed * 100),
-    fov: camera.fov,
-    viewDistance: terrainLoadRadius,
-    quality: qualityPreset,
-    showPerf: showPerformanceHud,
-    frameRate: frameRateLimit,
-    volume: Math.round(soundVolume * 100),
-    soundEnabled,
-  },
-})
-
 function qualityBounds() {
-  if (qualityPreset === 'eco') {
-    return { min: 0.5, max: 0.6, start: 0.56 }
-  }
-  if (qualityPreset === 'low') {
-    return {
-      min: runtimeLimits.minRenderScale,
-      max: Math.min(runtimeLimits.maxRenderScale, 0.72),
-      start: Math.min(runtimeLimits.initialRenderScale, 0.68),
-    }
-  }
-  if (qualityPreset === 'high') {
-    return {
-      min: Math.min(runtimeLimits.maxRenderScale, Math.max(runtimeLimits.minRenderScale, 0.76)),
-      max: runtimeLimits.maxRenderScale,
-      start: runtimeLimits.maxRenderScale,
-    }
-  }
-  return { min: MIN_RENDER_QUALITY, max: MAX_RENDER_QUALITY, start: runtimeLimits.initialRenderScale }
+  return resolveQualityRuntimeProfile(qualityPreset, runtimeProfile.tier, runtimeLimits).render
 }
 
 function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
@@ -2897,7 +2887,8 @@ function applySettings(settings: GameSettings, persist = false) {
   lastTerrainEnsureScanKey = ''
   pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
 
-  applyQualityPreset(nextSettings.quality, persist)
+  const qualityChanged = nextSettings.quality !== qualityPreset
+  applyQualityPreset(nextSettings.quality, qualityChanged)
   setPerformanceHudVisible(nextSettings.showPerf)
   frameRateLimit = nextSettings.frameRate
   gameplayFrameLimiter.setTargetFps(frameRateLimit)
@@ -2927,7 +2918,7 @@ function showSettingsPersistenceWarning() {
   showToast('Settings applied · could not save locally')
 }
 
-applySettings(settingsStore.load())
+applySettings(startupSettings)
 
 function collectCurrentSettings(): GameSettings {
   return {
