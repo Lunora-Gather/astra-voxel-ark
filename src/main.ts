@@ -2832,9 +2832,15 @@ function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
   qualityPreset = nextPreset
   const bounds = qualityBounds()
   renderQuality = resetScale ? bounds.start : clampNumber(renderQuality, bounds.min, bounds.max)
-  renderer.shadowMap.enabled = nextPreset !== 'low' && !lowPowerMode
+  syncShadowBudget()
   applyRenderQuality()
   qualityButtons.forEach((button) => button.classList.toggle('active', button.dataset.quality === nextPreset))
+}
+
+function syncShadowBudget() {
+  const enabled = qualityPreset !== 'low' && !lowPowerMode && performanceGuard.budget.shadows
+  renderer.shadowMap.enabled = enabled
+  sun.castShadow = enabled
 }
 
 function setPerformanceHudVisible(visible: boolean) {
@@ -3713,6 +3719,7 @@ let lastQualityAdjustAt = 0
 function syncPerformanceGuardUi() {
   const level = performanceGuard.currentLevel
   document.body.dataset.runtimePressure = level
+  syncShadowBudget()
   const mode = document.querySelector<HTMLElement>('.perf-mode')
   if (mode) mode.textContent = level === 'normal' ? runtimeProfile.tier : `${runtimeProfile.tier} · ${level}`
 }

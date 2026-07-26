@@ -2,7 +2,7 @@ import { RuntimePerformanceGuard } from './RuntimePerformanceGuard'
 
 export function assertRuntimePerformanceGuardSmoke() {
   const guard = new RuntimePerformanceGuard(60)
-  if (guard.currentLevel !== 'normal' || guard.budget.terrainFrameCadence !== 1) {
+  if (guard.currentLevel !== 'normal' || guard.budget.terrainFrameCadence !== 1 || !guard.budget.shadows) {
     throw new Error('Runtime performance guard smoke failed: normal budget should be the default')
   }
 
@@ -12,7 +12,7 @@ export function assertRuntimePerformanceGuardSmoke() {
   }
 
   for (let index = 0; index < 3; index++) guard.sample({ fps: 24, averageFrameMs: 45 })
-  if ((guard.currentLevel as string) !== 'critical' || guard.budget.viewDistancePenalty !== 1) {
+  if ((guard.currentLevel as string) !== 'critical' || guard.budget.viewDistancePenalty !== 1 || guard.budget.shadows) {
     throw new Error('Runtime performance guard smoke failed: severe pressure should enter critical mode')
   }
 

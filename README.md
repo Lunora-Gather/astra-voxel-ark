@@ -36,6 +36,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling
 - Allocation-free packed integer block indexing at runtime with legacy string conversion only at the save boundary
 - Hysteresis-based runtime performance guard that temporarily trims world work, lights and cosmetics during sustained frame pressure
+- Recoverable critical-pressure shadow and full-screen composite shedding for unexpectedly slow GPUs
 - Persistent 30/60 FPS frame cap plus sound volume and mute controls
 - Optional compact performance HUD with frame, world, draw-call and GPU resource diagnostics
 - Health, safe-threshold fall damage, cold-night exposure and Ark recovery

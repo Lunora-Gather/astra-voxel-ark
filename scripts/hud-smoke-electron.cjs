@@ -460,6 +460,28 @@ async function readStorageJson(win, key) {
   `)
 }
 
+async function readCriticalCompositeBudget(win) {
+  return win.webContents.executeJavaScript(`
+    (() => {
+      const previous = document.body.dataset.runtimePressure;
+      document.body.dataset.runtimePressure = 'critical';
+      const panelStyle = getComputedStyle(document.querySelector('.panel'));
+      const survivalStyle = getComputedStyle(document.querySelector('.survival-badge'));
+      const hudAfterStyle = getComputedStyle(document.querySelector('.hud'), '::after');
+      const coldStyle = getComputedStyle(document.querySelector('.cold-vignette'));
+      const result = {
+        backdropFilter: panelStyle.backdropFilter || panelStyle.webkitBackdropFilter || '',
+        survivalAnimation: survivalStyle.animationName,
+        hudAfterDisplay: hudAfterStyle.display,
+        coldBlendMode: coldStyle.mixBlendMode,
+        coldShadow: coldStyle.boxShadow,
+      };
+      document.body.dataset.runtimePressure = previous;
+      return result;
+    })()
+  `)
+}
+
 function assertWorldMenuState(state) {
   assertMenuState(state)
   if (state.activeMenuTab !== 'world') fail('World tab should be active', state)
@@ -731,6 +753,18 @@ async function runScenario(win, scenario) {
   await resetScenario(win, scenario)
   const initial = await readState(win, `${scenario.label}:initial`)
   if (!initial.startVisible && !initial.rotatePromptVisible) fail('Start or rotate prompt should be visible before play', initial)
+  if (scenario.label === 'desktop') {
+    const criticalCompositeBudget = await readCriticalCompositeBudget(win)
+    if (
+      criticalCompositeBudget.backdropFilter !== 'none' ||
+      criticalCompositeBudget.survivalAnimation !== 'none' ||
+      criticalCompositeBudget.hudAfterDisplay !== 'none' ||
+      criticalCompositeBudget.coldBlendMode !== 'normal' ||
+      criticalCompositeBudget.coldShadow !== 'none'
+    ) {
+      fail('Critical runtime pressure should shed expensive HUD composite effects', criticalCompositeBudget)
+    }
+  }
   if (scenario.portraitOnly) {
     assertTouchPortraitState(initial)
     const artifact = await captureArtifact(win, scenario, 'portrait', initial)

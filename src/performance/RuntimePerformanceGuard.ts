@@ -13,6 +13,7 @@ export type RuntimeWorkBudget = {
   cosmeticScale: number
   pointLightScale: number
   viewDistancePenalty: number
+  shadows: boolean
 }
 
 export type RuntimePerformanceTransition = {
@@ -30,6 +31,7 @@ const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
     cosmeticScale: 1,
     pointLightScale: 1,
     viewDistancePenalty: 0,
+    shadows: true,
   },
   strained: {
     visibleFaceSummaries: 4,
@@ -39,6 +41,7 @@ const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
     cosmeticScale: 0.5,
     pointLightScale: 0.6,
     viewDistancePenalty: 0,
+    shadows: true,
   },
   critical: {
     visibleFaceSummaries: 1,
@@ -48,6 +51,7 @@ const BUDGETS: Record<RuntimePressureLevel, RuntimeWorkBudget> = {
     cosmeticScale: 0,
     pointLightScale: 0.25,
     viewDistancePenalty: 1,
+    shadows: false,
   },
 }
 
