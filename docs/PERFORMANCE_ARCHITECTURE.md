@@ -104,6 +104,12 @@ preallocated position buffer, placement wraps all edits in one world batch, and 
 `InstancedMesh` regardless of pattern size. Single-block mode retains the original lightweight mesh;
 no blueprint creates a mesh or draw call per planned block.
 
+`BuildPreviewCache` also separates aiming frequency from preview rebuild frequency. Stable targets
+reuse their validated transforms and material state instead of repeating collision checks and GPU
+instance-buffer uploads every frame. Target coordinates, face normal, selected material, pattern,
+wall axis, inventory count, world mutation version and exact player position form the invalidation
+contract. The actual placement action always plans and validates again independently.
+
 ## Packed runtime block identity
 
 The live block map, visual references, chunk buckets, grass anchors, glow lights, mining targets,

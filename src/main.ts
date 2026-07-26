@@ -7,6 +7,7 @@ import {
   BUILD_PATTERNS,
   BuildHistorySystem,
   BuildPatternPlanner,
+  BuildPreviewCache,
   InventorySystem,
   MiningSession,
   ProgressionSystem,
@@ -17,7 +18,9 @@ import {
   getFallDamage,
   planArkRest,
   isBuildPatternId,
+  createBuildPreviewSignature,
   type BuildPatternId,
+  type BuildPreviewFacingAxis,
   type BuildChange,
   type TutorialStepId,
 } from './singleplayer'
@@ -563,6 +566,8 @@ const survivalVitals = new SurvivalVitals()
 const tutorialGuide = new TutorialGuide()
 const miningSession = new MiningSession()
 const buildPatternPlanner = new BuildPatternPlanner()
+const buildPreviewCache = new BuildPreviewCache()
+const buildPreviewSignature = createBuildPreviewSignature()
 const buildHistory = new BuildHistorySystem()
 let activeBuildPattern: BuildPatternId = 'single'
 const localSession = new LocalSessionGateway()
@@ -1666,6 +1671,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./singleplayer/BuildPatternSystemSmoke').then(({ assertBuildPatternSystemSmoke }) => {
     assertBuildPatternSystemSmoke()
+  }).catch((error) => console.error(error))
+  void import('./singleplayer/BuildPreviewCacheSmoke').then(({ assertBuildPreviewCacheSmoke }) => {
+    assertBuildPreviewCacheSmoke()
   }).catch((error) => console.error(error))
   void import('./singleplayer/BuildHistorySystemSmoke').then(({ assertBuildHistorySystemSmoke }) => {
     assertBuildHistorySystemSmoke()
@@ -3195,7 +3203,7 @@ function breakTargetBlock(expectedKey?: PackedBlockKey) {
   return false
 }
 
-function planBuildPattern(hit: NonNullable<ReturnType<typeof pickBlock>>) {
+function planBuildPattern(hit: NonNullable<ReturnType<typeof pickBlock>>, facingPrepared = false) {
   hitBlockPosition.set(hit.x, hit.y, hit.z)
   const canReplaceWater = hit.id === 'water' && BLOCKS[selected].id !== 'water'
   if (canReplaceWater) {
@@ -3204,7 +3212,7 @@ function planBuildPattern(hit: NonNullable<ReturnType<typeof pickBlock>>) {
     placeNormal.copy(hit.normal.lengthSq() > 0 ? hit.normal : upNormal)
     placePosition.copy(hitBlockPosition).add(placeNormal).round()
   }
-  camera.getWorldDirection(buildFacing)
+  if (!facingPrepared) camera.getWorldDirection(buildFacing)
   return buildPatternPlanner.plan(activeBuildPattern, placePosition, buildFacing)
 }
 
@@ -4053,64 +4061,89 @@ function animate() {
   const aimingActive = hasStarted && !isPaused && (controls.isLocked || mobileActive)
   const hit = aimingActive ? pickBlock() : undefined
   if (hit && hit.distance <= RAYCAST_REACH) {
-    hitBlockPosition.set(hit.x, hit.y, hit.z)
-    targetOutlineMesh.position.copy(hitBlockPosition)
     targetOutlineMesh.visible = true
 
     const selectedBlock = BLOCKS[selected].id
-    const plan = planBuildPattern(hit)
-    const isValidPlacement = validateBuildPlan(plan, selectedBlock) === ''
-    if (plan.count === 1) {
-      if (!previewMesh) {
-        previewMesh = new THREE.Mesh(previewGeometry, previewMaterial)
-        previewMesh.castShadow = false
-        previewMesh.receiveShadow = false
-        previewMesh.renderOrder = 10
-        scene.add(previewMesh)
+    let facingAxis: BuildPreviewFacingAxis = 0
+    if (activeBuildPattern === 'wall') {
+      camera.getWorldDirection(buildFacing)
+      facingAxis = Math.abs(buildFacing.x) > Math.abs(buildFacing.z) ? 1 : -1
+    }
+    const playerPosition = controls.object.position
+    buildPreviewSignature.hitX = hit.x
+    buildPreviewSignature.hitY = hit.y
+    buildPreviewSignature.hitZ = hit.z
+    buildPreviewSignature.normalX = hit.normal.x
+    buildPreviewSignature.normalY = hit.normal.y
+    buildPreviewSignature.normalZ = hit.normal.z
+    buildPreviewSignature.hitBlock = hit.id
+    buildPreviewSignature.selectedBlock = selectedBlock
+    buildPreviewSignature.pattern = activeBuildPattern
+    buildPreviewSignature.facingAxis = facingAxis
+    buildPreviewSignature.worldVersion = blockMutationVersion
+    buildPreviewSignature.inventoryCount = countBlocksInInventory(selectedBlock)
+    buildPreviewSignature.playerX = playerPosition.x
+    buildPreviewSignature.playerY = playerPosition.y
+    buildPreviewSignature.playerZ = playerPosition.z
+
+    if (buildPreviewCache.shouldRefresh(buildPreviewSignature)) {
+      hitBlockPosition.set(hit.x, hit.y, hit.z)
+      targetOutlineMesh.position.copy(hitBlockPosition)
+      const plan = planBuildPattern(hit, activeBuildPattern === 'wall')
+      const isValidPlacement = validateBuildPlan(plan, selectedBlock) === ''
+      if (plan.count === 1) {
+        if (!previewMesh) {
+          previewMesh = new THREE.Mesh(previewGeometry, previewMaterial)
+          previewMesh.castShadow = false
+          previewMesh.receiveShadow = false
+          previewMesh.renderOrder = 10
+          scene.add(previewMesh)
+        }
+        if (!previewOutlineMesh) {
+          previewOutlineMesh = new THREE.LineSegments(previewOutlineGeometry, previewOutlineMaterial)
+          previewOutlineMesh.renderOrder = 11
+          scene.add(previewOutlineMesh)
+        }
+        previewMesh.position.copy(placePosition)
+        previewMesh.scale.setScalar(1.01)
+        const material = previewMesh.material as THREE.MeshStandardMaterial
+        material.opacity = isValidPlacement ? 0.28 : 0.46
+        material.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
+        material.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
+        material.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
+        previewMesh.visible = true
+        previewOutlineMesh.position.copy(placePosition)
+        previewOutlineMaterial.color.setHex(isValidPlacement ? 0xa8ffb9 : 0xff7777)
+        previewOutlineMaterial.opacity = isValidPlacement ? 0.92 : 1
+        previewOutlineMesh.visible = true
+        if (patternPreviewMesh) patternPreviewMesh.visible = false
+      } else {
+        if (!patternPreviewMesh) {
+          patternPreviewMesh = new THREE.InstancedMesh(previewGeometry, patternPreviewMaterial, 9)
+          patternPreviewMesh.castShadow = false
+          patternPreviewMesh.receiveShadow = false
+          patternPreviewMesh.frustumCulled = false
+          patternPreviewMesh.renderOrder = 10
+          scene.add(patternPreviewMesh)
+        }
+        for (let index = 0; index < plan.count; index++) {
+          const position = plan.positions[index]
+          patternPreviewMatrix.makeTranslation(position.x, position.y, position.z)
+          patternPreviewMesh.setMatrixAt(index, patternPreviewMatrix)
+        }
+        patternPreviewMesh.count = plan.count
+        patternPreviewMesh.instanceMatrix.needsUpdate = true
+        patternPreviewMaterial.opacity = isValidPlacement ? 0.24 : 0.4
+        patternPreviewMaterial.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
+        patternPreviewMaterial.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
+        patternPreviewMaterial.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
+        patternPreviewMesh.visible = true
+        if (previewMesh) previewMesh.visible = false
+        if (previewOutlineMesh) previewOutlineMesh.visible = false
       }
-      if (!previewOutlineMesh) {
-        previewOutlineMesh = new THREE.LineSegments(previewOutlineGeometry, previewOutlineMaterial)
-        previewOutlineMesh.renderOrder = 11
-        scene.add(previewOutlineMesh)
-      }
-      previewMesh.position.copy(placePosition)
-      previewMesh.scale.setScalar(1.01)
-      const material = previewMesh.material as THREE.MeshStandardMaterial
-      material.opacity = isValidPlacement ? 0.28 : 0.46
-      material.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
-      material.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
-      material.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
-      previewMesh.visible = true
-      previewOutlineMesh.position.copy(placePosition)
-      previewOutlineMaterial.color.setHex(isValidPlacement ? 0xa8ffb9 : 0xff7777)
-      previewOutlineMaterial.opacity = isValidPlacement ? 0.92 : 1
-      previewOutlineMesh.visible = true
-      if (patternPreviewMesh) patternPreviewMesh.visible = false
-    } else {
-      if (!patternPreviewMesh) {
-        patternPreviewMesh = new THREE.InstancedMesh(previewGeometry, patternPreviewMaterial, 9)
-        patternPreviewMesh.castShadow = false
-        patternPreviewMesh.receiveShadow = false
-        patternPreviewMesh.frustumCulled = false
-        patternPreviewMesh.renderOrder = 10
-        scene.add(patternPreviewMesh)
-      }
-      for (let index = 0; index < plan.count; index++) {
-        const position = plan.positions[index]
-        patternPreviewMatrix.makeTranslation(position.x, position.y, position.z)
-        patternPreviewMesh.setMatrixAt(index, patternPreviewMatrix)
-      }
-      patternPreviewMesh.count = plan.count
-      patternPreviewMesh.instanceMatrix.needsUpdate = true
-      patternPreviewMaterial.opacity = isValidPlacement ? 0.24 : 0.4
-      patternPreviewMaterial.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
-      patternPreviewMaterial.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
-      patternPreviewMaterial.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
-      patternPreviewMesh.visible = true
-      if (previewMesh) previewMesh.visible = false
-      if (previewOutlineMesh) previewOutlineMesh.visible = false
     }
   } else {
+    buildPreviewCache.clear()
     targetOutlineMesh.visible = false
     if (previewMesh) {
       previewMesh.visible = false

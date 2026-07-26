@@ -2,6 +2,8 @@ import fs from 'node:fs'
 
 const patterns = fs.readFileSync(new URL('../src/singleplayer/BuildPatternSystem.ts', import.meta.url), 'utf8')
 const runtimeSmoke = fs.readFileSync(new URL('../src/singleplayer/BuildPatternSystemSmoke.ts', import.meta.url), 'utf8')
+const previewCache = fs.readFileSync(new URL('../src/singleplayer/BuildPreviewCache.ts', import.meta.url), 'utf8')
+const previewCacheSmoke = fs.readFileSync(new URL('../src/singleplayer/BuildPreviewCacheSmoke.ts', import.meta.url), 'utf8')
 const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const style = fs.readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 const electronSmoke = fs.readFileSync(new URL('./hud-smoke-electron.cjs', import.meta.url), 'utf8')
@@ -11,12 +13,19 @@ const expectations = [
   [patterns.includes('Array.from({ length: MAX_PATTERN_BLOCKS }'), 'reused position buffer'],
   [runtimeSmoke.includes('planner should reuse results'), 'allocation-free planner coverage'],
   [runtimeSmoke.includes('walls should span the Z axis'), 'view-oriented wall coverage'],
+  [previewCache.includes('export class BuildPreviewCache'), 'dedicated preview cache boundary'],
+  [previewCache.includes('previous.worldVersion !== next.worldVersion'), 'world mutation invalidation'],
+  [previewCache.includes('previous.playerX !== next.playerX'), 'player collision invalidation'],
+  [previewCacheSmoke.includes('unchanged previews should reuse their GPU state'), 'preview reuse runtime coverage'],
   [main.includes('withBlockBatch(() =>'), 'batched blueprint placement'],
   [main.includes('consumeInventory(selectedBlock, plan.count)'), 'atomic blueprint inventory cost'],
   [main.includes('new THREE.InstancedMesh(previewGeometry, patternPreviewMaterial, 9)'), 'single-draw blueprint preview'],
+  [main.includes('if (buildPreviewCache.shouldRefresh(buildPreviewSignature))'), 'change-only preview upload'],
+  [(main.match(/validateBuildPlan\(plan, selectedBlock\)/g) ?? []).length >= 2, 'independent preview and placement validation'],
   [main.includes("e.code === 'KeyB'"), 'desktop pattern cycling'],
   [style.includes('.build-pattern-options'), 'responsive pattern controls'],
   [main.includes("import('./singleplayer/BuildPatternSystemSmoke')"), 'lazy Electron blueprint smoke'],
+  [main.includes("import('./singleplayer/BuildPreviewCacheSmoke')"), 'lazy Electron preview cache smoke'],
   [electronSmoke.includes('buildPatternButtons'), 'end-to-end blueprint UI coverage'],
 ]
 

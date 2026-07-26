@@ -124,6 +124,8 @@ High-impact tasks:
   one focused task at a time without duplicating progression state.
 - Four bounded building patterns are integrated with reusable planning storage, atomic validation,
   batched world mutation and a one-draw instanced preview.
+- Stable building targets reuse validated preview transforms and material state until target,
+  orientation, inventory, world or player-collision inputs change; placement still revalidates live.
 - Build undo is integrated as a 32-action transient command history with nine-change caps, batched
   reversal and no save-schema or cross-world state.
 - Fall impact is integrated through the existing motion/collision result and deterministic survival
