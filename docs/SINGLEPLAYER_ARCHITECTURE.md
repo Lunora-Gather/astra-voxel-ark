@@ -65,6 +65,10 @@ validates the whole plan against inventory, height, occupied voxels and player c
 applying one block batch, so a pattern either succeeds completely or leaves the world unchanged.
 Pattern choice is transient interface state; placed blocks remain ordinary player deltas in the v8
 save format, preserving existing worlds and the future session boundary.
+`BuildHistorySystem` snapshots at most nine changes per placement and retains only the latest 32
+actions. Undo reverses matching player deltas in one world batch, restores replaced water and refunds
+only blocks actually removed. History clears on every world lifecycle change and is intentionally
+absent from saves; historical progression statistics are not decremented.
 
 Mining targets and all live player/world delta membership checks use `PackedBlockKey` numeric
 identity. `serializeWorld` converts packed removed, placed and collected-shard sets back to the

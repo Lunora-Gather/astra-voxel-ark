@@ -28,6 +28,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Single-player progression with tool tiers, exact recipe material availability, safe max-batch crafting, reward previews and bulk objective claiming
 - Focused Journey, Backpack and Workshop expedition views that avoid long scrolling on short or low-resolution displays
 - Four building patterns—single block, pillar, wall and platform—with atomic inventory checks, collision-safe batch placement and a single-draw preview
+- Bounded per-world build undo with material refunds, water restoration and desktop/mobile access
 - Save-aware contextual onboarding for movement, mining, placement, backpack, crafting and landmark shards, with touch-specific compact help
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
 - Budgeted biome and block-coordinate HUD with click-to-copy location sharing
@@ -55,6 +56,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 | Break block | Left click |
 | Place block | Right click |
 | Switch building pattern | B / Game Menu → Expedition |
+| Undo last build | Ctrl/Command + Z / Expedition → Backpack |
 | Select material | 1-9 / mouse wheel / tap hotbar slot |
 | Switch material palette | Tab / Palette button |
 | Open backpack | E / Game Menu → Expedition |

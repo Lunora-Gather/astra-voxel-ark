@@ -318,6 +318,9 @@ async function readState(win, label) {
         buildPatternButtons: document.querySelectorAll('.build-pattern-btn').length,
         activeBuildPatterns: document.querySelectorAll('.build-pattern-btn.active').length,
         activeBuildPattern: document.querySelector('.build-pattern-btn.active')?.dataset.buildPattern || null,
+        undoBuildVisible: visible('.undo-build-btn'),
+        undoBuildDisabled: document.querySelector('.undo-build-btn')?.disabled ?? true,
+        undoBuildText: document.querySelector('.undo-build-btn')?.textContent?.trim() || '',
         blockCountText: document.querySelector('.block-count')?.textContent?.trim() || '',
         toolTierText: document.querySelector('.tool-tier-value')?.textContent?.trim() || '',
         objectiveRewards: document.querySelectorAll('.objective-card em').length,
@@ -756,7 +759,10 @@ async function runScenario(win, scenario) {
     backpackView.activeExpeditionView !== 'backpack' ||
     !backpackView.backpackViewVisible ||
     backpackView.journeyViewVisible ||
-    backpackView.workshopViewVisible
+    backpackView.workshopViewVisible ||
+    !backpackView.undoBuildVisible ||
+    !backpackView.undoBuildDisabled ||
+    backpackView.undoBuildText !== 'Undo Build'
   ) {
     fail('Backpack navigation should show only inventory and building tools', backpackView)
   }

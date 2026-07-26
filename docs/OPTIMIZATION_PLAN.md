@@ -124,6 +124,8 @@ High-impact tasks:
   one focused task at a time without duplicating progression state.
 - Four bounded building patterns are integrated with reusable planning storage, atomic validation,
   batched world mutation and a one-draw instanced preview.
+- Build undo is integrated as a 32-action transient command history with nine-change caps, batched
+  reversal and no save-schema or cross-world state.
 - Fall impact is integrated through the existing motion/collision result and deterministic survival
   rules, with no additional scene objects or per-frame DOM allocation.
 - Water movement is integrated into the shared allocation-free motion controller using two packed

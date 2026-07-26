@@ -5,6 +5,7 @@ import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import {
   BUILD_PATTERNS,
+  BuildHistorySystem,
   BuildPatternPlanner,
   InventorySystem,
   MiningSession,
@@ -16,6 +17,7 @@ import {
   getFallDamage,
   isBuildPatternId,
   type BuildPatternId,
+  type BuildChange,
   type TutorialStepId,
 } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
@@ -151,7 +153,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump / swim<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Jump becomes Swim in water<br/>Hold Break to mine · Tap Place to build</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump / swim<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Ctrl+Z undo build · Restore 6 shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Jump becomes Swim in water<br/>Undo Build is in Menu · Backpack</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -271,7 +273,8 @@ app.innerHTML = `
             <div class="objective-list"></div>
           </div>
           <div class="expedition-view" role="tabpanel" data-expedition-page="backpack" hidden>
-            <div class="expedition-section-heading objective-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
+            <div class="expedition-section-heading objective-heading backpack-heading"><strong>Backpack</strong><button class="undo-build-btn" type="button" disabled>Undo Build</button></div>
+            <small class="expedition-note">Select any material for the active nine-slot palette.</small>
             <div class="inventory-grid"></div>
             <div class="expedition-section-heading"><strong>Build Pattern</strong><small>Uses the selected material · B cycles on desktop.</small></div>
             <div class="build-pattern-options" role="group" aria-label="Build pattern">
@@ -553,6 +556,7 @@ const survivalVitals = new SurvivalVitals()
 const tutorialGuide = new TutorialGuide()
 const miningSession = new MiningSession()
 const buildPatternPlanner = new BuildPatternPlanner()
+const buildHistory = new BuildHistorySystem()
 let activeBuildPattern: BuildPatternId = 'single'
 const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
@@ -1230,6 +1234,7 @@ function clearWorldBlocks() {
   pendingTerrainEnsure = null
   removedTerrainBlocks.clear()
   playerPlacedBlocks.clear()
+  buildHistory.clear()
   landmarkShardBlocks.clear()
   landmarkShardNames.clear()
   optimizedChunks.clear()
@@ -1656,6 +1661,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./singleplayer/BuildPatternSystemSmoke').then(({ assertBuildPatternSystemSmoke }) => {
     assertBuildPatternSystemSmoke()
+  }).catch((error) => console.error(error))
+  void import('./singleplayer/BuildHistorySystemSmoke').then(({ assertBuildHistorySystemSmoke }) => {
+    assertBuildHistorySystemSmoke()
   }).catch((error) => console.error(error))
 }
 
@@ -2318,6 +2326,7 @@ const claimAllObjectivesButton = document.querySelector<HTMLButtonElement>('.cla
 const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const buildPatternButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-build-pattern]')]
+const undoBuildButton = document.querySelector<HTMLButtonElement>('.undo-build-btn')!
 const expeditionNavButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-expedition-view]')]
 const expeditionPages = [...document.querySelectorAll<HTMLElement>('[data-expedition-page]')]
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
@@ -2547,6 +2556,47 @@ function setBuildPattern(pattern: BuildPatternId, announce = true) {
   }
 }
 
+function updateBuildUndoUi() {
+  undoBuildButton.disabled = !buildHistory.canUndo
+  undoBuildButton.textContent = buildHistory.canUndo ? `Undo Build · ${buildHistory.size}` : 'Undo Build'
+}
+
+function undoLastBuild() {
+  const action = buildHistory.undo()
+  if (!action) {
+    showToast('Nothing to undo')
+    updateBuildUndoUi()
+    return false
+  }
+  const refunds = new Map<BlockId, number>()
+  let restored = 0
+  withBlockBatch(() => {
+    for (let index = action.changes.length - 1; index >= 0; index--) {
+      const change = action.changes[index]
+      const key = packBlockKey(change.x, change.y, change.z)
+      if (blockData.get(key) !== change.placed) continue
+      removeBlockAtKey(key, 'player')
+      if (change.previous) addBlock(change.x, change.y, change.z, change.previous, 'save')
+      refunds.set(change.placed, (refunds.get(change.placed) ?? 0) + 1)
+      restored++
+    }
+  })
+  refunds.forEach((amount, id) => addToInventory(id, amount))
+  updateBuildUndoUi()
+  updateHotbar()
+  updateProgressionUi()
+  if (restored === 0) {
+    showToast('Build changed · nothing undone')
+    return false
+  }
+  playGameSound('select', 0.2)
+  showToast(`Build undone · ${restored} block${restored === 1 ? '' : 's'} refunded`)
+  return true
+}
+
+undoBuildButton.addEventListener('click', undoLastBuild)
+updateBuildUndoUi()
+
 function cycleBuildPattern() {
   const index = BUILD_PATTERNS.findIndex(({ id }) => id === activeBuildPattern)
   setBuildPattern(BUILD_PATTERNS[(index + 1) % BUILD_PATTERNS.length].id)
@@ -2565,6 +2615,7 @@ function formatReward(reward: Array<{ id: BlockId; amount: number }>) {
 
 function updateProgressionUi() {
   if (!toolTierValue || !objectiveList || !inventoryGrid || !recipeList) return
+  updateBuildUndoUi()
   updateTutorialUi()
   toolTierValue.textContent = progression.getToolName()
   const objectives = progression.getObjectives()
@@ -3000,6 +3051,11 @@ document.addEventListener('keydown', (e) => {
     return
   }
   if (isPaused) return
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+    e.preventDefault()
+    undoLastBuild()
+    return
+  }
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyB', 'ShiftLeft', 'Space', 'Tab'].includes(e.code)) e.preventDefault()
   if (e.code === 'Tab') {
     switchHotbarPage()
@@ -3138,6 +3194,17 @@ function placeTargetBlock() {
     return
   }
 
+  const changes: BuildChange[] = []
+  for (let index = 0; index < plan.count; index++) {
+    const position = plan.positions[index]
+    changes.push({
+      x: position.x,
+      y: position.y,
+      z: position.z,
+      placed: selectedBlock,
+      previous: blockData.get(packBlockKey(position.x, position.y, position.z)) ?? null,
+    })
+  }
   withBlockBatch(() => {
     for (let index = 0; index < plan.count; index++) {
       const position = plan.positions[index]
@@ -3148,6 +3215,8 @@ function placeTargetBlock() {
   })
   playGameSound('place', 0.25)
   consumeInventory(selectedBlock, plan.count)
+  buildHistory.record(changes)
+  updateBuildUndoUi()
   progression.recordPlacement(plan.count)
   advanceTutorial('place')
   if (plan.count > 1) showToast(`${getBuildPatternDefinition(activeBuildPattern).name} built · ${plan.count} blocks`)
