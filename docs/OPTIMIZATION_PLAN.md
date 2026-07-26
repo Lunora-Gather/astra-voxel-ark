@@ -141,6 +141,8 @@ High-impact tasks:
   per-tier capacities remain bounded, block color stays per instance and burst setup is allocation-free.
 - Glow and crystal lights use persistent registered entries and one reusable candidate buffer, keeping
   priority/range behavior while eliminating periodic wrappers, sorted copies and active/inactive slices.
+- Dirty mesh work fills bounded caller-owned chunk and block buffers, eliminating the live frame's
+  dirty-Set copy/slice and its per-chunk all-block/filter array pair.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

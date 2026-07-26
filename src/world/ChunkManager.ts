@@ -37,6 +37,10 @@ export class ChunkManager {
     return this.chunks.size
   }
 
+  get dirtyChunkCount() {
+    return this.dirtyChunks.size
+  }
+
   getBlock(x: number, y: number, z: number) {
     return this.blocks.get(packBlockKey(x, y, z)) ?? null
   }
@@ -85,19 +89,43 @@ export class ChunkManager {
   }
 
   getChunkBlocks(cx: number, cz: number) {
-    const chunk = this.getChunk(cx, cz)
-    if (!chunk) return []
+    return this.fillChunkBlocks(cx, cz, [])
+  }
 
-    const blocks: WorldBlock[] = []
+  fillChunkBlocks(
+    cx: number,
+    cz: number,
+    blocks: WorldBlock[],
+    include?: (block: WorldBlock) => boolean,
+  ) {
+    blocks.length = 0
+    const chunk = this.getChunk(cx, cz)
+    if (!chunk) return blocks
     for (const packedKey of chunk.blocks) {
       const block = this.blocks.get(packedKey)
-      if (block) blocks.push(block)
+      if (block && (!include || include(block))) blocks.push(block)
     }
     return blocks
   }
 
   getDirtyChunks() {
-    return [...this.dirtyChunks].map((key) => this.chunks.get(key)).filter((chunk): chunk is ChunkRecord => Boolean(chunk))
+    return this.fillDirtyChunks([])
+  }
+
+  fillDirtyChunks(chunks: ChunkRecord[], limit = Number.POSITIVE_INFINITY) {
+    chunks.length = 0
+    const boundedLimit = limit === Number.POSITIVE_INFINITY
+      ? this.dirtyChunks.size
+      : Number.isFinite(limit)
+        ? Math.max(0, Math.floor(limit))
+        : 0
+    if (boundedLimit === 0) return chunks
+    for (const key of this.dirtyChunks) {
+      const chunk = this.chunks.get(key)
+      if (chunk) chunks.push(chunk)
+      if (chunks.length >= boundedLimit) break
+    }
+    return chunks
   }
 
   clearDirtyChunk(key: string) {

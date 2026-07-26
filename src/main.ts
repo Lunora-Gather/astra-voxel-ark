@@ -64,10 +64,12 @@ import {
   stringifyBlockKey,
   unpackBlockKeyInto,
   type PackedBlockKey,
+  type ChunkRecord,
   type ProceduralChunkPlan,
   type SavedBlock,
   type SavedWorldState as SavedWorld,
   type WorldSlotId,
+  type WorldBlock,
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
@@ -1025,22 +1027,29 @@ function rebuildDirtyChunkVisibleFaceSummaries(limit = Number.POSITIVE_INFINITY)
 }
 
 const chunkMeshTriangles = new Map<string, number>()
+const dirtyOptimizedChunkBuffer: ChunkRecord[] = []
+const chunkMeshBlockBuffer: WorldBlock[] = []
+
+function includeChunkMeshBlock(block: WorldBlock) {
+  return usesChunkMesh(block.id)
+}
+
+function lookupOptimizedOpaqueBlock(x: number, y: number, z: number) {
+  const block = optimizedChunks.getBlock(x, y, z)
+  return block && isOpaqueBlockId(block.id) ? block.id : null
+}
 
 function rebuildOptimizedChunkMeshes(limit: number, timeBudgetMs = Number.POSITIVE_INFINITY) {
-  const dirtyChunks = optimizedChunks.getDirtyChunks().slice(0, Math.max(0, limit))
+  optimizedChunks.fillDirtyChunks(dirtyOptimizedChunkBuffer, limit)
   const startedAt = performance.now()
-  const lookupOpaqueBlock = (x: number, y: number, z: number) => {
-    const block = optimizedChunks.getBlock(x, y, z)
-    return block && isOpaqueBlockId(block.id) ? block.id : null
-  }
 
-  for (const chunk of dirtyChunks) {
-    const meshBlocks = optimizedChunks.getChunkBlocks(chunk.cx, chunk.cz).filter((block) => usesChunkMesh(block.id))
-    if (meshBlocks.length === 0) {
+  for (const chunk of dirtyOptimizedChunkBuffer) {
+    optimizedChunks.fillChunkBlocks(chunk.cx, chunk.cz, chunkMeshBlockBuffer, includeChunkMeshBlock)
+    if (chunkMeshBlockBuffer.length === 0) {
       chunkMeshRenderer.removeChunk(chunk.key)
       chunkMeshTriangles.delete(chunk.key)
     } else {
-      const meshData = buildChunkMeshData(meshBlocks, lookupOpaqueBlock, { includeNonGreedyBlocks: true })
+      const meshData = buildChunkMeshData(chunkMeshBlockBuffer, lookupOptimizedOpaqueBlock, { includeNonGreedyBlocks: true })
       chunkMeshRenderer.upsertChunk(chunk.key, meshData.geometryGroups)
       chunkMeshTriangles.set(chunk.key, meshData.stats.triangleCount)
     }
@@ -1649,6 +1658,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./world/BlockKeySmoke').then(({ assertBlockKeySmoke }) => {
     assertBlockKeySmoke()
+  }).catch((error) => console.error(error))
+  void import('./world/ChunkManagerSmoke').then(({ assertChunkManagerSmoke }) => {
+    assertChunkManagerSmoke()
   }).catch((error) => console.error(error))
   void import('./singleplayer/TutorialGuideSmoke').then(({ assertTutorialGuideSmoke }) => {
     assertTutorialGuideSmoke()
@@ -3960,7 +3972,7 @@ function updateFrameStats(dt: number, elapsedTime: number) {
     terrainChunksEl.textContent = `${generatedTerrainChunks.size}/${discoveredTerrainChunks.size}`
   }
   if (dirtyEl) {
-    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${dirtyChunkKeys.size}/${optimizedChunks.getDirtyChunks().length}`
+    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${dirtyChunkKeys.size}/${optimizedChunks.dirtyChunkCount}`
   }
   if (callsEl) callsEl.textContent = formatPerformanceNumber(renderer.info.render.calls)
   if (trianglesEl) trianglesEl.textContent = formatPerformanceNumber(renderer.info.render.triangles)

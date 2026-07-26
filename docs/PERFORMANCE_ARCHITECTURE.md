@@ -49,6 +49,9 @@ stale compass targets and keeping navigation memory proportional to resident ter
 
 - Opaque terrain uses greedy chunk meshes.
 - Mesh rebuilds have both a batch limit and a millisecond budget.
+- Live dirty-chunk selection and per-chunk block filtering fill caller-owned reusable buffers.
+  Rebuild frames avoid copying the dirty Set, slicing it, building an all-block list and filtering a
+  second list; diagnostics read `dirtyChunkCount` directly.
 - Terrain plans are applied at most one chunk per accepted frame.
 - Player motion reuses one step object and caps simulation deltas at 50 ms; keyboard and touch
   share the same normalized acceleration path without per-frame vector allocation.

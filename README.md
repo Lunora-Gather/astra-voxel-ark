@@ -44,6 +44,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Two-batch instanced break and shard particles with zero-allocation burst setup
 - Change-only building previews that avoid repeated collision checks and GPU instance uploads
 - Persistent distance/priority light budgets without periodic candidate-object allocation
+- Reusable bounded dirty-chunk and mesh-block buffers for steady world streaming
 - Procedural pixel textures for every block type
 - Small code modules for block definitions, procedural textures and terrain math
 - Polished glassmorphism HUD and landing panel
