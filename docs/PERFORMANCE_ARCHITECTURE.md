@@ -56,7 +56,9 @@ stale compass targets and keeping navigation memory proportional to resident ter
   not lengthen mining or allocate progress objects.
 - Break and shard particles use two shared instanced pools. Active instances stay compact, inactive
   effects submit no draw, and burst setup reuses position and velocity storage.
-- Point lights use allocation and active-light budgets.
+- Point lights use allocation and active-light budgets. `PointLightBudgetController` registers each
+  glow source once, reuses one candidate buffer, caches distance during its single scan and sorts in
+  place; the 200 ms live cull no longer creates wrappers, copies, slices or result objects.
 - Hidden pages do no rendering work.
 - Paused screens run at 10 FPS.
 - Active gameplay uses a timestamp gate at the persisted 30 or 60 FPS target; constrained devices

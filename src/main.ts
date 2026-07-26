@@ -31,7 +31,7 @@ import { ChunkManager } from './world/ChunkManager'
 import { buildChunkMeshData } from './render/ChunkMeshBuilder'
 import { ChunkMeshRenderer } from './render/ChunkMeshRenderer'
 import { isGreedyMeshEligible } from './render/BlockRenderLayers'
-import { applyPointLightBudget } from './render/lightBudget'
+import { PointLightBudgetController } from './render/lightBudget'
 import { SkyDecorationSystem } from './render/SkyDecorationSystem'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
@@ -454,8 +454,7 @@ const instancedBlockKeys = new Map<BlockId, PackedBlockKey[]>()
 const instancedBlockCapacities = new Map<BlockId, number>()
 const instancedMatrix = new THREE.Matrix4()
 const hiddenInstanceMatrix = new THREE.Matrix4().makeTranslation(0, -100000, 0)
-const glowLights: THREE.PointLight[] = []
-const glowLightsByBlock = new Map<PackedBlockKey, THREE.PointLight>()
+const glowLightBudget = new PointLightBudgetController<PackedBlockKey>()
 let grassBladeMesh: THREE.InstancedMesh | null = null
 const grassBladeKeys: PackedBlockKey[] = []
 let needUpdateBounds = false
@@ -751,15 +750,13 @@ function countExposedFaces(x: number, y: number, z: number, id: BlockId) {
 }
 
 function removeGlowLightAt(k: PackedBlockKey) {
-  const light = glowLightsByBlock.get(k)
+  const light = glowLightBudget.unregister(k)
   if (!light) return
   scene.remove(light)
-  removeArrayItemUnordered(glowLights, light)
-  glowLightsByBlock.delete(k)
 }
 
 function ensureGlowLightAt(k: PackedBlockKey, x: number, y: number, z: number, id: BlockId) {
-  if ((id !== 'glow' && id !== 'crystal') || glowLightsByBlock.has(k) || glowLights.length >= MAX_GLOW_LIGHTS) return
+  if ((id !== 'glow' && id !== 'crystal') || glowLightBudget.has(k) || glowLightBudget.size >= MAX_GLOW_LIGHTS) return
   const light = new THREE.PointLight(
     id === 'glow' ? 0xffcf7a : 0x9b86ff,
     lowPowerMode ? (id === 'glow' ? 0.55 : 0.35) : (id === 'glow' ? 1.2 : 0.75),
@@ -768,8 +765,7 @@ function ensureGlowLightAt(k: PackedBlockKey, x: number, y: number, z: number, i
   light.position.set(x, y + 0.2, z)
   light.userData.blockId = id
   scene.add(light)
-  glowLightsByBlock.set(k, light)
-  glowLights.push(light)
+  glowLightBudget.register(k, light, id === 'glow' ? 2 : 1)
 }
 
 const decodedBlockPosition = { x: 0, y: 0, z: 0 }
@@ -1224,7 +1220,7 @@ function clearWorldBlocks() {
     mesh.boundingSphere = null
   })
   instancedBlockKeys.forEach((keysForType) => { keysForType.length = 0 })
-  glowLightsByBlock.clear()
+  glowLightBudget.clear()
   chunks.clear()
   if (grassBladeMesh) {
     grassBladeMesh.count = 0
@@ -1683,6 +1679,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./render/SkyDecorationSystemSmoke').then(({ assertSkyDecorationSystemSmoke }) => {
     assertSkyDecorationSystemSmoke()
+  }).catch((error) => console.error(error))
+  void import('./render/PointLightBudgetControllerSmoke').then(({ assertPointLightBudgetControllerSmoke }) => {
+    assertPointLightBudgetControllerSmoke()
   }).catch((error) => console.error(error))
   void import('./app/ParticleEffectsPipelineSmoke').then(({ assertParticleEffectsPipelineSmoke }) => {
     assertParticleEffectsPipelineSmoke()
@@ -3898,24 +3897,8 @@ function cullPointLights(elapsedTime: number) {
   if (elapsedTime - lastLightCullAt < 0.2) return
   lastLightCullAt = elapsedTime
   const playerPos = controls.object.position
-  const candidates: Array<{ key: PackedBlockKey; light: THREE.PointLight; priority: number }> = []
-  glowLightsByBlock.forEach((light, key) => {
-    const dx = light.position.x - playerPos.x
-    const dy = light.position.y - playerPos.y
-    const dz = light.position.z - playerPos.z
-    const distSq = dx * dx + dy * dy + dz * dz
-    if (distSq > LIGHT_CULL_DISTANCE_SQ) {
-      light.visible = false
-      return
-    }
-    candidates.push({
-      key,
-      light,
-      priority: light.userData.blockId === 'glow' ? 2 : 1,
-    })
-  })
   const guardedLightBudget = Math.floor(MAX_ACTIVE_GLOW_LIGHTS * performanceGuard.budget.pointLightScale)
-  applyPointLightBudget(playerPos, candidates, guardedLightBudget)
+  glowLightBudget.apply(playerPos, guardedLightBudget, LIGHT_CULL_DISTANCE_SQ)
 }
 
 function updateInstancedBounds() {

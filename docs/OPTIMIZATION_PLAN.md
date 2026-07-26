@@ -139,6 +139,8 @@ High-impact tasks:
   decoration meshes from the scene graph.
 - Block-break and shard particles share two instanced pools instead of one scene mesh per particle;
   per-tier capacities remain bounded, block color stays per instance and burst setup is allocation-free.
+- Glow and crystal lights use persistent registered entries and one reusable candidate buffer, keeping
+  priority/range behavior while eliminating periodic wrappers, sorted copies and active/inactive slices.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence
