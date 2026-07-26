@@ -4,8 +4,10 @@ import { getBlockDef, type BlockId } from './blocks'
 const TEXTURE_SIZE = 96
 const MATERIAL_ANIMATION_FPS = 30
 type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
+export type BlockLambertMaterial = THREE.MeshLambertMaterial | THREE.MeshLambertMaterial[]
 const generatedTextureCache = new Map<string, THREE.CanvasTexture>()
 const generatedMaterialCache = new Map<string, THREE.MeshStandardMaterial>()
+const generatedLambertMaterialCache = new Map<string, THREE.MeshLambertMaterial>()
 let materialAnimationFrames = new WeakMap<THREE.Texture, number>()
 
 function hashSeed(seed: string) {
@@ -59,6 +61,8 @@ export function getGeneratedTextureCacheSize() {
 export function clearGeneratedMaterialCache() {
   generatedMaterialCache.forEach((material) => material.dispose())
   generatedMaterialCache.clear()
+  generatedLambertMaterialCache.forEach((material) => material.dispose())
+  generatedLambertMaterialCache.clear()
 }
 
 export function getGeneratedMaterialCacheSize() {
@@ -486,6 +490,39 @@ export function createBlockMaterials() {
   }))
 
   return materials
+}
+
+function lambertFromStandard(material: THREE.MeshStandardMaterial) {
+  const cached = generatedLambertMaterialCache.get(material.uuid)
+  if (cached) return cached
+
+  const lambert = new THREE.MeshLambertMaterial({
+    color: material.color.clone(),
+    map: material.map,
+    emissive: material.emissive.clone(),
+    emissiveIntensity: material.emissiveIntensity,
+    transparent: material.transparent,
+    opacity: material.opacity,
+    alphaTest: material.alphaTest,
+  })
+  generatedLambertMaterialCache.set(material.uuid, lambert)
+  return lambert
+}
+
+/**
+ * Per-vertex-lit twins of the standard block materials, sharing the same canvas
+ * textures. They let constrained devices opt into textured terrain at a fraction
+ * of the PBR fragment cost.
+ */
+export function createBlockLambertMaterials(standardMaterials: Map<BlockId, BlockMaterial>) {
+  const lambertMaterials = new Map<BlockId, BlockLambertMaterial>()
+  standardMaterials.forEach((material, id) => {
+    lambertMaterials.set(
+      id,
+      Array.isArray(material) ? material.map(lambertFromStandard) : lambertFromStandard(material),
+    )
+  })
+  return lambertMaterials
 }
 
 export function animateBlockMaterials(materials: Map<BlockId, BlockMaterial>, elapsedTime: number) {

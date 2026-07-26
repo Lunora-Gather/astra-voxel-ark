@@ -37,4 +37,35 @@ export function assertQualityRuntimeProfileSmoke() {
   if (balancedUltra.antialias || balancedUltra.powerPreference !== 'low-power' || balancedUltra.precision !== 'mediump') {
     throw new Error('Quality runtime profile smoke failed: constrained tiers should retain safe renderer options')
   }
+
+  if (eco.terrainStyle !== 'merged-flat' || eco.allowShadows) {
+    throw new Error('Quality runtime profile smoke failed: Eco should keep the merged flat terrain path everywhere')
+  }
+  if (high.terrainStyle !== 'textured-standard' || !high.allowShadows || high.shadowMapSize !== 1024) {
+    throw new Error('Quality runtime profile smoke failed: High on high-tier devices should keep the full terrain path')
+  }
+  if (balancedUltra.terrainStyle !== 'merged-flat' || balancedUltra.allowShadows) {
+    throw new Error('Quality runtime profile smoke failed: ultra-low balanced should stay on the merged flat path')
+  }
+
+  const lowLimits = detectRuntimeDeviceProfile({
+    touchPrimary: false,
+    reducedMotion: false,
+    forcedTier: 'low',
+  }).limits
+  const balancedLow = resolveQualityRuntimeProfile('balanced', 'low', lowLimits)
+  if (balancedLow.terrainStyle !== 'textured-lambert' || balancedLow.allowShadows) {
+    throw new Error('Quality runtime profile smoke failed: low-tier balanced should unlock textured Lambert terrain without shadows')
+  }
+  const highLow = resolveQualityRuntimeProfile('high', 'low', lowLimits)
+  if (highLow.terrainStyle !== 'textured-lambert' || !highLow.allowShadows || highLow.shadowMapSize !== 512) {
+    throw new Error('Quality runtime profile smoke failed: low-tier High should unlock compact shadows')
+  }
+  if (lowLimits.maxViewDistance < 3) {
+    throw new Error('Quality runtime profile smoke failed: low tier should allow the full view-distance choice')
+  }
+  const highUltra = resolveQualityRuntimeProfile('high', 'ultra-low', ultraLimits)
+  if (highUltra.terrainStyle !== 'textured-lambert' || highUltra.allowShadows) {
+    throw new Error('Quality runtime profile smoke failed: ultra-low High should unlock textures but never shadows')
+  }
 }

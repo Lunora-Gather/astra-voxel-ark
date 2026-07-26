@@ -7,16 +7,29 @@ export type QualityRenderBounds = {
   start: number
 }
 
+/**
+ * How chunk terrain is materialized:
+ * - 'merged-flat': one vertex-colored Lambert mesh per chunk (cheapest, no textures)
+ * - 'textured-lambert': per-material textured meshes with per-vertex lighting
+ * - 'textured-standard': full PBR materials
+ */
+export type TerrainRenderStyle = 'merged-flat' | 'textured-lambert' | 'textured-standard'
+
 export type QualityRuntimeProfile = {
   render: QualityRenderBounds
   antialias: boolean
   powerPreference: 'low-power' | 'high-performance'
   precision: 'mediump' | 'highp'
+  terrainStyle: TerrainRenderStyle
+  allowShadows: boolean
+  shadowMapSize: number
 }
 
 /**
  * Resolves the immutable WebGL startup options and the adaptive render-scale
  * band from the persisted quality choice before the first frame is allocated.
+ * The device tier picks safe defaults and rails; the preset decides the look,
+ * so constrained hardware can still opt into richer terrain.
  */
 export function resolveQualityRuntimeProfile(
   preset: QualityPreset,
@@ -32,7 +45,23 @@ export function resolveQualityRuntimeProfile(
     antialias: !lowCostPreset && (tier === 'standard' || tier === 'high'),
     powerPreference: preset === 'eco' || constrainedTier ? 'low-power' : 'high-performance',
     precision: preset === 'eco' || tier === 'ultra-low' ? 'mediump' : 'highp',
+    terrainStyle: resolveTerrainStyle(preset, tier),
+    allowShadows: resolveShadowPolicy(preset, tier),
+    shadowMapSize: constrainedTier ? 512 : 1024,
   }
+}
+
+function resolveTerrainStyle(preset: QualityPreset, tier: RuntimeTier): TerrainRenderStyle {
+  if (preset === 'eco') return 'merged-flat'
+  if (tier === 'ultra-low') return preset === 'high' ? 'textured-lambert' : 'merged-flat'
+  if (tier === 'low') return preset === 'low' ? 'merged-flat' : 'textured-lambert'
+  return preset === 'low' ? 'textured-lambert' : 'textured-standard'
+}
+
+function resolveShadowPolicy(preset: QualityPreset, tier: RuntimeTier) {
+  if (preset === 'eco' || preset === 'low' || tier === 'ultra-low') return false
+  if (tier === 'low') return preset === 'high'
+  return true
 }
 
 function resolveRenderBounds(preset: QualityPreset, limits: RuntimeLimits): QualityRenderBounds {
