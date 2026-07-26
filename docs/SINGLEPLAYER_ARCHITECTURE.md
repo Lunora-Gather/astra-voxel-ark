@@ -24,6 +24,10 @@ same allocation-free controller; `main.ts` only rotates its reused displacement 
 50 ms so a stalled low-end frame cannot create a tunneling-sized movement step. Pause, focus loss,
 orientation changes, world loading and respawn explicitly reset the relevant motion state.
 
+`src/world/WorldCoordinates.ts` owns Minecraft-style block coordinate rounding and display/clipboard
+formats. The roomy and compact desktop HUD exposes a copyable biome/location card; minimal HUDs omit
+that card to preserve touch space, while the World menu always includes the current position.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.

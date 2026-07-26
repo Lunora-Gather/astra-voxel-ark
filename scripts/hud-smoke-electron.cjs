@@ -254,6 +254,9 @@ async function readState(win, label) {
         pointerLocked: document.pointerLockElement === document.querySelector('canvas'),
         leftStackVisible: visible('.hud-left-stack'),
         rightStackVisible: visible('.hud-right-stack'),
+        worldBadgeVisible: visible('.world-badge'),
+        worldBadgeFullyVisible: !visible('.world-badge') || fullyVisible(rectOf('.world-badge')),
+        worldCoordinatesText: document.querySelector('.world-coordinates')?.textContent?.trim() || '',
         menuButtonVisible: visible('.menu-toggle-btn'),
         saveStatusVisible: visible('.hud-save-status'),
         saveStatusFullyVisible: fullyVisible(rectOf('.hud-save-status')),
@@ -319,6 +322,7 @@ async function readState(win, label) {
         saveButtonFullyVisible: fullyVisible(rectOf('.pause-menu .save-tools button')),
         worldSeedFullyVisible: fullyVisible(rectOf('.world-seed')),
         worldSeedLabel: document.querySelector('.world-seed strong')?.textContent?.trim() || null,
+        saveMetaText: document.querySelector('.save-meta')?.textContent?.trim() || '',
         outside: rects.filter((rect) => !fullyVisible(rect)),
         settings: {
           sensitivity: document.querySelector('.sensitivity-input')?.value,
@@ -349,6 +353,10 @@ function assertGameplayState(state) {
   if (state.mineProgressVisible) fail('Mining progress should not remain visible after input reset', state)
   if (!state.saveStatusVisible || !state.saveStatusFullyVisible) fail('Persistent save status should fit in the gameplay HUD', state)
   if (!['unsaved', 'saving', 'saved', 'error'].includes(state.saveStatusState)) fail('Save status should expose a valid state', state)
+  if (state.label.startsWith('desktop:')) {
+    if (!state.worldBadgeVisible || !state.worldBadgeFullyVisible) fail('Desktop location badge should be visible and fit in the HUD', state)
+    if (!/^X -?\d+ · Y -?\d+ · Z -?\d+$/.test(state.worldCoordinatesText)) fail('Desktop location badge should expose block coordinates', state)
+  }
 }
 
 function assertMenuState(state) {
@@ -412,6 +420,7 @@ function assertWorldMenuState(state) {
   if (!state.worldSlotsFullyVisible) fail('World slot controls should fit in the viewport', state)
   if (!state.worldNameEditorFullyVisible) fail('World name editor should fit in the viewport', state)
   if (!state.worldSeedFullyVisible || !/^[0-9A-F]{8}$/.test(state.worldSeedLabel || '')) fail('World seed control should be visible and formatted', state)
+  if (!/X -?\d+ · Y -?\d+ · Z -?\d+/.test(state.saveMetaText)) fail('World save details should include the current position', state)
 }
 
 function assertTouchLandscapeState(state) {
@@ -645,6 +654,13 @@ async function runScenario(win, scenario) {
   const gameplay = await readState(win, `${scenario.label}:gameplay`)
   assertGameplayState(gameplay)
   if (scenario.touch) assertTouchLandscapeState(gameplay)
+  if (scenario.label === 'desktop') {
+    await click(win, '.world-badge')
+    const copiedCoordinates = await readState(win, `${scenario.label}:coordinates-copied`)
+    if (!copiedCoordinates.toastText.startsWith('Coordinates')) {
+      fail('Desktop location badge should copy coordinates with clear feedback', copiedCoordinates)
+    }
+  }
   await click(win, '.hotbar-page')
   const secondPalette = await readState(win, `${scenario.label}:palette-2`)
   if (secondPalette.hotbarPage !== '2' || secondPalette.activeSlots !== 1) fail('Palette control should switch to the second nine-slot page', secondPalette)
@@ -683,6 +699,11 @@ async function runScenario(win, scenario) {
   await click(win, '.menu-tab[data-menu-tab="world"]')
   const worldMenu = await readState(win, `${scenario.label}:world-menu`)
   assertWorldMenuState(worldMenu)
+  await click(win, '.save-meta')
+  const copiedMenuCoordinates = await readState(win, `${scenario.label}:menu-coordinates-copied`)
+  if (!copiedMenuCoordinates.toastText.startsWith('Coordinates')) {
+    fail('World details should copy coordinates with clear feedback', copiedMenuCoordinates)
+  }
   await smokeSaveLoad(win, scenario)
   await smokeWorldNames(win, scenario)
   await click(win, '.menu-tab[data-menu-tab="settings"]')

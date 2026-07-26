@@ -44,7 +44,11 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .help { position: absolute; right: 24px; top: 20px; max-width: 270px; padding: 15px 17px; border-radius: 20px; border: 1px solid rgba(255,255,255,.18); background: linear-gradient(135deg, rgba(10,18,40,.52), rgba(26,45,72,.24)); backdrop-filter: blur(18px); font-size: 13px; line-height: 1.72; box-shadow: 0 18px 60px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14); }
 .help strong { color: #c7f2ff; letter-spacing: .08em; }
 .mobile-help { display: none; }
-.world-badge { position: absolute; right: 24px; bottom: 112px; padding: 9px 13px; border-radius: 999px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(16px); font-size: 12px; color: rgba(255,255,255,.88); }
+.world-badge { pointer-events: auto; position: absolute; right: 24px; bottom: 112px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 7px; padding: 8px 12px; text-align: left; border-radius: 14px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(16px); font-size: 11px; color: rgba(255,255,255,.88); cursor: pointer; }
+.world-badge .badge-pulse { grid-row: 1 / 3; width: 7px; height: 7px; border-radius: 50%; background: #a8ffb9; box-shadow: 0 0 10px rgba(168,255,185,.72); }
+.world-biome, .world-coordinates { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-biome { font-weight: 800; }
+.world-coordinates { color: rgba(199,242,255,.72); font: 800 9px/1.3 monospace; }
 .wayfinder-badge { position: absolute; left: 24px; top: 402px; min-width: 220px; padding: 10px 14px; border-radius: 999px; background: linear-gradient(135deg, rgba(9,14,31,.66), rgba(35,60,86,.42)); border: 1px solid rgba(169,239,255,.28); backdrop-filter: blur(18px); box-shadow: 0 16px 44px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.14); display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 12px; }
 .wayfinder-label { color: #c7f2ff; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .wayfinder-value { color: #fff3a8; font-weight: 900; font-family: monospace; white-space: nowrap; }
@@ -258,7 +262,10 @@ body.menu-open .menu-toggle-btn { display: none; }
 .world-name-input:focus { border-color: rgba(158,232,255,.64); box-shadow: 0 0 0 2px rgba(158,232,255,.1); }
 .world-name-save { min-height: 34px; margin: 0; padding: 7px 13px; color: #071120; border: 0; border-radius: 11px; background: #9ee8ff; font-size: 10px; font-weight: 900; cursor: pointer; }
 .world-name-editor small { grid-column: 1 / -1; color: rgba(255,255,255,.38); font-size: 8px; }
-.save-meta { margin-top: 10px; padding: 10px 12px; border-radius: 12px; color: rgba(255,255,255,.58); background: rgba(255,255,255,.05); font-size: 10px; line-height: 1.45; }
+.save-meta { pointer-events: auto; width: 100%; margin-top: 10px; padding: 10px 12px; text-align: left; border: 1px solid transparent; border-radius: 12px; color: rgba(255,255,255,.58); background: rgba(255,255,255,.05); font-size: 10px; line-height: 1.45; cursor: pointer; }
+@media (hover: hover) {
+  .save-meta:hover { color: rgba(255,255,255,.76); border-color: rgba(158,232,255,.22); background: rgba(158,232,255,.07); }
+}
 body.menu-open .crosshair { opacity: 0; }
 body:not(.show-perf-hud) .perf-badge { display: none !important; }
 body.show-perf-hud .perf-badge { display: grid !important; }
@@ -665,8 +672,7 @@ body[data-hud-density="compact"] .title h1 {
 }
 
 body[data-hud-density="compact"] .title p,
-body[data-hud-density="compact"] .tutorial,
-body[data-hud-density="compact"] .world-badge {
+body[data-hud-density="compact"] .tutorial {
   display: none;
 }
 

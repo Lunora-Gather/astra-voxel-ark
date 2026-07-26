@@ -23,6 +23,8 @@ import {
   buildProceduralChunkPlan,
   createWorldSeed,
   formatWorldSeed,
+  formatWorldCoordinates,
+  formatWorldCoordinatesForClipboard,
   proceduralTerrainHeightAt,
   getWorldExportSlug,
   getWorldSlotSaveKey,
@@ -150,7 +152,7 @@ app.innerHTML = `
           <div class="perf-metric"><span class="perf-label">Tex</span><span class="perf-textures">0</span></div>
         </div>
       </div>
-      <div class="world-badge"><span class="badge-pulse"></span><span class="world-biome">Star Meadow</span></div>
+      <button class="world-badge" type="button" title="Copy current coordinates" aria-label="Copy current coordinates"><span class="badge-pulse"></span><span class="world-biome">Star Meadow · Hand Tools</span><span class="world-coordinates">X 0 · Y 12 · Z 18</span></button>
     </div>
 
     <button class="help-toggle-btn" aria-label="Toggle Help">?</button>
@@ -270,7 +272,7 @@ app.innerHTML = `
           <button class="reset-btn">New World</button>
           <input class="import-input" type="file" accept="application/json,.json" />
           </div>
-          <div class="save-meta" aria-live="polite">Checking local save…</div>
+          <button class="save-meta" type="button" title="Copy current coordinates" aria-label="World save details. Copy current coordinates." aria-live="polite">Checking local save…</button>
         </section>
       </div>
     </div>
@@ -1467,15 +1469,20 @@ function resetWorld() {
 }
 
 function updateSaveMeta(message?: string) {
-  const saveMeta = document.querySelector<HTMLDivElement>('.save-meta')
+  const saveMeta = document.querySelector<HTMLButtonElement>('.save-meta')
   if (!saveMeta) return
   if (message) {
     saveMeta.textContent = message
     return
   }
   const saves = getWorldSaveSystem()
+  const positionLabel = formatWorldCoordinates(
+    controls.object.position.x,
+    controls.object.position.y,
+    controls.object.position.z,
+  )
   if (!saves.hasSave()) {
-    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(worldSeed)} · New world`
+    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(worldSeed)} · ${positionLabel} · New world`
     return
   }
   const saved = saves.load()
@@ -1486,7 +1493,7 @@ function updateSaveMeta(message?: string) {
       : 'time unavailable'
     const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
     const savedSeed = normalizeWorldSeed(saved.worldSeed, 0)
-    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(savedSeed)} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
+    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(savedSeed)} · ${positionLabel} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
   } else {
     saveMeta.textContent = saves.hasBackup()
       ? 'Primary save needs attention · a recovery backup is available.'
@@ -1555,6 +1562,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./game/SaveActivityTrackerSmoke').then(({ assertSaveActivityTrackerSmoke }) => {
     assertSaveActivityTrackerSmoke()
+  }).catch((error) => console.error(error))
+  void import('./world/WorldCoordinatesSmoke').then(({ assertWorldCoordinatesSmoke }) => {
+    assertWorldCoordinatesSmoke()
   }).catch((error) => console.error(error))
 }
 
@@ -3208,6 +3218,9 @@ const coldVignetteEl = document.querySelector<HTMLElement>('.cold-vignette')
 const healthBarEl = document.querySelector<HTMLElement>('.health-bar')
 const healthValEl = document.querySelector<HTMLElement>('.health-val')
 const worldBiomeEl = document.querySelector<HTMLElement>('.world-biome')
+const worldCoordinatesEl = document.querySelector<HTMLElement>('.world-coordinates')
+const worldBadgeButton = document.querySelector<HTMLButtonElement>('.world-badge')
+const saveMetaButton = document.querySelector<HTMLButtonElement>('.save-meta')
 const previousPosition = new THREE.Vector3()
 const movementDelta = new THREE.Vector3()
 let fpsFrameCount = 0
@@ -3243,6 +3256,22 @@ let lastSurvivalProtectionLabel = ''
 let lastSurvivalStyle = ''
 let lastShardSignalAt = -Infinity
 let lastBiomeUiAt = -Infinity
+
+function copyCurrentCoordinates() {
+  const position = controls.object.position
+  const coordinateText = formatWorldCoordinatesForClipboard(position.x, position.y, position.z)
+  if (!navigator.clipboard?.writeText) {
+    showToast(`Coordinates ${coordinateText}`)
+    return
+  }
+  void navigator.clipboard.writeText(coordinateText).then(
+    () => showToast('Coordinates copied'),
+    () => showToast(`Coordinates ${coordinateText}`),
+  )
+}
+
+worldBadgeButton?.addEventListener('click', copyCurrentCoordinates)
+saveMetaButton?.addEventListener('click', copyCurrentCoordinates)
 
 function respawnPlayer() {
   survivalVitals.respawn()
@@ -3517,7 +3546,11 @@ function animate() {
   }
   if (worldBiomeEl && elapsedTime - lastBiomeUiAt > 0.75) {
     lastBiomeUiAt = elapsedTime
-    worldBiomeEl.textContent = `${getBiomeAt(controls.object.position.x, controls.object.position.z, worldSeed).name} · ${progression.getToolName()}`
+    const position = controls.object.position
+    worldBiomeEl.textContent = `${getBiomeAt(position.x, position.z, worldSeed).name} · ${progression.getToolName()}`
+    if (worldCoordinatesEl) {
+      worldCoordinatesEl.textContent = formatWorldCoordinates(position.x, position.y, position.z)
+    }
   }
 
   particleEffects.update(dt)

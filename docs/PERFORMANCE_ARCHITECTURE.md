@@ -54,6 +54,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
   preventing redundant serialization and late writes against a different active slot.
 - Constrained tiers disable live HUD backdrop blur and render one nine-slot palette at a time;
   all 18 materials remain available in the paused backpack.
+- Biome, tool-tier and coordinate text share one 750 ms DOM update budget; minimal HUDs omit the
+  persistent location card while retaining coordinates in the paused World details.
 
 ## Audio lifecycle
 
