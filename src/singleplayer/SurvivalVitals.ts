@@ -59,6 +59,12 @@ export class SurvivalVitals {
     }
   }
 
+  heal(amount: number) {
+    const before = this.health
+    this.health = clamp(this.health + finiteNonNegative(amount), 0, this.maxHealth)
+    return this.health - before
+  }
+
   respawn() {
     this.health = this.maxHealth
   }

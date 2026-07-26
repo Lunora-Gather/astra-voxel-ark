@@ -38,6 +38,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Persistent 30/60 FPS frame cap plus sound volume and mute controls
 - Optional compact performance HUD with frame, world, draw-call and GPU resource diagnostics
 - Health, safe-threshold fall damage, cold-night exposure and Ark recovery
+- Night-only Ark shelter rest near the core, advancing to dawn with bounded health and power recovery
 - Dreamy day-night cycle
 - Soft fog, shadows, stars, clouds, sparkles, animated water, swaying grass and emissive blocks
 - Procedural pixel textures for every block type
@@ -57,6 +58,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 | Place block | Right click |
 | Switch building pattern | B / Game Menu → Expedition |
 | Undo last build | Ctrl/Command + Z / Expedition → Backpack |
+| Rest at the Ark | R / Expedition → Journey |
 | Select material | 1-9 / mouse wheel / tap hotbar slot |
 | Switch material palette | Tab / Palette button |
 | Open backpack | E / Game Menu → Expedition |

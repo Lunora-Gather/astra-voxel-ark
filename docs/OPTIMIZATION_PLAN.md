@@ -130,6 +130,8 @@ High-impact tasks:
   rules, with no additional scene objects or per-frame DOM allocation.
 - Water movement is integrated into the shared allocation-free motion controller using two packed
   block lookups, bounded vertical speed and change-only Jump/Swim feedback.
+- Ark shelter rest closes the cold-night loop through a deterministic time/distance rule and existing
+  save fields, with one Journey card and no scene or per-frame allocation.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

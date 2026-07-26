@@ -232,6 +232,12 @@ body.menu-open .menu-toggle-btn { display: none; }
 .expedition-nav-btn { pointer-events: auto; min-height: 32px; padding: 6px 8px; color: rgba(255,255,255,.56); border: 1px solid transparent; border-radius: 9px; background: transparent; font-size: 9px; font-weight: 900; cursor: pointer; }
 .expedition-nav-btn.active { color: #071120; border-color: rgba(255,255,255,.48); background: linear-gradient(135deg, #9ee8ff, #a8ffb9); }
 .expedition-view[hidden] { display: none; }
+.ark-rest-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid rgba(255,243,168,.16); border-radius: 12px; background: rgba(255,243,168,.055); }
+.ark-rest-card > div { display: grid; min-width: 0; gap: 2px; }
+.ark-rest-card strong { font-size: 11px; }
+.ark-rest-card small { color: rgba(255,255,255,.55); font-size: 9px; line-height: 1.35; }
+.ark-rest-btn { flex: none; pointer-events: auto; min-width: 70px; padding: 7px 9px; color: #071120; border: 1px solid rgba(255,243,168,.38); border-radius: 999px; background: #fff3a8; font-size: 9px; font-weight: 900; cursor: pointer; }
+.ark-rest-btn:disabled { color: rgba(255,255,255,.42); border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.07); cursor: default; }
 .objective-list, .recipe-list { display: grid; gap: 7px; }
 .expedition-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 13px 2px 7px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); }
 .expedition-section-heading strong { font-size: 11px; }

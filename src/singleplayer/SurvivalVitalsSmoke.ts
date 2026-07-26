@@ -10,6 +10,9 @@ export function assertSurvivalVitalsSmoke() {
   if (impact.health !== 75 || impact.damageTaken !== 25 || impact.died) {
     throw new Error('Survival vitals smoke failed: direct damage should update health exactly')
   }
+  if (vitals.heal(10) !== 10 || vitals.getHealth() !== 85 || vitals.heal(Number.NaN) !== 0) {
+    throw new Error('Survival vitals smoke failed: direct healing should be bounded and finite')
+  }
   const fatal = vitals.applyDamage(200)
   if (!fatal.died || fatal.health !== 0 || vitals.getDeaths() !== 1) {
     throw new Error('Survival vitals smoke failed: fatal damage should record one death')

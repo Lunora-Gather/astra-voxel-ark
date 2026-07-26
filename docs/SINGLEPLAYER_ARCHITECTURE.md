@@ -33,6 +33,12 @@ touch-specific controller. `main.ts` derives that state from two packed-key tors
 updates the Jump/Swim label only when the medium changes. Landing while immersed suppresses fall
 damage but still resets vertical velocity.
 
+`ArkRestSystem` shares the live `0.055` day-phase rate and derives rest eligibility plus the next
+rising-dawn time from world time and Ark distance. It has no DOM, Three.js or persistence dependency.
+The Journey adapter permits rest only at night within 12 metres of the core, applies bounded
+`SurvivalVitals.heal`, raises power to a minimum of 65 and reuses the existing v8 world-time, vitals
+and survival fields. Desktop `R` and the Journey button invoke the same adapter.
+
 `src/world/WorldCoordinates.ts` owns Minecraft-style block coordinate rounding and display/clipboard
 formats. The roomy and compact desktop HUD exposes a copyable biome/location card; minimal HUDs omit
 that card to preserve touch space, while the World menu always includes the current position.

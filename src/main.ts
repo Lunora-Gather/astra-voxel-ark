@@ -15,6 +15,7 @@ import {
   TutorialGuide,
   getBuildPatternDefinition,
   getFallDamage,
+  planArkRest,
   isBuildPatternId,
   type BuildPatternId,
   type BuildChange,
@@ -153,7 +154,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump / swim<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Ctrl+Z undo build · Restore 6 shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Jump becomes Swim in water<br/>Undo Build is in Menu · Backpack</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump / swim<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Ctrl+Z undo · R rest at Ark</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Jump becomes Swim in water<br/>Rest is in Journey · Undo in Backpack</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -269,6 +270,10 @@ app.innerHTML = `
             <button class="expedition-nav-btn" type="button" role="tab" data-expedition-view="workshop" aria-selected="false">Workshop</button>
           </div>
           <div class="expedition-view active" role="tabpanel" data-expedition-page="journey">
+            <div class="ark-rest-card">
+              <div><strong>Ark Shelter</strong><small class="ark-rest-status">Rest is available near the Ark at night.</small></div>
+              <button class="ark-rest-btn" type="button" disabled>Rest</button>
+            </div>
             <div class="expedition-section-heading objective-heading"><strong>Objectives</strong><button class="claim-all-objectives" type="button" disabled>No rewards ready</button></div>
             <div class="objective-list"></div>
           </div>
@@ -332,6 +337,7 @@ scene.background = skyColor
 scene.fog = sceneFog
 
 const PLAYER_SPAWN = { x: 0, y: 12, z: 18 } as const
+const ARK_CORE_POSITION = { x: 0, y: 7.6, z: 10 } as const
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 600)
 camera.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
 camera.rotation.order = 'YXZ'
@@ -1665,6 +1671,9 @@ if (isSmokeTest) {
   void import('./singleplayer/BuildHistorySystemSmoke').then(({ assertBuildHistorySystemSmoke }) => {
     assertBuildHistorySystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./singleplayer/ArkRestSystemSmoke').then(({ assertArkRestSystemSmoke }) => {
+    assertArkRestSystemSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -2054,7 +2063,7 @@ const arkCoreSpire = new THREE.Mesh(
 const arkCoreLight = new THREE.PointLight(0x9ee8ff, lowPowerMode ? 0 : 0.2, 9)
 const arkCoreModuleMaterials: THREE.MeshStandardMaterial[] = []
 const arkCoreModules: THREE.Mesh[] = []
-arkCore.position.set(0, 7.6, 10)
+arkCore.position.set(ARK_CORE_POSITION.x, ARK_CORE_POSITION.y, ARK_CORE_POSITION.z)
 arkCoreRing.rotation.x = Math.PI / 2
 arkCoreSpire.position.y = 0.82
 arkCoreLight.position.y = 0.9
@@ -2327,6 +2336,8 @@ const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const buildPatternButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-build-pattern]')]
 const undoBuildButton = document.querySelector<HTMLButtonElement>('.undo-build-btn')!
+const arkRestButton = document.querySelector<HTMLButtonElement>('.ark-rest-btn')!
+const arkRestStatus = document.querySelector<HTMLElement>('.ark-rest-status')!
 const expeditionNavButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-expedition-view]')]
 const expeditionPages = [...document.querySelectorAll<HTMLElement>('[data-expedition-page]')]
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
@@ -2520,6 +2531,7 @@ function setExpeditionView(view: ExpeditionView) {
     page.classList.toggle('active', active)
     page.hidden = !active
   })
+  if (view === 'journey') updateArkRestUi()
 }
 
 expeditionNavButtons.forEach((button) => {
@@ -2613,9 +2625,54 @@ function formatReward(reward: Array<{ id: BlockId; amount: number }>) {
   return reward.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
 }
 
+function distanceToArk() {
+  const position = controls.object.position
+  return Math.hypot(
+    position.x - ARK_CORE_POSITION.x,
+    position.y - ARK_CORE_POSITION.y,
+    position.z - ARK_CORE_POSITION.z,
+  )
+}
+
+function updateArkRestUi() {
+  const distance = distanceToArk()
+  const rest = planArkRest(simulationElapsedTime, distance)
+  arkRestButton.disabled = !rest.available
+  if (rest.reason === 'ready') {
+    arkRestButton.textContent = 'Rest to Dawn'
+    arkRestStatus.textContent = 'Night shelter ready · restores health and Ark power.'
+  } else if (rest.reason === 'far') {
+    arkRestButton.textContent = 'Too Far'
+    arkRestStatus.textContent = `Return within 12m of the Ark · ${Math.ceil(distance)}m away.`
+  } else {
+    arkRestButton.textContent = 'Daylight'
+    arkRestStatus.textContent = 'Rest becomes available near the Ark after dusk.'
+  }
+}
+
+function restAtArk() {
+  const rest = planArkRest(simulationElapsedTime, distanceToArk())
+  if (!rest.available) {
+    showToast(rest.reason === 'far' ? 'Return to the Ark to rest' : 'Rest is available after dusk')
+    updateArkRestUi()
+    return false
+  }
+  simulationElapsedTime = rest.nextWorldTime
+  const healed = survivalVitals.heal(35)
+  crystalPower = Math.max(65, crystalPower)
+  updateHealthUi()
+  updateArkRestUi()
+  playGameSound('select', 0.3)
+  showToast(`Dawn restored · ${Math.round(healed)} health recovered`)
+  return true
+}
+
+arkRestButton.addEventListener('click', restAtArk)
+
 function updateProgressionUi() {
   if (!toolTierValue || !objectiveList || !inventoryGrid || !recipeList) return
   updateBuildUndoUi()
+  updateArkRestUi()
   updateTutorialUi()
   toolTierValue.textContent = progression.getToolName()
   const objectives = progression.getObjectives()
@@ -3051,6 +3108,11 @@ document.addEventListener('keydown', (e) => {
     return
   }
   if (isPaused) return
+  if (e.code === 'KeyR') {
+    e.preventDefault()
+    restAtArk()
+    return
+  }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
     e.preventDefault()
     undoLastBuild()

@@ -256,6 +256,10 @@ async function readState(win, label) {
         activeExpeditionViews: document.querySelectorAll('.expedition-nav-btn.active').length,
         activeExpeditionView: document.querySelector('.expedition-nav-btn.active')?.dataset.expeditionView || null,
         journeyViewVisible: visible('[data-expedition-page="journey"]'),
+        arkRestVisible: visible('.ark-rest-card'),
+        arkRestDisabled: document.querySelector('.ark-rest-btn')?.disabled ?? true,
+        arkRestButtonText: document.querySelector('.ark-rest-btn')?.textContent?.trim() || '',
+        arkRestStatusText: document.querySelector('.ark-rest-status')?.textContent?.trim() || '',
         backpackViewVisible: visible('[data-expedition-page="backpack"]'),
         workshopViewVisible: visible('[data-expedition-page="workshop"]'),
         settingsVisible: visible('.settings-grid'),
@@ -573,7 +577,8 @@ async function smokeSaveLoad(win, scenario) {
   const resumeState = {
     ...saved,
     player: { position: [2, 15, 12], rotation: [0.2, 0.4] },
-    worldTime: 42,
+    worldTime: 85,
+    vitals: { ...saved.vitals, health: 60 },
     tutorial: { completed: ['move', 'mine', 'place'] },
   }
   delete resumeState.worldSeed
@@ -599,6 +604,27 @@ async function smokeSaveLoad(win, scenario) {
     fail('Paused world should not advance simulation time', { expected: resumeState.worldTime, actual: loaded.worldTime })
   }
   if (loaded.worldSeed !== 0) fail('Pre-v8 saves without a seed should retain legacy terrain seed 0', { loaded })
+  await click(win, '.menu-tab[data-menu-tab="expedition"]')
+  await click(win, '.expedition-nav-btn[data-expedition-view="journey"]')
+  const restReady = await readState(win, `${scenario.label}:rest-ready`)
+  if (
+    restReady.arkRestDisabled ||
+    restReady.arkRestButtonText !== 'Rest to Dawn' ||
+    !restReady.arkRestStatusText.includes('Night shelter ready')
+  ) {
+    fail('Nearby night saves should expose Ark rest', restReady)
+  }
+  await click(win, '.ark-rest-btn')
+  const rested = await readState(win, `${scenario.label}:rested`)
+  if (!rested.arkRestDisabled || rested.arkRestButtonText !== 'Daylight' || !rested.toastText.startsWith('Dawn restored')) {
+    fail('Ark rest should advance the live world to daylight with feedback', rested)
+  }
+  await click(win, '.menu-tab[data-menu-tab="world"]')
+  await click(win, '.save-btn')
+  const restedSave = await readSavedWorld(win)
+  if (restedSave.worldTime <= resumeState.worldTime || restedSave.vitals?.health !== 95 || restedSave.survival?.crystalPower < 65) {
+    fail('Ark rest should persist dawn, bounded healing and minimum power', { resumeState, restedSave })
+  }
   await waitForLoad(win, scenarioUrl(scenario, 'saved-boot'))
   const booted = await readSavedWorld(win)
   assertSavedWorld(booted, `${scenario.label}:saved-boot`)
@@ -748,6 +774,10 @@ async function runScenario(win, scenario) {
     expeditionMenu.activeExpeditionViews !== 1 ||
     expeditionMenu.activeExpeditionView !== 'journey' ||
     !expeditionMenu.journeyViewVisible ||
+    !expeditionMenu.arkRestVisible ||
+    !expeditionMenu.arkRestDisabled ||
+    expeditionMenu.arkRestButtonText !== 'Daylight' ||
+    !expeditionMenu.arkRestStatusText.includes('after dusk') ||
     expeditionMenu.backpackViewVisible ||
     expeditionMenu.workshopViewVisible
   ) {
