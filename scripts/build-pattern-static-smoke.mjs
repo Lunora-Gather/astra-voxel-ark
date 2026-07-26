@@ -9,10 +9,11 @@ const style = fs.readFileSync(new URL('../src/style.css', import.meta.url), 'utf
 const electronSmoke = fs.readFileSync(new URL('./hud-smoke-electron.cjs', import.meta.url), 'utf8')
 
 const expectations = [
-  [patterns.includes("export type BuildPatternId = 'single' | 'pillar' | 'wall' | 'platform'"), 'four constrained pattern ids'],
+  [patterns.includes("export type BuildPatternId = 'single' | 'pillar' | 'wall' | 'stairs' | 'platform'"), 'five constrained pattern ids'],
   [patterns.includes('Array.from({ length: MAX_PATTERN_BLOCKS }'), 'reused position buffer'],
   [runtimeSmoke.includes('planner should reuse results'), 'allocation-free planner coverage'],
   [runtimeSmoke.includes('walls should span the Z axis'), 'view-oriented wall coverage'],
+  [runtimeSmoke.includes('stairs should rotate and retain six unique blocks'), 'view-oriented stair coverage'],
   [previewCache.includes('export class BuildPreviewCache'), 'dedicated preview cache boundary'],
   [previewCache.includes('previous.worldVersion !== next.worldVersion'), 'world mutation invalidation'],
   [previewCache.includes('previous.playerX !== next.playerX'), 'player collision invalidation'],

@@ -66,7 +66,7 @@ operation and records each claim before the next UI refresh; repeated calls cann
 The existing progression snapshot remains the persistence boundary.
 
 `src/singleplayer/BuildPatternSystem.ts` owns renderer-independent plans for single-block, pillar,
-wall and platform placement. Its planner reuses one fixed nine-position result buffer. `main.ts`
+wall, directional two-wide stairs and platform placement. Its planner reuses one fixed nine-position result buffer. `main.ts`
 validates the whole plan against inventory, height, occupied voxels and player collision before
 applying one block batch, so a pattern either succeeds completely or leaves the world unchanged.
 Pattern choice is transient interface state; placed blocks remain ordinary player deltas in the v8

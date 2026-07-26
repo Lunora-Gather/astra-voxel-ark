@@ -818,11 +818,11 @@ async function runScenario(win, scenario) {
     fail('Expedition tab should expose the complete backpack with one selected material', expeditionMenu)
   }
   if (
-    expeditionMenu.buildPatternButtons !== 4 ||
+    expeditionMenu.buildPatternButtons !== 5 ||
     expeditionMenu.activeBuildPatterns !== 1 ||
     expeditionMenu.activeBuildPattern !== 'single'
   ) {
-    fail('Expedition tab should expose four building patterns with Single selected', expeditionMenu)
+    fail('Expedition tab should expose five building patterns with Single selected', expeditionMenu)
   }
   await click(win, '.build-pattern-btn[data-build-pattern="wall"]')
   const wallPattern = await readState(win, `${scenario.label}:wall-pattern`)
@@ -832,6 +832,15 @@ async function runScenario(win, scenario) {
     !wallPattern.blockCountText.includes('Wall ×6')
   ) {
     fail('Building pattern selection should update the active pattern and material cost', wallPattern)
+  }
+  await click(win, '.build-pattern-btn[data-build-pattern="stairs"]')
+  const stairsPattern = await readState(win, `${scenario.label}:stairs-pattern`)
+  if (
+    stairsPattern.activeBuildPatterns !== 1 ||
+    stairsPattern.activeBuildPattern !== 'stairs' ||
+    !stairsPattern.blockCountText.includes('Stairs ×6')
+  ) {
+    fail('Stair pattern should expose its directional six-block material cost', stairsPattern)
   }
   await click(win, '.build-pattern-btn[data-build-pattern="single"]')
   await click(win, '.expedition-nav-btn[data-expedition-view="workshop"]')

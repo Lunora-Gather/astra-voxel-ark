@@ -1,4 +1,4 @@
-export type BuildPatternId = 'single' | 'pillar' | 'wall' | 'platform'
+export type BuildPatternId = 'single' | 'pillar' | 'wall' | 'stairs' | 'platform'
 
 export type BuildPatternDefinition = {
   id: BuildPatternId
@@ -23,6 +23,7 @@ export const BUILD_PATTERNS: readonly BuildPatternDefinition[] = [
   { id: 'single', name: 'Single', blockCount: 1, description: 'Place one block' },
   { id: 'pillar', name: 'Pillar', blockCount: 3, description: 'Build three blocks upward' },
   { id: 'wall', name: 'Wall', blockCount: 6, description: 'Build a three-by-two wall' },
+  { id: 'stairs', name: 'Stairs', blockCount: 6, description: 'Build three two-wide ascending steps' },
   { id: 'platform', name: 'Platform', blockCount: 9, description: 'Build a three-by-three floor' },
 ]
 
@@ -62,6 +63,26 @@ export class BuildPatternPlanner {
       }
       return this.planResult
     }
+    if (pattern === 'stairs') {
+      this.planResult.count = 6
+      const alongX = Math.abs(facing.x) > Math.abs(facing.z)
+      const forwardX = alongX ? nonZeroSign(facing.x) : 0
+      const forwardZ = alongX ? 0 : nonZeroSign(facing.z)
+      const tangentX = forwardZ
+      const tangentZ = -forwardX
+      let index = 0
+      for (let step = 0; step < 3; step++) {
+        for (let side = 0; side < 2; side++) {
+          this.write(
+            index++,
+            anchor.x + forwardX * step + tangentX * side,
+            anchor.y + step,
+            anchor.z + forwardZ * step + tangentZ * side,
+          )
+        }
+      }
+      return this.planResult
+    }
     if (pattern === 'platform') {
       this.planResult.count = 9
       let index = 0
@@ -83,6 +104,10 @@ export class BuildPatternPlanner {
     position.y = Math.round(y)
     position.z = Math.round(z)
   }
+}
+
+function nonZeroSign(value: number) {
+  return value < 0 ? -1 : 1
 }
 
 export function isBuildPatternId(value: unknown): value is BuildPatternId {

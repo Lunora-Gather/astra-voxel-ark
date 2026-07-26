@@ -4063,9 +4063,12 @@ function animate() {
 
     const selectedBlock = BLOCKS[selected].id
     let facingAxis: BuildPreviewFacingAxis = 0
-    if (activeBuildPattern === 'wall') {
+    const directionalPattern = activeBuildPattern === 'wall' || activeBuildPattern === 'stairs'
+    if (directionalPattern) {
       camera.getWorldDirection(buildFacing)
-      facingAxis = Math.abs(buildFacing.x) > Math.abs(buildFacing.z) ? 1 : -1
+      facingAxis = Math.abs(buildFacing.x) > Math.abs(buildFacing.z)
+        ? (buildFacing.x < 0 ? -1 : 1)
+        : (buildFacing.z < 0 ? -2 : 2)
     }
     const playerPosition = controls.object.position
     buildPreviewSignature.hitX = hit.x
@@ -4087,7 +4090,7 @@ function animate() {
     if (buildPreviewCache.shouldRefresh(buildPreviewSignature)) {
       hitBlockPosition.set(hit.x, hit.y, hit.z)
       targetOutlineMesh.position.copy(hitBlockPosition)
-      const plan = planBuildPattern(hit, activeBuildPattern === 'wall')
+      const plan = planBuildPattern(hit, directionalPattern)
       const isValidPlacement = validateBuildPlan(plan, selectedBlock) === ''
       if (plan.count === 1) {
         if (!previewMesh) {

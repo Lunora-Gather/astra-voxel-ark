@@ -28,7 +28,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Beacon Trail exploration loop: follow named biome landmarks, collect their shards, repair visible Ark Core modules and strengthen night survival
 - Single-player progression with tool tiers, exact recipe material availability, safe max-batch crafting, reward previews and bulk objective claiming
 - Focused Journey, Backpack and Workshop expedition views that avoid long scrolling on short or low-resolution displays
-- Four building patterns—single block, pillar, wall and platform—with atomic inventory checks, collision-safe batch placement and a single-draw preview
+- Five building patterns—single block, pillar, wall, directional stairs and platform—with atomic inventory checks, collision-safe batch placement and a single-draw preview
 - Bounded per-world build undo with material refunds, water restoration and desktop/mobile access
 - Save-aware contextual onboarding for movement, mining, placement, backpack, crafting and landmark shards, with touch-specific compact help
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources

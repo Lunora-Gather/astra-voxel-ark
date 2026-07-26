@@ -1,7 +1,7 @@
 import type { BlockId } from '../blocks'
 import type { BuildPatternId } from './BuildPatternSystem'
 
-export type BuildPreviewFacingAxis = -1 | 0 | 1
+export type BuildPreviewFacingAxis = -2 | -1 | 0 | 1 | 2
 
 export type BuildPreviewSignature = {
   hitX: number
