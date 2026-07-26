@@ -103,7 +103,7 @@ High-impact tasks:
 
 - Convert Beacon Trail into a visible quest/objective system.
 - Add simple crafting recipes.
-- Add named save slots.
+- Named save slots are integrated as isolated, resilient metadata with responsive editing and name-aware exports.
 - Add biome/landmark templates.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 

@@ -21,6 +21,7 @@ const settingsKey = 'astra-voxel-ark-settings-v1'
 const saveKey = 'astra-voxel-ark-world-v1'
 const backupSaveKey = `${saveKey}-backup-v1`
 const activeWorldSlotKey = 'astra-voxel-ark-active-world-slot-v1'
+const worldSlotNamesKey = 'astra-voxel-ark-world-slot-names-v1'
 const secondSaveKey = `${saveKey}-slot-2`
 const consoleIssues = []
 const smokeArtifacts = []
@@ -155,6 +156,17 @@ async function setRange(win, selector, value) {
   `)
 }
 
+async function setText(win, selector, value) {
+  await win.webContents.executeJavaScript(`
+    (() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element) throw new Error('Missing selector: ${selector}');
+      element.value = ${JSON.stringify(String(value))};
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+    })()
+  `)
+}
+
 async function setSelect(win, selector, value) {
   await win.webContents.executeJavaScript(`
     (() => {
@@ -252,6 +264,12 @@ async function readState(win, label) {
         activeWorldSlots: document.querySelectorAll('.world-slot.active').length,
         worldSlotsFullyVisible: [...document.querySelectorAll('.world-slot')].every((button) => fullyVisible(rectOf('.world-slot[data-world-slot="' + button.dataset.worldSlot + '"]'))),
         activeWorldSlot: document.querySelector('.world-slot.active')?.dataset.worldSlot || null,
+        worldSlotNames: [...document.querySelectorAll('.world-slot strong')].map((element) => element.textContent?.trim() || ''),
+        worldNameInput: document.querySelector('.world-name-input')?.value || '',
+        worldNameEditorFullyVisible: fullyVisible(rectOf('.world-name-editor')),
+        pauseSessionText: document.querySelector('.pause-session-label')?.textContent?.trim() || '',
+        sessionCurrentText: document.querySelector('.session-current')?.textContent?.trim() || '',
+        startPrimaryText: document.querySelector('.start .panel > button:not(.start-multiplayer)')?.textContent?.trim() || '',
         perfVisible: visible('.perf-badge'),
         perfRect: rectOf('.perf-badge'),
         perfFullyVisible: !visible('.perf-badge') || fullyVisible(rectOf('.perf-badge')),
@@ -384,6 +402,7 @@ function assertWorldMenuState(state) {
   if (state.saveToolButtons !== 6 || !state.saveToolsFullyVisible) fail('All six world save controls should fit in the viewport', state)
   if (state.worldSlotsVisible !== 3 || state.activeWorldSlots !== 1) fail('World tab should expose three slots with one active slot', state)
   if (!state.worldSlotsFullyVisible) fail('World slot controls should fit in the viewport', state)
+  if (!state.worldNameEditorFullyVisible) fail('World name editor should fit in the viewport', state)
   if (!state.worldSeedFullyVisible || !/^[0-9A-F]{8}$/.test(state.worldSeedLabel || '')) fail('World seed control should be visible and formatted', state)
 }
 
@@ -533,6 +552,64 @@ async function smokeSaveLoad(win, scenario) {
   if (activeFirstSlot !== '1') fail('Returning to slot 1 should persist the legacy-compatible slot', { activeFirstSlot })
 }
 
+async function smokeWorldNames(win, scenario) {
+  if (scenario.label !== 'desktop') return
+  await setText(win, '.world-name-input', '  Crystal   Haven  ')
+  await click(win, '.world-name-save')
+  const renamedState = await readState(win, `${scenario.label}:world-renamed`)
+  if (renamedState.worldNameInput !== 'Crystal Haven' || renamedState.worldSlotNames[0] !== 'Crystal Haven') {
+    fail('World names should normalize and update the active slot', renamedState)
+  }
+  if (!renamedState.pauseSessionText.includes('Crystal Haven') || !renamedState.sessionCurrentText.includes('Crystal Haven')) {
+    fail('Named worlds should update session labels', renamedState)
+  }
+  const persistedNames = await readStorageJson(win, worldSlotNamesKey)
+  if (persistedNames?.['1'] !== 'Crystal Haven' || persistedNames?.['2'] !== 'Expedition 2') {
+    fail('World names should persist independently for every slot', { persistedNames })
+  }
+
+  await win.webContents.executeJavaScript(`
+    window.__astraDownloadName = '';
+    window.__astraOriginalAnchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function() { window.__astraDownloadName = this.download; };
+    void 0;
+  `)
+  await click(win, '.export-btn')
+  const exportName = await win.webContents.executeJavaScript(`window.__astraDownloadName`)
+  await win.webContents.executeJavaScript(`
+    HTMLAnchorElement.prototype.click = window.__astraOriginalAnchorClick;
+    delete window.__astraOriginalAnchorClick;
+    void 0;
+  `)
+  if (!/^astravoxel-ark-Crystal-Haven-\d{4}-\d{2}-\d{2}\.json$/.test(exportName)) {
+    fail('Export filenames should use the safe active world name', { exportName })
+  }
+
+  await win.webContents.executeJavaScript(`
+    window.__astraOriginalWorldNameSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (key === ${JSON.stringify(worldSlotNamesKey)}) throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      return window.__astraOriginalWorldNameSetItem.call(this, key, value);
+    };
+    void 0;
+  `)
+  await setText(win, '.world-name-input', 'Unsaved Name')
+  await click(win, '.world-name-save')
+  await win.webContents.executeJavaScript(`
+    Storage.prototype.setItem = window.__astraOriginalWorldNameSetItem;
+    delete window.__astraOriginalWorldNameSetItem;
+    void 0;
+  `)
+  const failedRenameState = await readState(win, `${scenario.label}:failed-world-rename`)
+  const namesAfterFailure = await readStorageJson(win, worldSlotNamesKey)
+  if (!failedRenameState.toastText.includes('Rename failed') || failedRenameState.worldNameInput !== 'Crystal Haven') {
+    fail('Failed world renames should preserve the current name and show feedback', failedRenameState)
+  }
+  if (namesAfterFailure?.['1'] !== 'Crystal Haven') {
+    fail('Failed world renames should preserve stored metadata', { namesAfterFailure })
+  }
+}
+
 async function runScenario(win, scenario) {
   consoleIssues.length = 0
   await resetScenario(win, scenario)
@@ -587,6 +664,7 @@ async function runScenario(win, scenario) {
   const worldMenu = await readState(win, `${scenario.label}:world-menu`)
   assertWorldMenuState(worldMenu)
   await smokeSaveLoad(win, scenario)
+  await smokeWorldNames(win, scenario)
   await click(win, '.menu-tab[data-menu-tab="settings"]')
   await setRange(win, '.sensitivity-input', 95)
   await setRange(win, '.fov-input', 80)
@@ -665,6 +743,9 @@ async function runScenario(win, scenario) {
     await win.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(settingsKey)}, JSON.stringify({ mouseLookSpeed: 0.95, fov: 80, viewDistance: 999, qualityPreset: 'low', showPerformanceHud: true, frameRate: 30, volume: 25, soundEnabled: false }))`)
     await reloadAtUrl(win, scenarioUrl(scenario, 'legacy-settings'))
     const migratedSettings = await readState(win, `${scenario.label}:legacy-settings`)
+    if (migratedSettings.worldSlotNames[0] !== 'Crystal Haven' || migratedSettings.startPrimaryText !== 'Continue Crystal Haven') {
+      fail('World names should survive a full reload and update the start action', migratedSettings)
+    }
     if (migratedSettings.settings.sensitivity !== '95' || migratedSettings.settings.fov !== '80' || migratedSettings.settings.viewDistance !== tunedViewDistance || migratedSettings.settings.quality !== 'low' || migratedSettings.settings.frameRate !== '30' || migratedSettings.settings.volume !== '25' || migratedSettings.settings.soundEnabled !== false) {
       fail('Legacy settings should migrate and clamp to the active device limits', migratedSettings)
     }

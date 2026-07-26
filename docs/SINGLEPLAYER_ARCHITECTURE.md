@@ -34,6 +34,13 @@ Three local expedition slots share the same v8 schema. Slot 1 intentionally keep
 `astra-voxel-ark-world-v1` storage key, so an existing installation opens its previous world without
 a migration copy. Slots 2 and 3 use isolated keys, while the active slot is stored separately.
 
+Player-defined slot names are lightweight metadata under `astra-voxel-ark-world-slot-names-v1`.
+They do not rewrite or enlarge world saves, and renaming never changes a slot's identity. The name
+store sanitizes control characters, collapses whitespace, caps names at 32 Unicode characters and
+falls back to `Expedition 1/2/3` if metadata is missing, damaged or unavailable. The active name is
+used consistently in slot cards, session labels, the start action, save details and safe export
+filenames.
+
 `src/world/SaveSystem.ts` owns the v8 storage schema, structural validation, import/export codec and
 browser-storage error boundary. Before replacing a valid primary save, each slot records that primary
 as its own last-good backup. A corrupt primary can therefore be restored from the World menu without

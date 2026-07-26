@@ -242,6 +242,12 @@ body.menu-open .menu-toggle-btn { display: none; }
 .world-slot small { overflow: hidden; color: rgba(255,255,255,.52); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .world-slot.active { color: #071120; border-color: rgba(255,255,255,.6); background: linear-gradient(135deg, #9ee8ff, #fff3a8); box-shadow: 0 8px 24px rgba(115,214,255,.12); }
 .world-slot.active > span, .world-slot.active small { color: rgba(7,17,32,.62); }
+.world-name-editor { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 8px; margin-top: 8px; }
+.world-name-editor label { grid-column: 1 / -1; color: rgba(255,255,255,.54); font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.world-name-input { min-width: 0; height: 34px; padding: 0 11px; color: rgba(255,255,255,.94); border: 1px solid rgba(255,255,255,.14); border-radius: 11px; outline: none; background: rgba(255,255,255,.055); font: inherit; font-size: 11px; }
+.world-name-input:focus { border-color: rgba(158,232,255,.64); box-shadow: 0 0 0 2px rgba(158,232,255,.1); }
+.world-name-save { min-height: 34px; margin: 0; padding: 7px 13px; color: #071120; border: 0; border-radius: 11px; background: #9ee8ff; font-size: 10px; font-weight: 900; cursor: pointer; }
+.world-name-editor small { grid-column: 1 / -1; color: rgba(255,255,255,.38); font-size: 8px; }
 .save-meta { margin-top: 10px; padding: 10px 12px; border-radius: 12px; color: rgba(255,255,255,.58); background: rgba(255,255,255,.05); font-size: 10px; line-height: 1.45; }
 body.menu-open .crosshair { opacity: 0; }
 body:not(.show-perf-hud) .perf-badge { display: none !important; }
@@ -1017,6 +1023,42 @@ body.portrait-touch .block-info {
 
   .world-slot {
     padding: 6px 8px;
+  }
+
+  .world-name-editor {
+    margin-top: 6px;
+  }
+
+  .world-name-editor label,
+  .world-name-editor small {
+    display: none;
+  }
+
+  #menu-world:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);
+    gap: 6px 8px;
+  }
+
+  #menu-world > .world-seed,
+  #menu-world > .session-panel {
+    margin-top: 0;
+  }
+
+  #menu-world > .session-panel {
+    gap: 6px;
+  }
+
+  #menu-world > .session-panel .session-option {
+    padding: 6px 8px;
+  }
+
+  #menu-world > .world-slots,
+  #menu-world > .world-name-editor,
+  #menu-world > .save-tools,
+  #menu-world > .save-meta {
+    grid-column: 1 / -1;
+    margin-top: 0;
   }
 
   .pause-menu .save-tools button {

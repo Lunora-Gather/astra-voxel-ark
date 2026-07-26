@@ -23,12 +23,13 @@ import {
   createWorldSeed,
   formatWorldSeed,
   proceduralTerrainHeightAt,
-  getWorldSlotLabel,
+  getWorldExportSlug,
   getWorldSlotSaveKey,
   normalizeWorldSeed,
   ProceduralTerrainWorkerClient,
   SaveSystem,
   sanitizeWorldSlotId,
+  WorldSlotNameStore,
   selectChunksForEviction,
   isBlockId as isValidBlockId,
   isSavedBlock as isValidSavedBlock,
@@ -253,6 +254,12 @@ app.innerHTML = `
           <div class="world-slots" role="group" aria-label="Local expedition slots">
             ${WORLD_SLOT_IDS.map((slot) => `<button class="world-slot" data-world-slot="${slot}"><span>Slot ${slot}</span><strong>Expedition ${slot}</strong><small>Empty world</small></button>`).join('')}
           </div>
+          <form class="world-name-editor">
+            <label for="world-name-input">World name</label>
+            <input id="world-name-input" class="world-name-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" aria-describedby="world-name-hint" />
+            <button class="world-name-save" type="submit">Rename</button>
+            <small id="world-name-hint">Blank restores the default name.</small>
+          </form>
           <div class="save-tools">
           <button class="save-btn">Save</button>
           <button class="load-btn">Load</button>
@@ -402,6 +409,8 @@ let needUpdateBounds = false
 const INITIAL_GRASS_CAPACITY = 12000
 let activeWorldSlot = sanitizeWorldSlotId(localStorage.getItem(ACTIVE_WORLD_SLOT_KEY))
 localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
+const worldSlotNameStore = new WorldSlotNameStore()
+let worldSlotNames = worldSlotNameStore.load()
 const CHUNK_SIZE = 8
 const optimizedChunks = new ChunkManager(CHUNK_SIZE)
 const lowFidelityTerrainMaterial = lowPowerMode
@@ -1383,7 +1392,7 @@ function exportWorld() {
   const link = document.createElement('a')
   const date = new Date().toISOString().slice(0, 10)
   link.href = URL.createObjectURL(blob)
-  link.download = `astravoxel-ark-expedition-${activeWorldSlot}-${date}.json`
+  link.download = `astravoxel-ark-${getWorldExportSlug(worldSlotNames[activeWorldSlot], activeWorldSlot)}-${date}.json`
   link.click()
   URL.revokeObjectURL(link.href)
   showToast('Save exported')
@@ -1447,7 +1456,7 @@ function updateSaveMeta(message?: string) {
   }
   const saves = getWorldSaveSystem()
   if (!saves.hasSave()) {
-    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(worldSeed)} · New world`
+    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(worldSeed)} · New world`
     return
   }
   const saved = saves.load()
@@ -1458,7 +1467,7 @@ function updateSaveMeta(message?: string) {
       : 'time unavailable'
     const exploredCount = Array.isArray(saved.terrainChunks) ? saved.terrainChunks.length : discoveredTerrainChunks.size
     const savedSeed = normalizeWorldSeed(saved.worldSeed, 0)
-    saveMeta.textContent = `${getWorldSlotLabel(activeWorldSlot)} · Seed ${formatWorldSeed(savedSeed)} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
+    saveMeta.textContent = `${worldSlotNames[activeWorldSlot]} · Seed ${formatWorldSeed(savedSeed)} · Saved ${timeLabel} · ${exploredCount} chunks · v${saved.version ?? '?'}`
   } else {
     saveMeta.textContent = saves.hasBackup()
       ? 'Primary save needs attention · a recovery backup is available.'
@@ -2121,13 +2130,15 @@ const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
 const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
+const worldNameEditor = document.querySelector<HTMLFormElement>('.world-name-editor')!
+const worldNameInput = document.querySelector<HTMLInputElement>('.world-name-input')!
 const worldSeedButton = document.querySelector<HTMLButtonElement>('.world-seed')!
 const pauseSessionLabel = document.querySelector<HTMLElement>('.pause-session-label')!
 const sessionCurrentLabel = document.querySelector<HTMLElement>('.session-current')!
 const startPrimaryButton = start.querySelector<HTMLButtonElement>('.panel > button:not(.start-multiplayer)')!
 
 function updateWorldSlotUi() {
-  const activeLabel = getWorldSlotLabel(activeWorldSlot)
+  const activeLabel = worldSlotNames[activeWorldSlot]
   pauseSessionLabel.textContent = `${activeLabel} · Offline`
   sessionCurrentLabel.textContent = `${activeLabel} · offline`
   const activeSaves = getWorldSaveSystem()
@@ -2137,6 +2148,7 @@ function updateWorldSlotUi() {
   worldSeedButton.querySelector('strong')!.textContent = formatWorldSeed(worldSeed)
   recoverButton.disabled = !activeSaves.hasBackup()
   recoverButton.title = recoverButton.disabled ? 'No valid backup yet' : 'Restore the previous valid save'
+  if (document.activeElement !== worldNameInput) worldNameInput.value = activeLabel
 
   worldSlotButtons.forEach((button) => {
     const slot = sanitizeWorldSlotId(button.dataset.worldSlot)
@@ -2146,7 +2158,7 @@ function updateWorldSlotUi() {
     const saved = slotSaves.load()
     button.classList.toggle('active', active)
     button.setAttribute('aria-pressed', String(active))
-    button.querySelector('strong')!.textContent = getWorldSlotLabel(slot)
+    button.querySelector('strong')!.textContent = worldSlotNames[slot]
     const status = button.querySelector('small')!
     if (!hasSave) {
       status.textContent = active ? 'Active · New world' : 'Empty world'
@@ -2177,6 +2189,21 @@ worldSeedButton.addEventListener('click', () => {
   )
 })
 
+worldNameEditor.addEventListener('submit', (event) => {
+  event.preventDefault()
+  const result = worldSlotNameStore.saveName(activeWorldSlot, worldNameInput.value)
+  if (!result.ok) {
+    worldNameInput.value = worldSlotNames[activeWorldSlot]
+    showToast('Rename failed · storage unavailable')
+    return
+  }
+  worldSlotNames = result.names
+  worldNameInput.value = worldSlotNames[activeWorldSlot]
+  updateWorldSlotUi()
+  updateSaveMeta()
+  showToast(`World renamed · ${worldSlotNames[activeWorldSlot]}`)
+})
+
 function switchWorldSlot(nextSlot: WorldSlotId) {
   if (nextSlot === activeWorldSlot) return
   const previousSlot = activeWorldSlot
@@ -2200,14 +2227,14 @@ function switchWorldSlot(nextSlot: WorldSlotId) {
     localStorage.setItem(ACTIVE_WORLD_SLOT_KEY, activeWorldSlot)
     loadWorld()
     updateWorldSlotUi()
-    showToast(`${getWorldSlotLabel(nextSlot)} could not be opened`)
+    showToast(`${worldSlotNames[nextSlot]} could not be opened`)
     return
   }
   updateHotbar()
   updateProgressionUi()
   updateSaveMeta()
   updateWorldSlotUi()
-  showToast(`${getWorldSlotLabel(activeWorldSlot)} ready`)
+  showToast(`${worldSlotNames[activeWorldSlot]} ready`)
 }
 
 worldSlotButtons.forEach((button) => {
