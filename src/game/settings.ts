@@ -107,13 +107,19 @@ export function sanitizeSettings(
     ? settings.showPerf
     : settings.showPerformanceHud
 
+  const sanitizedQuality = quality === 'eco' || quality === 'low' || quality === 'balanced' || quality === 'high'
+    ? quality
+    : defaults.quality
+  const sanitizedViewDistance = clampInteger(settings.viewDistance, 1, maxViewDistance, defaults.viewDistance)
+  const sanitizedFrameRate = settings.frameRate === 30 || settings.frameRate === 60 ? settings.frameRate : defaults.frameRate
+
   return {
     sensitivity: clampNumber(settings.sensitivity ?? legacySensitivity, 35, 150, defaults.sensitivity),
     fov: clampNumber(settings.fov, 60, 90, defaults.fov),
-    viewDistance: clampInteger(settings.viewDistance, 1, maxViewDistance, defaults.viewDistance),
-    quality: quality === 'low' || quality === 'balanced' || quality === 'high' ? quality : defaults.quality,
+    viewDistance: sanitizedQuality === 'eco' ? 1 : sanitizedViewDistance,
+    quality: sanitizedQuality,
     showPerf: typeof showPerf === 'boolean' ? showPerf : defaults.showPerf,
-    frameRate: settings.frameRate === 30 || settings.frameRate === 60 ? settings.frameRate : defaults.frameRate,
+    frameRate: sanitizedQuality === 'eco' ? 30 : sanitizedFrameRate,
     volume: clampNumber(settings.volume, 0, 100, defaults.volume),
     soundEnabled: typeof settings.soundEnabled === 'boolean' ? settings.soundEnabled : defaults.soundEnabled,
   }

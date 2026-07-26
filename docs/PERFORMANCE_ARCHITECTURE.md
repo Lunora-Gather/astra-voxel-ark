@@ -98,6 +98,9 @@ migration and storage error boundary. Existing `astra-voxel-ark-settings-v1` dat
 Malformed data falls back to the current device defaults; out-of-range view distance is capped by the
 detected device tier; and failed writes leave the previous stored settings intact while the selected
 setting still applies for the current session.
+The explicit Eco preset is normalized at the same boundary: it atomically caps view distance to Near
+and frame rate to 30 FPS. The live adapter adds a 0.50–0.60 render-scale band, disables shadows and
+dynamic block point lights, and reuses the low-cost HUD composition path from pressure protection.
 
 ## Interaction hot path
 

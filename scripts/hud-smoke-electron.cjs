@@ -935,6 +935,19 @@ async function runScenario(win, scenario) {
     [...document.querySelectorAll('.view-distance-select option')].filter((option) => !option.disabled).at(-1)?.value || '1'
   `)
   await setSelect(win, '.view-distance-select', tunedViewDistance)
+  await setSelect(win, '.frame-rate-select', '60')
+  await click(win, '.quality-btn[data-quality="eco"]')
+  const eco = await readState(win, `${scenario.label}:settings-eco`)
+  if (
+    eco.settings.quality !== 'eco' ||
+    eco.settings.viewDistance !== '1' ||
+    eco.settings.frameRate !== '30' ||
+    eco.settings.frameRateApplied !== '30' ||
+    !eco.bodyClasses.includes('eco-runtime')
+  ) {
+    fail('Eco graphics should atomically enable the persisted low-cost runtime profile', eco)
+  }
+  await setSelect(win, '.view-distance-select', tunedViewDistance)
   const tunedFrameRate = '30'
   await setSelect(win, '.frame-rate-select', tunedFrameRate)
   await setRange(win, '.volume-input', 25)
@@ -955,7 +968,7 @@ async function runScenario(win, scenario) {
     fail('Settings controls should apply immediately', tuned)
   }
   const persistedSettings = await readStorageJson(win, settingsKey)
-  if (String(persistedSettings?.frameRate) !== tunedFrameRate || persistedSettings?.volume !== 25 || persistedSettings?.soundEnabled !== false) {
+  if (persistedSettings?.quality !== 'low' || String(persistedSettings?.frameRate) !== tunedFrameRate || persistedSettings?.volume !== 25 || persistedSettings?.soundEnabled !== false) {
     fail('Frame-rate and audio settings should persist locally', { persistedSettings, tunedFrameRate })
   }
   if (scenario.label === 'desktop') {

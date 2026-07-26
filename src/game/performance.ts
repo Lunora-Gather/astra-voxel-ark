@@ -1,5 +1,5 @@
 export type DeviceProfile = 'low-power' | 'standard'
-export type QualityPreset = 'low' | 'balanced' | 'high'
+export type QualityPreset = 'eco' | 'low' | 'balanced' | 'high'
 
 export type PerformanceLimits = {
   initialTerrainLoadRadius: number
@@ -43,6 +43,7 @@ export function getPerformanceLimits(isLowPowerMode: boolean): PerformanceLimits
 }
 
 export function getQualityPixelRatioScale(preset: QualityPreset): number {
+  if (preset === 'eco') return 0.55
   if (preset === 'low') return 0.75
   if (preset === 'high') return 1
   return 0.9

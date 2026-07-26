@@ -80,6 +80,7 @@ export class AdaptiveQualityController {
 }
 
 function stepPreset(preset: QualityPreset, direction: -1 | 1) {
+  if (preset === 'eco') return preset
   const currentIndex = PRESET_ORDER.indexOf(preset)
   const nextIndex = Math.max(0, Math.min(PRESET_ORDER.length - 1, currentIndex + direction))
   return PRESET_ORDER[nextIndex]

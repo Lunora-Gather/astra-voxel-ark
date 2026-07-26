@@ -249,6 +249,7 @@ app.innerHTML = `
           <div class="setting-row setting-row-buttons">
             <span>Graphics</span>
             <div class="quality-options" role="group" aria-label="Graphics quality">
+              <button class="quality-btn" data-quality="eco">Eco</button>
               <button class="quality-btn" data-quality="low">Low</button>
               <button class="quality-btn active" data-quality="balanced">Balanced</button>
               <button class="quality-btn" data-quality="high">High</button>
@@ -2259,7 +2260,7 @@ function updateArkCoreVisual() {
   })
   ;(arkCoreRing.material as THREE.MeshBasicMaterial).opacity = 0.2 + progress * 0.44
   ;(arkCoreSpire.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.22 + progress * 0.52
-  arkCoreLight.intensity = lowPowerMode ? 0 : 0.2 + progress * 0.75
+  arkCoreLight.intensity = lowPowerMode || qualityPreset === 'eco' ? 0 : 0.2 + progress * 0.75
 }
 
 function selectNextAvailableBlock() {
@@ -2811,6 +2812,9 @@ const settingsStore = new SettingsStore({
 })
 
 function qualityBounds() {
+  if (qualityPreset === 'eco') {
+    return { min: 0.5, max: 0.6, start: 0.56 }
+  }
   if (qualityPreset === 'low') {
     return {
       min: runtimeLimits.minRenderScale,
@@ -2832,13 +2836,17 @@ function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
   qualityPreset = nextPreset
   const bounds = qualityBounds()
   renderQuality = resetScale ? bounds.start : clampNumber(renderQuality, bounds.min, bounds.max)
+  const ecoMode = nextPreset === 'eco'
+  document.body.classList.toggle('eco-runtime', ecoMode)
+  shardBeaconLight.intensity = ecoMode || lowPowerMode ? 0 : 0.9
+  updateArkCoreVisual()
   syncShadowBudget()
   applyRenderQuality()
   qualityButtons.forEach((button) => button.classList.toggle('active', button.dataset.quality === nextPreset))
 }
 
 function syncShadowBudget() {
-  const enabled = qualityPreset !== 'low' && !lowPowerMode && performanceGuard.budget.shadows
+  const enabled = qualityPreset !== 'eco' && qualityPreset !== 'low' && !lowPowerMode && performanceGuard.budget.shadows
   renderer.shadowMap.enabled = enabled
   sun.castShadow = enabled
 }
@@ -2985,7 +2993,7 @@ volumeInput.addEventListener('input', () => updateSettings())
 qualityButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const nextQuality = button.dataset.quality
-    if (nextQuality !== 'low' && nextQuality !== 'balanced' && nextQuality !== 'high') return
+    if (nextQuality !== 'eco' && nextQuality !== 'low' && nextQuality !== 'balanced' && nextQuality !== 'high') return
     updateSettings({ quality: nextQuality })
   })
 })
@@ -3919,7 +3927,9 @@ function cullPointLights(elapsedTime: number) {
   if (elapsedTime - lastLightCullAt < 0.2) return
   lastLightCullAt = elapsedTime
   const playerPos = controls.object.position
-  const guardedLightBudget = Math.floor(MAX_ACTIVE_GLOW_LIGHTS * performanceGuard.budget.pointLightScale)
+  const guardedLightBudget = qualityPreset === 'eco'
+    ? 0
+    : Math.floor(MAX_ACTIVE_GLOW_LIGHTS * performanceGuard.budget.pointLightScale)
   glowLightBudget.apply(playerPos, guardedLightBudget, LIGHT_CULL_DISTANCE_SQ)
 }
 
@@ -3962,7 +3972,7 @@ function updateFrameStats(dt: number, elapsedTime: number) {
     pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
   }
   updateAdaptiveQuality(avgMs, elapsedTime)
-  cosmeticEffectsReduced = performanceGuard.currentLevel !== 'normal' || (
+  cosmeticEffectsReduced = qualityPreset === 'eco' || performanceGuard.currentLevel !== 'normal' || (
     currentFps > 0 && (currentFps < 36 || avgMs > 24 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
   )
 
