@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
-import { blockKey } from './worldMath'
 import {
   BUILD_PATTERNS,
   BuildPatternPlanner,
@@ -52,6 +51,11 @@ import {
   isSavedBlock as isValidSavedBlock,
   isSavedBlockKey as isValidBlockKey,
   isSavedTerrainChunkKey,
+  packBlockKey,
+  parseStringBlockKey,
+  stringifyBlockKey,
+  unpackBlockKeyInto,
+  type PackedBlockKey,
   type ProceduralChunkPlan,
   type SavedBlock,
   type SavedWorldState as SavedWorld,
@@ -417,18 +421,18 @@ type InstancedBlockRef = {
   z: number
 }
 type BlockVisual = THREE.Mesh | InstancedBlockRef | undefined
-const blocks = new Map<string, BlockVisual>()
-const blockData = new Map<string, BlockId>()
+const blocks = new Map<PackedBlockKey, BlockVisual>()
+const blockData = new Map<PackedBlockKey, BlockId>()
 const INITIAL_INSTANCED_MESH_CAPACITY = 15000
 const instancedBlockMeshes = new Map<BlockId, THREE.InstancedMesh>()
-const instancedBlockKeys = new Map<BlockId, string[]>()
+const instancedBlockKeys = new Map<BlockId, PackedBlockKey[]>()
 const instancedBlockCapacities = new Map<BlockId, number>()
 const instancedMatrix = new THREE.Matrix4()
 const hiddenInstanceMatrix = new THREE.Matrix4().makeTranslation(0, -100000, 0)
 const glowLights: THREE.PointLight[] = []
-const glowLightsByBlock = new Map<string, THREE.PointLight>()
+const glowLightsByBlock = new Map<PackedBlockKey, THREE.PointLight>()
 let grassBladeMesh: THREE.InstancedMesh | null = null
-const grassBladeKeys: string[] = []
+const grassBladeKeys: PackedBlockKey[] = []
 let needUpdateBounds = false
 const INITIAL_GRASS_CAPACITY = 12000
 let activeWorldSlot = sanitizeWorldSlotId(localStorage.getItem(ACTIVE_WORLD_SLOT_KEY))
@@ -487,7 +491,7 @@ type BlockSource = 'terrain' | 'player' | 'save'
 type ChunkBucket = {
   id: BlockId
   material: THREE.Material | THREE.Material[]
-  blockKeys: Set<string>
+  blockKeys: Set<PackedBlockKey>
 }
 type ChunkMeshBucketStats = {
   blockCount: number
@@ -527,11 +531,11 @@ let lastTerrainCenterKey = ''
 let pendingTerrainEnsure: { x: number; z: number } | null = null
 let lastTerrainEnsureAt = -Infinity
 let lastTerrainEvictionAt = -Infinity
-const removedTerrainBlocks = new Set<string>()
-const playerPlacedBlocks = new Set<string>()
-const landmarkShardBlocks = new Set<string>()
-const landmarkShardNames = new Map<string, string>()
-const collectedShardBlocks = new Set<string>()
+const removedTerrainBlocks = new Set<PackedBlockKey>()
+const playerPlacedBlocks = new Set<PackedBlockKey>()
+const landmarkShardBlocks = new Set<PackedBlockKey>()
+const landmarkShardNames = new Map<PackedBlockKey, string>()
+const collectedShardBlocks = new Set<PackedBlockKey>()
 const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
 const tutorialGuide = new TutorialGuide()
@@ -694,7 +698,7 @@ function usesChunkMesh(id: BlockId) {
 function hasExposedFace(x: number, y: number, z: number, id: BlockId) {
   const isOpaque = isOpaqueBlockId(id)
   return SOLID_NEIGHBOR_OFFSETS.some(([dx, dy, dz]) => {
-    const neighborId = blockData.get(blockKey(x + dx, y + dy, z + dz))
+    const neighborId = blockData.get(packBlockKey(x + dx, y + dy, z + dz))
     if (!neighborId) return true
     if (isOpaque) {
       return !isOpaqueBlockId(neighborId)
@@ -708,7 +712,7 @@ function countExposedFaces(x: number, y: number, z: number, id: BlockId) {
   const isOpaque = isOpaqueBlockId(id)
   let exposedFaces = 0
   SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => {
-    const neighborId = blockData.get(blockKey(x + dx, y + dy, z + dz))
+    const neighborId = blockData.get(packBlockKey(x + dx, y + dy, z + dz))
     if (!neighborId) {
       exposedFaces++
     } else if (isOpaque) {
@@ -720,7 +724,7 @@ function countExposedFaces(x: number, y: number, z: number, id: BlockId) {
   return exposedFaces
 }
 
-function removeGlowLightAt(k: string) {
+function removeGlowLightAt(k: PackedBlockKey) {
   const light = glowLightsByBlock.get(k)
   if (!light) return
   scene.remove(light)
@@ -728,7 +732,7 @@ function removeGlowLightAt(k: string) {
   glowLightsByBlock.delete(k)
 }
 
-function ensureGlowLightAt(k: string, x: number, y: number, z: number, id: BlockId) {
+function ensureGlowLightAt(k: PackedBlockKey, x: number, y: number, z: number, id: BlockId) {
   if ((id !== 'glow' && id !== 'crystal') || glowLightsByBlock.has(k) || glowLights.length >= MAX_GLOW_LIGHTS) return
   const light = new THREE.PointLight(
     id === 'glow' ? 0xffcf7a : 0x9b86ff,
@@ -742,10 +746,12 @@ function ensureGlowLightAt(k: string, x: number, y: number, z: number, id: Block
   glowLights.push(light)
 }
 
-function refreshBlockVisualAt(k: string) {
+const decodedBlockPosition = { x: 0, y: 0, z: 0 }
+
+function refreshBlockVisualAt(k: PackedBlockKey) {
   const id = blockData.get(k)
   if (!id) return
-  const [x, y, z] = k.split(',').map(Number)
+  const { x, y, z } = unpackBlockKeyInto(k, decodedBlockPosition)
   const visual = blocks.get(k)
   const shouldRender = hasExposedFace(x, y, z, id)
 
@@ -771,12 +777,12 @@ function refreshBlockVisualAt(k: string) {
 }
 
 function refreshBlockAndNeighbors(x: number, y: number, z: number) {
-  refreshBlockVisualAt(blockKey(x, y, z))
-  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshBlockVisualAt(blockKey(x + dx, y + dy, z + dz)))
+  refreshBlockVisualAt(packBlockKey(x, y, z))
+  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => refreshBlockVisualAt(packBlockKey(x + dx, y + dy, z + dz)))
 }
 
 let blockBatchDepth = 0
-const batchedVisualKeys = new Set<string>()
+const batchedVisualKeys = new Set<PackedBlockKey>()
 
 function beginBlockBatch() {
   blockBatchDepth += 1
@@ -790,8 +796,8 @@ function endBlockBatch() {
 }
 
 function markBatchedBlockAndNeighbors(x: number, y: number, z: number) {
-  batchedVisualKeys.add(blockKey(x, y, z))
-  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => batchedVisualKeys.add(blockKey(x + dx, y + dy, z + dz)))
+  batchedVisualKeys.add(packBlockKey(x, y, z))
+  SOLID_NEIGHBOR_OFFSETS.forEach(([dx, dy, dz]) => batchedVisualKeys.add(packBlockKey(x + dx, y + dy, z + dz)))
 }
 
 function withBlockBatch<T>(run: () => T) {
@@ -803,7 +809,7 @@ function withBlockBatch<T>(run: () => T) {
   }
 }
 
-function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id: BlockId) {
+function addInstancedBlockVisual(k: PackedBlockKey, x: number, y: number, z: number, id: BlockId) {
   let instancedMesh = instancedBlockMeshes.get(id)
   const keysForType = instancedBlockKeys.get(id)
   if (!instancedMesh || !keysForType) return undefined
@@ -822,7 +828,7 @@ function addInstancedBlockVisual(k: string, x: number, y: number, z: number, id:
   return { kind: 'instanced', id, mesh: instancedMesh, index, x, y, z } satisfies InstancedBlockRef
 }
 
-function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysForType: string[]) {
+function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysForType: PackedBlockKey[]) {
   const oldCapacity = instancedBlockCapacities.get(id) ?? INITIAL_INSTANCED_MESH_CAPACITY
   const newCapacity = oldCapacity * 2
   const newMesh = new THREE.InstancedMesh(cubeGeometry, oldMesh.material, newCapacity)
@@ -850,7 +856,7 @@ function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysF
   return newMesh
 }
 
-function removeInstancedBlockVisual(k: string, ref: InstancedBlockRef) {
+function removeInstancedBlockVisual(k: PackedBlockKey, ref: InstancedBlockRef) {
   const keysForType = instancedBlockKeys.get(ref.id)
   if (!keysForType) return
 
@@ -873,9 +879,8 @@ function removeInstancedBlockVisual(k: string, ref: InstancedBlockRef) {
   needUpdateBounds = true
 }
 
-function getBlockPositionFromKey(key: string, target: THREE.Vector3) {
-  const [x, y, z] = key.split(',').map(Number)
-  return target.set(x, y, z)
+function getBlockPositionFromKey(key: PackedBlockKey, target: THREE.Vector3) {
+  return unpackBlockKeyInto(key, target)
 }
 
 function chunkCoord(value: number) {
@@ -920,7 +925,7 @@ function getOrCreateChunk(x: number, y: number, z: number) {
   return chunk
 }
 
-function registerBlockInChunk(x: number, y: number, z: number, id: BlockId, key: string) {
+function registerBlockInChunk(x: number, y: number, z: number, id: BlockId, key: PackedBlockKey) {
   const chunk = getOrCreateChunk(x, y, z)
   let bucket = chunk.buckets.get(id)
   if (!bucket) {
@@ -931,7 +936,7 @@ function registerBlockInChunk(x: number, y: number, z: number, id: BlockId, key:
   markBlockAndNeighborChunksDirty(x, y, z)
 }
 
-function unregisterBlockFromChunk(x: number, y: number, z: number, id: BlockId, key: string) {
+function unregisterBlockFromChunk(x: number, y: number, z: number, id: BlockId, key: PackedBlockKey) {
   const cKey = chunkKeyForBlock(x, y, z)
   const chunk = chunks.get(cKey)
   if (!chunk) {
@@ -963,7 +968,7 @@ function rebuildChunkVisibleFaceSummary(chunk: ChunkMetadata) {
     }
 
     bucket.blockKeys.forEach((key) => {
-      const [x, y, z] = key.split(',').map(Number)
+      const { x, y, z } = unpackBlockKeyInto(key, decodedBlockPosition)
       const exposedFaces = countExposedFaces(x, y, z, id)
       solidBlockCount++
       if (exposedFaces > 0) {
@@ -1056,7 +1061,7 @@ function growGrassBladeMesh() {
 
 function addGrassTuft(x: number, y: number, z: number) {
   if (!grassBladeMesh) return
-  const anchorKey = blockKey(x, y, z)
+  const anchorKey = packBlockKey(x, y, z)
   const baseX = x + (seededNoise(x, y, z, 1) - 0.5) * 0.35
   const baseY = y + 0.56
   const baseZ = z + (seededNoise(x, y, z, 2) - 0.5) * 0.35
@@ -1086,7 +1091,7 @@ function addGrassTuft(x: number, y: number, z: number) {
   needUpdateBounds = true
 }
 
-function removeGrassTuftsAt(anchorKey: string) {
+function removeGrassTuftsAt(anchorKey: PackedBlockKey) {
   if (!grassBladeMesh) return
   for (let i = grassBladeMesh.count - 1; i >= 0; i--) {
     if (grassBladeKeys[i] === anchorKey) {
@@ -1106,7 +1111,7 @@ function removeGrassTuftsAt(anchorKey: string) {
 }
 
 function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSource = 'terrain') {
-  const k = blockKey(x, y, z)
+  const k = packBlockKey(x, y, z)
   if (source === 'terrain' && removedTerrainBlocks.has(k)) return
   if (blocks.has(k)) return
   if (source === 'player') {
@@ -1128,10 +1133,10 @@ function addBlock(x: number, y: number, z: number, id: BlockId, source: BlockSou
   if (visual) ensureGlowLightAt(k, x, y, z, id)
 }
 
-function removeBlockAtKey(k: string, source: 'player' | 'system' = 'system') {
+function removeBlockAtKey(k: PackedBlockKey, source: 'player' | 'system' = 'system') {
   if (!blocks.has(k)) return
   const visual = blocks.get(k)
-  const [x, y, z] = k.split(',').map(Number)
+  const { x, y, z } = unpackBlockKeyInto(k, decodedBlockPosition)
   if (source === 'player') {
     if (playerPlacedBlocks.has(k)) playerPlacedBlocks.delete(k)
     else removedTerrainBlocks.add(k)
@@ -1176,7 +1181,10 @@ function readSavedExploration(savedExploration: SavedWorld['exploration']) {
     collectedGlowShards = Math.max(0, Math.min(EXPLORATION_GOAL_SHARDS, Math.floor(savedExploration.glowShards)))
   }
   if (Array.isArray(savedExploration.collectedShardBlocks)) {
-    savedExploration.collectedShardBlocks.filter(isValidBlockKey).forEach((key) => collectedShardBlocks.add(key))
+    savedExploration.collectedShardBlocks.filter(isValidBlockKey).forEach((key) => {
+      const packed = parseStringBlockKey(key)
+      if (packed !== null) collectedShardBlocks.add(packed)
+    })
     if (collectedGlowShards === 0) collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedShardBlocks.size)
   }
 }
@@ -1220,7 +1228,10 @@ function serializeWorld(): SavedWorld {
   const savedBlocks: SavedBlock[] = []
   playerPlacedBlocks.forEach((key) => {
     const id = blockData.get(key)
-    if (id) savedBlocks.push([...key.split(',').map(Number), id] as SavedBlock)
+    if (id) {
+      const { x, y, z } = unpackBlockKeyInto(key, decodedBlockPosition)
+      savedBlocks.push([x, y, z, id])
+    }
   })
   return {
     version: 8,
@@ -1228,8 +1239,8 @@ function serializeWorld(): SavedWorld {
     format: 'delta',
     blocks: savedBlocks,
     terrainChunks: [...discoveredTerrainChunks],
-    removedBlocks: [...removedTerrainBlocks],
-    playerPlacedBlocks: [...playerPlacedBlocks],
+    removedBlocks: [...removedTerrainBlocks].map(stringifyBlockKey),
+    playerPlacedBlocks: [...playerPlacedBlocks].map(stringifyBlockKey),
     inventory: inventory.snapshot(),
     selectedBlock: BLOCKS[selected]?.id ?? BLOCKS[0].id,
     worldSeed,
@@ -1244,7 +1255,7 @@ function serializeWorld(): SavedWorld {
     },
     exploration: {
       glowShards: collectedGlowShards,
-      collectedShardBlocks: [...collectedShardBlocks],
+      collectedShardBlocks: [...collectedShardBlocks].map(stringifyBlockKey),
     },
     progression: progression.snapshot(),
     vitals: survivalVitals.snapshot(),
@@ -1265,7 +1276,9 @@ function rebuildLandmarkShardBlocks() {
     const [cx, cz] = key.split(',').map(Number)
     if (!Number.isInteger(cx) || !Number.isInteger(cz)) return
     const landmark = buildLandmarkPlan(cx, cz, CHUNK_SIZE, worldSeed, terrainHeightAt)
-    landmark?.shardKeys.forEach((shardKey) => {
+    landmark?.shardKeys.forEach((savedShardKey) => {
+      const shardKey = parseStringBlockKey(savedShardKey)
+      if (shardKey === null) return
       const id = blockData.get(shardKey)
       if ((id === 'glow' || id === 'crystal') && !playerPlacedBlocks.has(shardKey) && !collectedShardBlocks.has(shardKey)) {
         landmarkShardBlocks.add(shardKey)
@@ -1295,7 +1308,10 @@ function applySavedWorld(data: SavedWorld) {
   selected = savedSelection >= 0 ? savedSelection : 0
 
   if (Array.isArray(data.removedBlocks)) {
-    data.removedBlocks.filter(isValidBlockKey).forEach((key) => removedTerrainBlocks.add(key))
+    data.removedBlocks.filter(isValidBlockKey).forEach((key) => {
+      const packed = parseStringBlockKey(key)
+      if (packed !== null) removedTerrainBlocks.add(packed)
+    })
   }
 
   if (isDeltaSave) {
@@ -1317,7 +1333,7 @@ function applySavedWorld(data: SavedWorld) {
     }
     withBlockBatch(() => {
       savedBlocks.forEach(([x, y, z, id]) => {
-        const key = blockKey(x, y, z)
+        const key = packBlockKey(x, y, z)
         if (blocks.has(key)) removeBlockAtKey(key)
         addBlock(x, y, z, id, 'save')
       })
@@ -1343,7 +1359,8 @@ function applySavedWorld(data: SavedWorld) {
   playerPlacedBlocks.clear()
   if (Array.isArray(data.playerPlacedBlocks)) {
     data.playerPlacedBlocks.filter(isValidBlockKey).forEach((key) => {
-      if (blockData.has(key)) playerPlacedBlocks.add(key)
+      const packed = parseStringBlockKey(key)
+      if (packed !== null && blockData.has(packed)) playerPlacedBlocks.add(packed)
     })
   }
   progression.restore(data.progression)
@@ -1565,7 +1582,7 @@ function recoverWorld() {
 }
 
 function isSolidBlockAt(x: number, y: number, z: number) {
-  const id = blockData.get(blockKey(x, y, z))
+  const id = blockData.get(packBlockKey(x, y, z))
   return !!id && id !== 'water'
 }
 
@@ -1597,6 +1614,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./world/WorldCoordinatesSmoke').then(({ assertWorldCoordinatesSmoke }) => {
     assertWorldCoordinatesSmoke()
+  }).catch((error) => console.error(error))
+  void import('./world/BlockKeySmoke').then(({ assertBlockKeySmoke }) => {
+    assertBlockKeySmoke()
   }).catch((error) => console.error(error))
   void import('./singleplayer/TutorialGuideSmoke').then(({ assertTutorialGuideSmoke }) => {
     assertTutorialGuideSmoke()
@@ -1721,11 +1741,13 @@ function applyTerrainPlan(plan: ProceduralChunkPlan) {
     plan.blocks.forEach(({ x, y, z, id }) => addBlock(x, y, z, id))
     if (runtimeProfile.tier !== 'ultra-low') {
       plan.grassTufts.forEach(([x, y, z]) => {
-        if (blockData.has(blockKey(x, y, z))) addGrassTuft(x, y, z)
+        if (blockData.has(packBlockKey(x, y, z))) addGrassTuft(x, y, z)
       })
     }
   })
-  plan.landmarkShardKeys.forEach((shardKey) => {
+  plan.landmarkShardKeys.forEach((savedShardKey) => {
+    const shardKey = parseStringBlockKey(savedShardKey)
+    if (shardKey === null) return
     const id = blockData.get(shardKey)
     if ((id === 'glow' || id === 'crystal') && !collectedShardBlocks.has(shardKey)) {
       landmarkShardBlocks.add(shardKey)
@@ -1828,7 +1850,7 @@ function evictTerrainChunk(cx: number, cz: number) {
   const residentBlocks = optimizedChunks.getChunkBlocks(cx, cz)
   withBlockBatch(() => {
     residentBlocks.forEach(({ x, y, z }) => {
-      const blockKeyValue = blockKey(x, y, z)
+      const blockKeyValue = packBlockKey(x, y, z)
       if (!playerPlacedBlocks.has(blockKeyValue)) {
         landmarkShardBlocks.delete(blockKeyValue)
         landmarkShardNames.delete(blockKeyValue)
@@ -2114,7 +2136,7 @@ function directionLabel(dx: number, dz: number) {
 }
 
 function findNearestShard() {
-  let nearestKey = ''
+  let nearestKey: PackedBlockKey | null = null
   let nearestDistanceSq = Infinity
   const pos = controls.object.position
   landmarkShardBlocks.forEach((key) => {
@@ -2128,7 +2150,7 @@ function findNearestShard() {
       nearestKey = key
     }
   })
-  if (!nearestKey) return null
+  if (nearestKey === null) return null
   getBlockPositionFromKey(nearestKey, hitBlockPosition)
   return {
     key: nearestKey,
@@ -2944,18 +2966,18 @@ if (isSmokeTest) {
 }
 
 function lookupPickBlock(x: number, y: number, z: number) {
-  return blockData.get(blockKey(x, y, z)) ?? null
+  return blockData.get(packBlockKey(x, y, z)) ?? null
 }
 
 function pickBlock() {
   return blockPicker.pickFromCamera(camera, lookupPickBlock, controls.object.position) ?? undefined
 }
 
-function breakTargetBlock(expectedKey?: string) {
+function breakTargetBlock(expectedKey?: PackedBlockKey) {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return false
-  const minedKey = blockKey(hit.x, hit.y, hit.z)
-  if (expectedKey && minedKey !== expectedKey) return false
+  const minedKey = packBlockKey(hit.x, hit.y, hit.z)
+  if (expectedKey !== undefined && minedKey !== expectedKey) return false
   const blockId = hit.id
   if (!progression.canMine(blockId)) {
     showToast(`${progression.requiredToolName(blockId)} required`)
@@ -3012,7 +3034,7 @@ function validateBuildPlan(
   for (let index = 0; index < plan.count; index++) {
     const position = plan.positions[index]
     if (position.y <= 0 || position.y > 128) return 'Pattern outside build height'
-    const existing = blockData.get(blockKey(position.x, position.y, position.z))
+    const existing = blockData.get(packBlockKey(position.x, position.y, position.z))
     if (existing && !(existing === 'water' && selectedBlock !== 'water')) return 'Pattern blocked'
     buildCollisionPosition.set(position.x, position.y, position.z)
     if (wouldTrapPlayer(buildCollisionPosition)) return 'Pattern too close'
@@ -3034,7 +3056,7 @@ function placeTargetBlock() {
   withBlockBatch(() => {
     for (let index = 0; index < plan.count; index++) {
       const position = plan.positions[index]
-      const key = blockKey(position.x, position.y, position.z)
+      const key = packBlockKey(position.x, position.y, position.z)
       if (blockData.get(key) === 'water' && selectedBlock !== 'water') removeBlockAtKey(key)
       addBlock(position.x, position.y, position.z, selectedBlock, 'player')
     }
@@ -3049,19 +3071,19 @@ function placeTargetBlock() {
   updateProgressionUi()
 }
 
-function collectExplorationShard(blockKey: string, blockId: BlockId) {
-  if ((blockId !== 'crystal' && blockId !== 'glow') || !landmarkShardBlocks.has(blockKey) || collectedShardBlocks.has(blockKey)) {
+function collectExplorationShard(key: PackedBlockKey, blockId: BlockId) {
+  if ((blockId !== 'crystal' && blockId !== 'glow') || !landmarkShardBlocks.has(key) || collectedShardBlocks.has(key)) {
     return false
   }
 
-  getBlockPositionFromKey(blockKey, hitBlockPosition)
+  getBlockPositionFromKey(key, hitBlockPosition)
   createShardBurst(hitBlockPosition)
   playShardCollectSound()
   compassBadge.classList.add('pulse')
   window.setTimeout(() => compassBadge.classList.remove('pulse'), 650)
-  landmarkShardBlocks.delete(blockKey)
-  landmarkShardNames.delete(blockKey)
-  collectedShardBlocks.add(blockKey)
+  landmarkShardBlocks.delete(key)
+  landmarkShardNames.delete(key)
+  collectedShardBlocks.add(key)
   collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedGlowShards + 1)
   progression.setShardCount(collectedGlowShards)
   advanceTutorial('shard', false)
@@ -3291,7 +3313,7 @@ function beginMining(source: MiningInputSource) {
   }
   cancelMining()
   const started = miningSession.begin({
-    key: blockKey(hit.x, hit.y, hit.z),
+    key: packBlockKey(hit.x, hit.y, hit.z),
     id: hit.id,
     durationMs: progression.getMiningDuration(hit.id),
   }, performance.now())
@@ -3328,7 +3350,7 @@ function cancelMining() {
 function updateMining() {
   if (!miningSession.active) return
   const hit = pickBlock()
-  const currentKey = hit && hit.distance <= RAYCAST_REACH ? blockKey(hit.x, hit.y, hit.z) : null
+  const currentKey = hit && hit.distance <= RAYCAST_REACH ? packBlockKey(hit.x, hit.y, hit.z) : null
   const update = miningSession.update(performance.now(), currentKey)
   if (update.status === 'cancelled') {
     cancelMining()
@@ -3642,7 +3664,7 @@ function cullPointLights(elapsedTime: number) {
   if (elapsedTime - lastLightCullAt < 0.2) return
   lastLightCullAt = elapsedTime
   const playerPos = controls.object.position
-  const candidates: Array<{ key: string; light: THREE.PointLight; priority: number }> = []
+  const candidates: Array<{ key: PackedBlockKey; light: THREE.PointLight; priority: number }> = []
   glowLightsByBlock.forEach((light, key) => {
     const dx = light.position.x - playerPos.x
     const dy = light.position.y - playerPos.y

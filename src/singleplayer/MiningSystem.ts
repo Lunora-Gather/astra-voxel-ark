@@ -1,8 +1,9 @@
 import type { BlockId } from '../blocks'
+import type { PackedBlockKey } from '../world/blockKey'
 import type { ToolTier } from './ProgressionSystem'
 
 export type MiningTarget = {
-  key: string
+  key: PackedBlockKey
   id: BlockId
   durationMs: number
 }
@@ -10,7 +11,7 @@ export type MiningTarget = {
 export type MiningUpdate = {
   status: 'idle' | 'active' | 'cancelled' | 'complete'
   progress: number
-  key: string | null
+  key: PackedBlockKey | null
   id: BlockId | null
 }
 
@@ -57,14 +58,14 @@ export class MiningSession {
   }
 
   begin(target: MiningTarget, nowMs: number) {
-    if (!target.key || !Number.isFinite(target.durationMs) || target.durationMs <= 0) return false
+    if (!Number.isSafeInteger(target.key) || target.key < 0 || !Number.isFinite(target.durationMs) || target.durationMs <= 0) return false
     this.target = { ...target, durationMs: Math.max(1, target.durationMs) }
     this.startedAt = finiteTime(nowMs)
     this.writeResult('active', 0, this.target)
     return true
   }
 
-  update(nowMs: number, currentTargetKey: string | null) {
+  update(nowMs: number, currentTargetKey: PackedBlockKey | null) {
     if (!this.target) return this.writeResult('idle', 0, null)
     if (currentTargetKey !== this.target.key) {
       const cancelledTarget = this.target

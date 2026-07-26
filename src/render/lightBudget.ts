@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 export type BudgetedPointLight = {
-  key: string
+  key: string | number
   light: THREE.PointLight
   priority?: number
 }

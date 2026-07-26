@@ -103,6 +103,15 @@ preallocated position buffer, placement wraps all edits in one world batch, and 
 `InstancedMesh` regardless of pattern size. Single-block mode retains the original lightweight mesh;
 no blueprint creates a mesh or draw call per planned block.
 
+## Packed runtime block identity
+
+The live block map, visual references, chunk buckets, grass anchors, glow lights, mining targets,
+landmark shards and player deltas use the 51-bit `PackedBlockKey` from `src/world/blockKey.ts`.
+Aim, collision, mesh exposure checks and placement therefore perform numeric `Map`/`Set` lookups
+without allocating `"x,y,z"` strings. A mutable decode target supports iteration without temporary
+coordinate objects. Serialization stringifies keys only when producing the existing v8 JSON schema;
+loading and deterministic landmark plans parse those legacy strings once at their boundary.
+
 ## Player collision hot path
 
 `src/player/Collision.ts` owns the integer-centered block and eye-point player collision contract.

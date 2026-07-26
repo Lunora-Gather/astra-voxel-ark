@@ -54,6 +54,11 @@ applying one block batch, so a pattern either succeeds completely or leaves the 
 Pattern choice is transient interface state; placed blocks remain ordinary player deltas in the v8
 save format, preserving existing worlds and the future session boundary.
 
+Mining targets and all live player/world delta membership checks use `PackedBlockKey` numeric
+identity. `serializeWorld` converts packed removed, placed and collected-shard sets back to the
+unchanged `"x,y,z"` arrays expected by v8 saves; `applySavedWorld` performs the inverse conversion
+after structural validation. This is a runtime-only migration, not a save migration.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.

@@ -21,6 +21,13 @@ export function packBlockKey(x: number, y: number, z: number): PackedBlockKey {
 }
 
 export function unpackBlockKey(key: PackedBlockKey) {
+  return unpackBlockKeyInto(key, { x: 0, y: 0, z: 0 })
+}
+
+export function unpackBlockKeyInto<T extends { x: number; y: number; z: number }>(
+  key: PackedBlockKey,
+  target: T,
+) {
   if (!Number.isSafeInteger(key) || key < 0) {
     throw new RangeError('Packed block key must be a non-negative safe integer')
   }
@@ -29,11 +36,10 @@ export function unpackBlockKey(key: PackedBlockKey) {
   const py = Math.floor(key / COORDINATE_BASE) % COORDINATE_BASE
   const pz = key % COORDINATE_BASE
 
-  return {
-    x: px - COORDINATE_OFFSET,
-    y: py - COORDINATE_OFFSET,
-    z: pz - COORDINATE_OFFSET,
-  }
+  target.x = px - COORDINATE_OFFSET
+  target.y = py - COORDINATE_OFFSET
+  target.z = pz - COORDINATE_OFFSET
+  return target
 }
 
 export function stringifyBlockKey(key: PackedBlockKey) {

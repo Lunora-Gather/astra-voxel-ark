@@ -100,7 +100,8 @@ High-impact tasks:
 
 - Cap active glow and crystal point lights by camera distance.
 - Replace mesh-per-particle effects with pooled particles.
-- Convert runtime block keys from string keys to packed numeric keys while keeping save files stable.
+- Runtime block keys are packed numeric identities across world, renderer, mining and exploration
+  hot paths; v8 saves retain their compatible string representation.
 - Move terrain chunk generation into a Web Worker.
 - Add chunk-level mesh building for visible faces.
 - Add greedy meshing for opaque voxel faces.
