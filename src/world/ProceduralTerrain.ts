@@ -2,6 +2,7 @@ import type { BlockId } from '../blocks'
 import { getBiomeAt } from './Biomes'
 import { terrainNoise } from '../worldMath'
 import { buildLandmarkPlan, type LandmarkPlan } from './LandmarkTemplates'
+import { selectFloraVariant, type FloraVariantId } from './Flora'
 import { getWorldSeedOffsets, normalizeWorldSeed } from './WorldSeed'
 
 export type ProceduralBlock = { x: number; y: number; z: number; id: BlockId }
@@ -9,7 +10,7 @@ export type ProceduralChunkPlan = {
   cx: number
   cz: number
   blocks: ProceduralBlock[]
-  grassTufts: Array<[number, number, number]>
+  grassTufts: Array<[number, number, number, FloraVariantId]>
   landmarkShardKeys: string[]
   landmark: LandmarkPlan | null
 }
@@ -17,7 +18,7 @@ export type ProceduralChunkPlan = {
 export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number, worldSeed = 0): ProceduralChunkPlan {
   const normalizedSeed = normalizeWorldSeed(worldSeed)
   const blockMap = new Map<string, ProceduralBlock>()
-  const grassTufts: Array<[number, number, number]> = []
+  const grassTufts: Array<[number, number, number, FloraVariantId]> = []
   const add = (x: number, y: number, z: number, id: BlockId) => {
     const key = `${x},${y},${z}`
     if (!blockMap.has(key)) blockMap.set(key, { x, y, z, id })
@@ -33,7 +34,9 @@ export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: numb
         add(x, y, z, terrainBlockAt(x, y, z, height, biome.surface, biome.subsurface, normalizedSeed))
       }
       if (height < 3) add(x, 3, z, 'water')
-      if (height > 3 && seededNoise(normalizedSeed, x, height, z, 11) < 0.065) grassTufts.push([x, height, z])
+      if (height > 3 && seededNoise(normalizedSeed, x, height, z, 11) < 0.065) {
+        grassTufts.push([x, height, z, selectFloraVariant(biome.id, seededNoise(normalizedSeed, x, height, z, 15))])
+      }
       if (height > 4 && seededNoise(normalizedSeed, x, height, z, 12) < biome.treeChance) {
         addTree(add, x, height + 1, z, biome.treeTrunk, normalizedSeed)
       }

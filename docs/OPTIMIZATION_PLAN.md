@@ -137,6 +137,8 @@ High-impact tasks:
 - Clouds and sparkles are integrated through two instanced draw objects with packed reusable state,
   preserving tier-specific counts and adaptive animation budgets while removing up to 192 individual
   decoration meshes from the scene graph.
+- Biome flowers and reeds share the existing grass instancing batch through per-instance colors and
+  transforms. Device-tier tuft caps are enforced, while Eco and runtime pressure freeze sway updates.
 - Block-break and shard particles share two instanced pools instead of one scene mesh per particle;
   per-tier capacities remain bounded, block color stays per instance and burst setup is allocation-free.
 - Glow and crystal lights use persistent registered entries and one reusable candidate buffer, keeping

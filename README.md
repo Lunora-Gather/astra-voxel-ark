@@ -32,6 +32,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Bounded per-world build undo with material refunds, water restoration and desktop/mobile access
 - Save-aware contextual onboarding for movement, mining, placement, backpack, crafting and landmark shards, with touch-specific compact help
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
+- Deterministic biome flora—Star Blossoms, Moon Reeds, Amber Blooms and Prism Flowers—sharing the existing one-draw grass batch
 - Budgeted biome and block-coordinate HUD with click-to-copy location sharing
 - Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling
 - Allocation-free packed integer block indexing at runtime with legacy string conversion only at the save boundary

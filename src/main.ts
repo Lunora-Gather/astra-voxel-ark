@@ -47,6 +47,7 @@ import {
   formatWorldSeed,
   formatWorldCoordinates,
   formatWorldCoordinatesForClipboard,
+  getFloraDefinition,
   proceduralTerrainHeightAt,
   getWorldExportSlug,
   getWorldSlotSaveKey,
@@ -71,6 +72,7 @@ import {
   type SavedWorldState as SavedWorld,
   type WorldSlotId,
   type WorldBlock,
+  type FloraVariantId,
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
@@ -631,7 +633,7 @@ const PLAYER_PLACEMENT_CLEARANCE = 0.08
 const STEP_HEIGHT = 1
 const grassBladeGeometry = new THREE.PlaneGeometry(0.42, 0.58)
 const grassBladeMaterial = new THREE.MeshStandardMaterial({
-  color: 0x91e66f,
+  color: 0xffffff,
   side: THREE.DoubleSide,
   transparent: true,
   opacity: 0.82,
@@ -1087,6 +1089,7 @@ const grassRot = new THREE.Quaternion()
 const grassScale = new THREE.Vector3()
 const grassEuler = new THREE.Euler()
 const grassMatrix = new THREE.Matrix4()
+const grassColor = new THREE.Color()
 
 function growGrassBladeMesh() {
   if (!grassBladeMesh) return
@@ -1102,16 +1105,23 @@ function growGrassBladeMesh() {
   for (let i = 0; i < oldMesh.count; i++) {
     oldMesh.getMatrixAt(i, grassMatrix)
     newMesh.setMatrixAt(i, grassMatrix)
+    if (oldMesh.instanceColor) {
+      oldMesh.getColorAt(i, grassColor)
+      newMesh.setColorAt(i, grassColor)
+    }
   }
   newMesh.instanceMatrix.needsUpdate = true
+  if (newMesh.instanceColor) newMesh.instanceColor.needsUpdate = true
   world.remove(oldMesh)
   world.add(newMesh)
   grassBladeMesh = newMesh
 }
 
-function addGrassTuft(x: number, y: number, z: number) {
+function addGrassTuft(x: number, y: number, z: number, variant: FloraVariantId = 0) {
   if (!grassBladeMesh) return
+  if (grassBladeMesh.count + 3 > GRASS_ANIMATION_BUDGET * 3) return
   const anchorKey = packBlockKey(x, y, z)
+  const flora = getFloraDefinition(variant)
   const baseX = x + (seededNoise(x, y, z, 1) - 0.5) * 0.35
   const baseY = y + 0.56
   const baseZ = z + (seededNoise(x, y, z, 2) - 0.5) * 0.35
@@ -1130,14 +1140,16 @@ function addGrassTuft(x: number, y: number, z: number) {
     grassPos.set(baseX, baseY, baseZ)
     grassEuler.set(0, rotY, 0)
     grassRot.setFromEuler(grassEuler)
-    grassScale.set(scale, scale, scale)
+    grassScale.set(scale * flora.widthScale, scale * flora.heightScale, scale * flora.widthScale)
     grassMatrix.compose(grassPos, grassRot, grassScale)
     
     grassBladeMesh.setMatrixAt(index, grassMatrix)
+    grassBladeMesh.setColorAt(index, grassColor.setHex(flora.color))
     grassBladeMesh.count = index + 1
     grassBladeKeys[index] = anchorKey
   }
   grassBladeMesh.instanceMatrix.needsUpdate = true
+  if (grassBladeMesh.instanceColor) grassBladeMesh.instanceColor.needsUpdate = true
   needUpdateBounds = true
 }
 
@@ -1149,6 +1161,10 @@ function removeGrassTuftsAt(anchorKey: PackedBlockKey) {
       if (i !== lastIndex) {
         grassBladeMesh.getMatrixAt(lastIndex, grassMatrix)
         grassBladeMesh.setMatrixAt(i, grassMatrix)
+        if (grassBladeMesh.instanceColor) {
+          grassBladeMesh.getColorAt(lastIndex, grassColor)
+          grassBladeMesh.setColorAt(i, grassColor)
+        }
         grassBladeKeys[i] = grassBladeKeys[lastIndex]
       }
       grassBladeMesh.setMatrixAt(lastIndex, hiddenInstanceMatrix)
@@ -1157,6 +1173,7 @@ function removeGrassTuftsAt(anchorKey: PackedBlockKey) {
     }
   }
   grassBladeMesh.instanceMatrix.needsUpdate = true
+  if (grassBladeMesh.instanceColor) grassBladeMesh.instanceColor.needsUpdate = true
   needUpdateBounds = true
 }
 
@@ -1666,6 +1683,9 @@ if (isSmokeTest) {
   void import('./world/LandmarkTemplatesSmoke').then(({ assertLandmarkTemplatesSmoke }) => {
     assertLandmarkTemplatesSmoke()
   }).catch((error) => console.error(error))
+  void import('./world/FloraSystemSmoke').then(({ assertFloraSystemSmoke }) => {
+    assertFloraSystemSmoke()
+  }).catch((error) => console.error(error))
   void import('./player/PlayerMotionControllerSmoke').then(({ assertPlayerMotionControllerSmoke }) => {
     assertPlayerMotionControllerSmoke()
   }).catch((error) => console.error(error))
@@ -1832,8 +1852,8 @@ function applyTerrainPlan(plan: ProceduralChunkPlan) {
   withBlockBatch(() => {
     plan.blocks.forEach(({ x, y, z, id }) => addBlock(x, y, z, id))
     if (runtimeProfile.tier !== 'ultra-low') {
-      plan.grassTufts.forEach(([x, y, z]) => {
-        if (blockData.has(packBlockKey(x, y, z))) addGrassTuft(x, y, z)
+      plan.grassTufts.forEach(([x, y, z, variant]) => {
+        if (blockData.has(packBlockKey(x, y, z))) addGrassTuft(x, y, z, variant)
       })
     }
   })
@@ -4251,7 +4271,7 @@ function animate() {
 
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
   waterTimeUniform.value = elapsedTime
-  grassTimeUniform.value = elapsedTime
+  if (!cosmeticEffectsReduced) grassTimeUniform.value = elapsedTime
   const cloudUpdates = cosmeticEffectsReduced
     ? 0
     : adaptiveBudget(skyDecorations.cloudCount, Math.min(3, skyDecorations.cloudCount))
