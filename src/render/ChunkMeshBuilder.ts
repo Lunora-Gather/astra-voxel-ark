@@ -7,6 +7,8 @@ import { collectVisibleFaces, type BlockLookup, type VisibleVoxelFace } from './
 
 export type ChunkMeshBuildOptions = {
   includeNonGreedyBlocks?: boolean
+  /** Block ids whose materials differ per face; their quads are grouped by face slot. */
+  multiFaceIds?: ReadonlySet<BlockId>
 }
 
 export type ChunkMeshBuildResult = {
@@ -30,13 +32,20 @@ export type ChunkMeshStats = {
 export function buildChunkMeshData(
   blocks: Iterable<WorldBlock>,
   lookup: BlockLookup,
-  { includeNonGreedyBlocks = false }: ChunkMeshBuildOptions = {},
+  { includeNonGreedyBlocks = false, multiFaceIds }: ChunkMeshBuildOptions = {},
 ): ChunkMeshBuildResult {
-  const blockList = [...blocks]
+  const blockList = Array.isArray(blocks) ? (blocks as WorldBlock[]) : [...blocks]
   const meshedBlocks = includeNonGreedyBlocks ? blockList : filterGreedyMeshBlocks(blockList)
   const visibleFaces = collectVisibleFaces(meshedBlocks, lookup)
   const greedyQuads = buildGreedyQuads(visibleFaces)
-  const geometryGroups = buildGreedyGeometryGroups(greedyQuads)
+  const geometryGroups = buildGreedyGeometryGroups(greedyQuads, multiFaceIds)
+
+  let triangleCount = 0
+  let vertexCount = 0
+  for (const group of geometryGroups) {
+    triangleCount += group.triangleCount
+    vertexCount += group.vertexCount
+  }
 
   return {
     visibleFaces,
@@ -48,8 +57,8 @@ export function buildChunkMeshData(
       skippedBlockCount: blockList.length - meshedBlocks.length,
       visibleFaceCount: visibleFaces.length,
       greedyQuadCount: greedyQuads.length,
-      triangleCount: geometryGroups.reduce((sum, group) => sum + group.triangleCount, 0),
-      vertexCount: geometryGroups.reduce((sum, group) => sum + group.vertexCount, 0),
+      triangleCount,
+      vertexCount,
       geometryGroupCount: geometryGroups.length,
     },
   }

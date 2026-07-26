@@ -10,22 +10,19 @@ export type VisibleVoxelFace = BlockPosition & {
 
 export type BlockLookup = (x: number, y: number, z: number) => BlockId | null
 
-const FACE_OFFSETS: Record<VoxelFaceDirection, [number, number, number]> = {
-  px: [1, 0, 0],
-  nx: [-1, 0, 0],
-  py: [0, 1, 0],
-  ny: [0, -1, 0],
-  pz: [0, 0, 1],
-  nz: [0, 0, -1],
-}
+export const FACE_DIRECTIONS: readonly VoxelFaceDirection[] = ['px', 'nx', 'py', 'ny', 'pz', 'nz']
+const FACE_DX = [1, -1, 0, 0, 0, 0] as const
+const FACE_DY = [0, 0, 1, -1, 0, 0] as const
+const FACE_DZ = [0, 0, 0, 0, 1, -1] as const
 
 export function collectVisibleFaces(blocks: Iterable<BlockPosition & { id: BlockId }>, lookup: BlockLookup) {
   const faces: VisibleVoxelFace[] = []
 
   for (const block of blocks) {
-    for (const [direction, [dx, dy, dz]] of Object.entries(FACE_OFFSETS) as [VoxelFaceDirection, [number, number, number]][]) {
-      if (!lookup(block.x + dx, block.y + dy, block.z + dz)) {
-        faces.push({ ...block, direction })
+    const { x, y, z, id } = block
+    for (let face = 0; face < 6; face += 1) {
+      if (!lookup(x + FACE_DX[face], y + FACE_DY[face], z + FACE_DZ[face])) {
+        faces.push({ x, y, z, id, direction: FACE_DIRECTIONS[face] })
       }
     }
   }

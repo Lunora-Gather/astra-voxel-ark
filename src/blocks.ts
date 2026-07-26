@@ -16,7 +16,7 @@ export const BLOCKS: BlockDef[] = [
   { id: 'dirt', name: 'Dirt', color: 0x9b6a45, roughness: 0.95 },
   { id: 'stone', name: 'Stone', color: 0x8b93a1, roughness: 1 },
   { id: 'wood', name: 'Wood', color: 0xb1763f, roughness: 0.82 },
-  { id: 'leaves', name: 'Leaves', color: 0x55b779, transparent: true, opacity: 0.86, roughness: 0.75 },
+  { id: 'leaves', name: 'Leaves', color: 0x62bd74, roughness: 0.82 },
   { id: 'water', name: 'Water', color: 0x52bfff, transparent: true, opacity: 0.56, roughness: 0.2, metalness: 0.05 },
   { id: 'crystal', name: 'Crystal', color: 0x8d75ff, emissive: 0x34206d, roughness: 0.35, metalness: 0.2 },
   { id: 'glow', name: 'Glow', color: 0xffe6a8, emissive: 0xffb13b, roughness: 0.45 },

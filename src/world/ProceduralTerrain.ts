@@ -3,7 +3,9 @@ import { getBiomeAt } from './Biomes'
 import { terrainNoise } from '../worldMath'
 import { buildLandmarkPlan, type LandmarkPlan } from './LandmarkTemplates'
 import { selectFloraVariant, type FloraVariantId } from './Flora'
+import { isSpawnAreaProtected } from './SpawnArea'
 import { getWorldSeedOffsets, normalizeWorldSeed } from './WorldSeed'
+import { packBlockKey } from './blockKey'
 
 export type ProceduralBlock = { x: number; y: number; z: number; id: BlockId }
 export type ProceduralChunkPlan = {
@@ -17,10 +19,10 @@ export type ProceduralChunkPlan = {
 
 export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number, worldSeed = 0): ProceduralChunkPlan {
   const normalizedSeed = normalizeWorldSeed(worldSeed)
-  const blockMap = new Map<string, ProceduralBlock>()
+  const blockMap = new Map<number, ProceduralBlock>()
   const grassTufts: Array<[number, number, number, FloraVariantId]> = []
   const add = (x: number, y: number, z: number, id: BlockId) => {
-    const key = `${x},${y},${z}`
+    const key = packBlockKey(x, y, z)
     if (!blockMap.has(key)) blockMap.set(key, { x, y, z, id })
   }
   const startX = cx * chunkSize
@@ -34,13 +36,14 @@ export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: numb
         add(x, y, z, terrainBlockAt(x, y, z, height, biome.surface, biome.subsurface, normalizedSeed))
       }
       if (height < 3) add(x, 3, z, 'water')
-      if (height > 3 && seededNoise(normalizedSeed, x, height, z, 11) < 0.065) {
+      const decorationProtected = isSpawnAreaProtected(x, z)
+      if (!decorationProtected && height > 3 && seededNoise(normalizedSeed, x, height, z, 11) < 0.065) {
         grassTufts.push([x, height, z, selectFloraVariant(biome.id, seededNoise(normalizedSeed, x, height, z, 15))])
       }
-      if (height > 4 && seededNoise(normalizedSeed, x, height, z, 12) < biome.treeChance) {
+      if (!isSpawnAreaProtected(x, z, 2) && height > 4 && seededNoise(normalizedSeed, x, height, z, 12) < biome.treeChance) {
         addTree(add, x, height + 1, z, biome.treeTrunk, normalizedSeed)
       }
-      if (height > 2 && seededNoise(normalizedSeed, x, height, z, 13) < 0.016) {
+      if (!decorationProtected && height > 2 && seededNoise(normalizedSeed, x, height, z, 13) < 0.016) {
         add(x, height + 1, z, seededNoise(normalizedSeed, x, height, z, 14) > 0.5 ? 'crystal' : 'glow')
       }
     }

@@ -8,13 +8,10 @@ body[data-runtime-pressure="strained"] .hud *,
 body[data-runtime-pressure="critical"] .hud * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 body[data-runtime-pressure="strained"] .survival-badge,
 body[data-runtime-pressure="strained"] .charge-bar,
-body[data-runtime-pressure="strained"] .wayfinder-badge.pulse,
 body.eco-runtime .survival-badge,
 body.eco-runtime .charge-bar,
-body.eco-runtime .wayfinder-badge.pulse,
 body[data-runtime-pressure="critical"] .survival-badge,
-body[data-runtime-pressure="critical"] .charge-bar,
-body[data-runtime-pressure="critical"] .wayfinder-badge.pulse { animation: none !important; }
+body[data-runtime-pressure="critical"] .charge-bar { animation: none !important; }
 body[data-runtime-pressure="critical"] .hud::before,
 body.eco-runtime .hud::before { mix-blend-mode: normal; }
 body[data-runtime-pressure="critical"] .hud::after,
@@ -22,9 +19,9 @@ body.eco-runtime .hud::after { display: none; }
 body[data-runtime-pressure="critical"] .cold-vignette,
 body.eco-runtime .cold-vignette { mix-blend-mode: normal; box-shadow: none; }
 .hud { position: fixed; inset: 0; z-index: 1; pointer-events: none; color: white; text-shadow: 0 2px 12px rgba(0,0,0,.45); }
-.hud::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 38%, transparent 0 36%, rgba(7,12,28,.2) 68%, rgba(3,5,14,.52) 100%); mix-blend-mode: multiply; }
-.hud::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(255,255,255,.1), transparent 28%, transparent 72%, rgba(121,213,255,.12)); opacity: .68; }
-.title, .help, .world-badge, .wayfinder-badge, .survival-badge, .save-tools, .toast, .hotbar, .crosshair, .start, .mobile-controls, .rotate-prompt, .tutorial, .block-info, .mine-progress, .menu-toggle-btn, .pause-menu { z-index: 2; }
+.hud::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 50% 40%, transparent 0 48%, rgba(7,12,28,.1) 76%, rgba(3,5,14,.3) 100%); mix-blend-mode: multiply; }
+.hud::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, rgba(255,255,255,.07), transparent 30%, transparent 74%, rgba(121,213,255,.08)); opacity: .46; }
+.title, .help, .world-badge, .survival-badge, .save-tools, .toast, .hotbar, .crosshair, .start, .mobile-controls, .rotate-prompt, .tutorial, .block-info, .mine-progress, .menu-toggle-btn, .pause-menu { z-index: 2; }
 .cold-vignette { position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .45s ease; background: radial-gradient(circle at 50% 42%, transparent 0 28%, rgba(77, 183, 255, .12) 58%, rgba(7, 16, 36, .78) 100%), linear-gradient(180deg, rgba(160, 225, 255, .08), rgba(10, 18, 44, .36)); box-shadow: inset 0 0 110px rgba(122, 213, 255, .3); mix-blend-mode: screen; }
 .title { position: absolute; left: 24px; top: 20px; padding: 14px 18px; border: 1px solid rgba(255,255,255,.22); background: linear-gradient(135deg, rgba(10,18,40,.58), rgba(24,47,77,.28)); backdrop-filter: blur(18px); border-radius: 20px; box-shadow: 0 20px 70px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18); }
 .eyebrow { display: block; margin-bottom: 4px; font-size: 10px; font-weight: 800; letter-spacing: .22em; color: #a7eaff; opacity: .9; }
@@ -62,6 +59,8 @@ body.eco-runtime .cold-vignette { mix-blend-mode: normal; box-shadow: none; }
 .help { position: absolute; right: 24px; top: 20px; max-width: 270px; padding: 15px 17px; border-radius: 20px; border: 1px solid rgba(255,255,255,.18); background: linear-gradient(135deg, rgba(10,18,40,.52), rgba(26,45,72,.24)); backdrop-filter: blur(18px); font-size: 13px; line-height: 1.72; box-shadow: 0 18px 60px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14); }
 .help strong { color: #c7f2ff; letter-spacing: .08em; }
 .help-guide { display: grid; gap: 2px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.13); line-height: 1.35; }
+.desktop-help + .help-guide { display: none; }
+body.touch-layout .desktop-help + .help-guide { display: grid; }
 .help-guide-title { font-size: 9px; text-transform: uppercase; }
 .help-guide-prompt { color: rgba(255,255,255,.92); font-size: 11px; }
 .mobile-help { display: none; }
@@ -70,9 +69,6 @@ body.eco-runtime .cold-vignette { mix-blend-mode: normal; box-shadow: none; }
 .world-biome, .world-coordinates { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .world-biome { font-weight: 800; }
 .world-coordinates { color: rgba(199,242,255,.72); font: 800 9px/1.3 monospace; }
-.wayfinder-badge { position: absolute; left: 24px; top: 402px; min-width: 220px; padding: 10px 14px; border-radius: 999px; background: linear-gradient(135deg, rgba(9,14,31,.66), rgba(35,60,86,.42)); border: 1px solid rgba(169,239,255,.28); backdrop-filter: blur(18px); box-shadow: 0 16px 44px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.14); display: flex; align-items: center; justify-content: space-between; gap: 14px; font-size: 12px; }
-.wayfinder-label { color: #c7f2ff; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.wayfinder-value { color: #fff3a8; font-weight: 900; font-family: monospace; white-space: nowrap; }
 .perf-badge { position: absolute; right: 24px; bottom: 152px; width: min(300px, calc(100vw - 48px)); padding: 8px 10px; border-radius: 16px; background: rgba(9, 14, 31, 0.68); border: 1px solid rgba(255, 255, 255, 0.16); backdrop-filter: blur(18px); font-size: 10px; font-family: monospace; color: rgba(255, 255, 255, 0.85); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24); pointer-events: none; display: grid; gap: 5px; }
 .perf-badge span { font-weight: 700; }
 .perf-row { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-width: 0; }
@@ -374,7 +370,7 @@ body.touch-layout.portrait-touch .hotbar { display: none; }
 body:not(.touch-layout) .mobile-controls { display: none; }
 
 @media (pointer: coarse), (max-width: 760px) {
-  .title, .help, .world-badge, .wayfinder-badge, .save-tools, .survival-badge, .tutorial, .perf-badge, .block-info, .hotbar, .joystick, .touch-btn, .panel, .toast, .mine-ring::after {
+  .title, .help, .world-badge, .save-tools, .survival-badge, .tutorial, .perf-badge, .block-info, .hotbar, .joystick, .touch-btn, .panel, .toast, .mine-ring::after {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
   }
@@ -385,7 +381,6 @@ body:not(.touch-layout) .mobile-controls { display: none; }
   .help { display: none; right: calc(12px + env(safe-area-inset-right)); top: 54px; max-width: 188px; padding: 10px 12px; font-size: 11px; line-height: 1.45; border-radius: 16px; z-index: 10; background: rgba(9, 15, 34, 0.92) !important; }
   .help.visible-mobile { display: block !important; }
   .world-badge { right: calc(12px + env(safe-area-inset-right)); bottom: 84px; font-size: 10px; }
-  .wayfinder-badge { left: calc(12px + env(safe-area-inset-left)); top: 102px; min-width: 0; width: min(238px, calc(100vw - 72px - env(safe-area-inset-left) - env(safe-area-inset-right))); padding: 8px 12px; border-radius: 14px; font-size: 10px; background: rgba(9, 14, 31, 0.92) !important; }
   .save-tools { left: calc(12px + env(safe-area-inset-left)); top: 132px; bottom: auto; gap: 5px; padding: 6px; background: rgba(9, 14, 31, 0.92) !important; }
   .save-tools button { padding: 7px 9px; font-size: 10px; }
   .survival-badge {
@@ -462,14 +457,6 @@ body:not(.touch-layout) .mobile-controls { display: none; }
     transform: scale(.84);
     transform-origin: top left;
   }
-  .wayfinder-badge {
-    left: clamp(calc(142px + env(safe-area-inset-left)), 28vw, calc(175px + env(safe-area-inset-left)));
-    top: 50px;
-    width: min(320px, calc(100vw - 300px - env(safe-area-inset-left) - env(safe-area-inset-right)));
-    height: 34px;
-    padding: 0 12px;
-  }
-
   /* v1.3 Survival Diagnostics Compact Horizontal HUD for Mobile Landscape */
   .survival-badge {
     display: flex !important;
@@ -645,7 +632,6 @@ body:not(.touch-layout) .mobile-controls { display: none; }
 .hud-left-stack > .survival-badge,
 .hud-left-stack > .tutorial,
 .hud-left-stack > .compass-badge,
-.hud-left-stack > .wayfinder-badge,
 .hud-left-stack > .save-tools,
 .hud-right-stack > .help,
 .hud-right-stack > .perf-badge,
@@ -662,8 +648,7 @@ body:not(.touch-layout) .mobile-controls { display: none; }
 .hud-left-stack > .title,
 .hud-left-stack > .survival-badge,
 .hud-left-stack > .tutorial,
-.hud-left-stack > .compass-badge,
-.hud-left-stack > .wayfinder-badge {
+.hud-left-stack > .compass-badge {
   width: 100%;
 }
 
@@ -746,8 +731,7 @@ body[data-hud-density="compact"] .survival-badge {
   border-radius: 16px;
 }
 
-body[data-hud-density="compact"] .compass-badge,
-body[data-hud-density="compact"] .wayfinder-badge {
+body[data-hud-density="compact"] .compass-badge {
   padding: 8px 12px;
   border-radius: 14px;
 }
@@ -792,7 +776,6 @@ body[data-hud-density="minimal"] .title {
 body[data-hud-density="minimal"] .eyebrow,
 body[data-hud-density="minimal"] .title p,
 body[data-hud-density="minimal"] .tutorial,
-body[data-hud-density="minimal"] .wayfinder-badge,
 body[data-hud-density="minimal"] .world-badge,
 body[data-hud-density="minimal"] .perf-badge {
   display: none;
@@ -1164,6 +1147,14 @@ body.portrait-touch .block-info {
 }
 
 @media (max-width: 520px) {
+  .toast {
+    top: auto;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    width: max-content;
+    max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    text-align: center;
+  }
+
   .build-pattern-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .panel {

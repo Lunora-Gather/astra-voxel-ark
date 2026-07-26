@@ -15,7 +15,7 @@ const expectations = [
   [main.includes('effectiveTerrainLoadRadius()'), 'temporary terrain radius integration'],
   [main.includes('isTerrainChunkWithinActiveRadius(plan.cx, plan.cz)'), 'stale completed terrain rejection'],
   [main.includes('performanceGuard.budget.pointLightScale'), 'point-light budget integration'],
-  [main.includes('workBudget.visibleFaceSummaries'), 'mesh summary budget integration'],
+  [main.includes('workBudget.meshBatchScale') && main.includes('workBudget.meshTimeScale'), 'mesh rebuild budget integration'],
   [main.includes('performanceGuard.budget.shadows'), 'dynamic shadow budget integration'],
   [style.includes('body[data-runtime-pressure="critical"] .hud::after'), 'critical full-screen composite protection'],
   [style.includes('body[data-runtime-pressure="strained"] .survival-badge'), 'strained HUD animation protection'],

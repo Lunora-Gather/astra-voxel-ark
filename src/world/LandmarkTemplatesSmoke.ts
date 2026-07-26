@@ -1,12 +1,11 @@
 import { buildLandmarkPlan } from './LandmarkTemplates'
-import { buildProceduralChunkPlan } from './ProceduralTerrain'
+import { buildProceduralChunkPlan, proceduralTerrainHeightAt } from './ProceduralTerrain'
+import { ARK_CORE_POSITION, isSpawnAreaProtected, PLAYER_SPAWN } from './SpawnArea'
 
 export function assertLandmarkTemplatesSmoke() {
   const flatHeight = () => 10
   const fixtures = [
     { cx: -1, cz: -1, worldSeed: 0, templateId: 'moss-shrine', origin: '-6,11,-3', blockCount: 10 },
-    { cx: -1, cz: 1, worldSeed: 0, templateId: 'crystal-bloom', origin: '-3,11,10', blockCount: null },
-    { cx: -1, cz: 3, worldSeed: 0, templateId: 'waystone', origin: '-5,11,28', blockCount: 5 },
     { cx: -8, cz: -7, worldSeed: 0x12345678, templateId: 'moss-shrine', origin: '-60,11,-54', blockCount: 10 },
     { cx: -8, cz: -5, worldSeed: 0x12345678, templateId: 'crystal-bloom', origin: '-59,11,-36', blockCount: null },
     { cx: -7, cz: 1, worldSeed: 0x12345678, templateId: 'waystone', origin: '-51,11,13', blockCount: 5 },
@@ -39,8 +38,30 @@ export function assertLandmarkTemplatesSmoke() {
     }
   }
 
-  if (buildLandmarkPlan(0, 0, 8, 0, flatHeight) !== null) {
-    throw new Error('Landmark smoke failed: Ark spawn chunk must remain clear')
+  for (const worldSeed of [0, 1, 0x12345678, 0xffffffff]) {
+    for (let cx = -2; cx <= 2; cx += 1) {
+      for (let cz = 0; cz <= 3; cz += 1) {
+        const protectedPlan = buildLandmarkPlan(cx, cz, 8, worldSeed, flatHeight)
+        if (protectedPlan && isSpawnAreaProtected(protectedPlan.origin.x, protectedPlan.origin.z, 3)) {
+          throw new Error('Landmark smoke failed: generated structure entered the Ark spawn corridor')
+        }
+        const terrainPlan = buildProceduralChunkPlan(cx, cz, 8, worldSeed)
+        if (terrainPlan.grassTufts.some(([x, , z]) => isSpawnAreaProtected(x, z))) {
+          throw new Error('Landmark smoke failed: flora entered the Ark spawn corridor')
+        }
+        if (terrainPlan.blocks.some(({ x, y, z, id }) =>
+          isSpawnAreaProtected(x, z) &&
+          y > proceduralTerrainHeightAt(x, z, worldSeed) &&
+          id !== 'water'
+        )) {
+          throw new Error('Landmark smoke failed: tree or resource decoration entered the Ark spawn corridor')
+        }
+      }
+    }
+  }
+  if (!isSpawnAreaProtected(PLAYER_SPAWN.x, PLAYER_SPAWN.z) ||
+      !isSpawnAreaProtected(ARK_CORE_POSITION.x, ARK_CORE_POSITION.z)) {
+    throw new Error('Landmark smoke failed: Ark and player spawn must share a protected corridor')
   }
 
   let integratedPlan = null
