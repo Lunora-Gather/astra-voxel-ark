@@ -73,7 +73,7 @@ import {
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
-import { SaveActivityTracker, SettingsStore, type GameSettings, type QualityPreset } from './game'
+import { PageLifecycleSaveCoordinator, SaveActivityTracker, SettingsStore, type GameSettings, type QualityPreset } from './game'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
@@ -1652,6 +1652,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./game/SaveActivityTrackerSmoke').then(({ assertSaveActivityTrackerSmoke }) => {
     assertSaveActivityTrackerSmoke()
+  }).catch((error) => console.error(error))
+  void import('./game/PageLifecycleSaveCoordinatorSmoke').then(({ assertPageLifecycleSaveCoordinatorSmoke }) => {
+    assertPageLifecycleSaveCoordinatorSmoke()
   }).catch((error) => console.error(error))
   void import('./world/WorldCoordinatesSmoke').then(({ assertWorldCoordinatesSmoke }) => {
     assertWorldCoordinatesSmoke()
@@ -4254,11 +4257,19 @@ window.addEventListener('resize', () => {
   applyRenderQuality()
 })
 
-window.addEventListener('pagehide', () => {
-  idleTasks.cancel()
-  if (hasStarted) getWorldSaveSystem().save(serializeWorld())
-  terrainWorker?.dispose()
-  particleEffects.dispose()
-  skyDecorations.dispose()
-  audioSystem.dispose()
-}, { once: true })
+const pageLifecycle = new PageLifecycleSaveCoordinator({
+  hasStarted: () => hasStarted,
+  save: () => saveWorld(true),
+  teardown: () => {
+    idleTasks.cancel()
+    terrainWorker?.dispose()
+    particleEffects.dispose()
+    skyDecorations.dispose()
+    audioSystem.dispose()
+  },
+})
+
+document.addEventListener('visibilitychange', () => {
+  pageLifecycle.visibilityChanged(document.hidden)
+})
+window.addEventListener('pagehide', (event) => pageLifecycle.pageHidden(event.persisted))
