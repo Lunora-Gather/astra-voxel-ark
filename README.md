@@ -16,6 +16,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Frame-rate-stable first-person movement with pointer lock on desktop and normalized touch controls on mobile
 - Block breaking and placing via raycasting, with player-safe placement checks
 - Three named local expedition slots with independent reproducible seeds, active-slot autosave, last-good backup recovery, and name-aware JSON export/import
+- Persistent save activity feedback for unsaved, pending, successful and failed local writes
 - v8 saves resume the player position, view direction, world seed and paused-safe world time
 - Mobile virtual joystick, swipe-to-look camera, jump/break/place buttons and tappable hotbar
 - Landscape-first phone experience with a rotate-device prompt in portrait mode

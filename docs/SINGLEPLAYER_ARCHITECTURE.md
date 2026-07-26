@@ -61,6 +61,11 @@ touching another slot. Failed or quota-limited writes keep the existing primary 
 error instead of reporting a successful save. Starting a new world intentionally clears both the
 primary and recovery backup for only the active slot.
 
+`src/game/SaveActivityTracker.ts` exposes the current local persistence state independently from
+the save codec. The title HUD and pause header share its `Not saved`, `Saving`, relative `Saved`
+and failure feedback. Only one idle autosave may be pending; manual save, load, import, recovery,
+world switching and reset cancel that callback before changing active world state.
+
 ## Next extraction targets
 
 1. Move renderer-state serialization and apply adapters behind a typed world snapshot boundary.

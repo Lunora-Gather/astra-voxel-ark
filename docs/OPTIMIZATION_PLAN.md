@@ -89,6 +89,9 @@ Recommended extraction order:
 
 Status: core paths integrated. Streamed terrain uses the worker pipeline; opaque terrain uses budgeted greedy chunk meshes; particle effects use pools; point lights are distance-budgeted; and resident terrain chunks are evicted outside the retention radius. Diagnostics and runtime adapters remain available for deeper profiling and further main-loop extraction.
 
+Local persistence now also exposes a compact shared activity state and coalesces delayed autosaves,
+so constrained devices avoid redundant serialization while players retain visible failure feedback.
+
 High-impact tasks:
 
 - Cap active glow and crystal point lights by camera distance.

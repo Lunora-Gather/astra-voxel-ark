@@ -255,6 +255,12 @@ async function readState(win, label) {
         leftStackVisible: visible('.hud-left-stack'),
         rightStackVisible: visible('.hud-right-stack'),
         menuButtonVisible: visible('.menu-toggle-btn'),
+        saveStatusVisible: visible('.hud-save-status'),
+        saveStatusFullyVisible: fullyVisible(rectOf('.hud-save-status')),
+        saveStatusState: document.querySelector('.hud-save-status')?.dataset.saveState || null,
+        saveStatusText: document.querySelector('.hud-save-status')?.textContent?.trim() || '',
+        pauseSaveStatusState: document.querySelector('.pause-save-status')?.dataset.saveState || null,
+        pauseSaveStatusText: document.querySelector('.pause-save-status')?.textContent?.trim() || '',
         saveToolsVisible: visible('.save-tools'),
         saveToolButtons: document.querySelectorAll('.pause-menu .save-tools button').length,
         saveToolsFullyVisible: [...document.querySelectorAll('.pause-menu .save-tools button')].every((button) => fullyVisible(rectOf('.' + button.className.split(' ').join('.')))),
@@ -341,6 +347,8 @@ function assertGameplayState(state) {
   if (state.perfVisible) fail('Performance HUD should be hidden by default', state)
   if (state.pressedTouchButtons) fail('Touch buttons should not remain pressed after input reset', state)
   if (state.mineProgressVisible) fail('Mining progress should not remain visible after input reset', state)
+  if (!state.saveStatusVisible || !state.saveStatusFullyVisible) fail('Persistent save status should fit in the gameplay HUD', state)
+  if (!['unsaved', 'saving', 'saved', 'error'].includes(state.saveStatusState)) fail('Save status should expose a valid state', state)
 }
 
 function assertMenuState(state) {
@@ -470,6 +478,10 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.save-btn')
   const saved = await readSavedWorld(win)
   assertSavedWorld(saved, `${scenario.label}:save`)
+  const savedStatus = await readState(win, `${scenario.label}:saved-status`)
+  if (savedStatus.saveStatusState !== 'saved' || savedStatus.pauseSaveStatusState !== 'saved' || !savedStatus.saveStatusText.startsWith('Saved')) {
+    fail('Successful saves should update persistent HUD and menu feedback', savedStatus)
+  }
   if (saved.worldSeed === 0) fail('A newly created world should receive a non-legacy seed', { saved })
   await click(win, '.save-btn')
   const backup = await readStorageJson(win, backupSaveKey)
@@ -494,6 +506,9 @@ async function smokeSaveLoad(win, scenario) {
   `)
   const failedSaveState = await readState(win, `${scenario.label}:failed-save`)
   if (!failedSaveState.toastText.includes('Save failed')) fail('Storage write failures should produce recoverable UI feedback', failedSaveState)
+  if (failedSaveState.saveStatusState !== 'error' || failedSaveState.pauseSaveStatusState !== 'error') {
+    fail('Storage write failures should remain visible in save status feedback', failedSaveState)
+  }
   await click(win, '.reset-btn')
   await click(win, '.reset-btn')
   const cleared = await readSavedWorld(win)
@@ -501,6 +516,9 @@ async function smokeSaveLoad(win, scenario) {
   const clearedBackup = await readStorageJson(win, backupSaveKey)
   if (clearedBackup) fail('New World should remove the previous slot backup', { clearedBackup })
   const rerolledWorld = await readState(win, `${scenario.label}:rerolled-world`)
+  if (rerolledWorld.saveStatusState !== 'unsaved' || rerolledWorld.saveStatusText !== 'Not saved') {
+    fail('New worlds should clearly report that they are not saved yet', rerolledWorld)
+  }
   const previousSeedLabel = saved.worldSeed.toString(16).toUpperCase().padStart(8, '0')
   if (rerolledWorld.worldSeedLabel === previousSeedLabel) fail('New World should reroll the active world seed', { previousSeedLabel, rerolledWorld })
   const resumeState = {
@@ -515,6 +533,8 @@ async function smokeSaveLoad(win, scenario) {
   await click(win, '.save-btn')
   const loaded = await readSavedWorld(win)
   assertSavedWorld(loaded, `${scenario.label}:load`)
+  const loadedStatus = await readState(win, `${scenario.label}:loaded-status`)
+  if (loadedStatus.saveStatusState !== 'saved') fail('Loaded worlds should restore saved status feedback', loadedStatus)
   if (loaded.blocks.length !== saved.blocks.length) fail('Loaded world should preserve saved block count', { saved: saved.blocks.length, loaded: loaded.blocks.length })
   if (loaded.player.position.some((value, index) => Math.abs(value - resumeState.player.position[index]) > 0.001)) {
     fail('Loaded world should restore the player position', { expected: resumeState.player.position, actual: loaded.player.position })

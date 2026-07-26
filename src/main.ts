@@ -43,7 +43,7 @@ import {
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
-import { SettingsStore, type GameSettings, type QualityPreset } from './game'
+import { SaveActivityTracker, SettingsStore, type GameSettings, type QualityPreset } from './game'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
@@ -81,7 +81,7 @@ document.body.classList.toggle('constrained-runtime', lowPowerMode)
 app.innerHTML = `
   <div class="hud">
     <div class="hud-stack hud-left-stack">
-      <div class="title"><span class="eyebrow">VOXEL SANDBOX</span><h1>ASTRAVOXEL ARK</h1><p>${GAME_VERSION_LABEL}</p></div>
+      <div class="title"><span class="eyebrow">VOXEL SANDBOX</span><div class="title-heading"><h1>ASTRAVOXEL ARK</h1><span class="save-status hud-save-status" data-save-state="unsaved" role="status" aria-live="polite">Not saved</span></div><p>${GAME_VERSION_LABEL}</p></div>
       <div class="survival-badge">
         <div class="survival-title">SURVIVAL DIAGNOSTICS</div>
         <div class="survival-status">
@@ -173,7 +173,7 @@ app.innerHTML = `
     <div class="pause-menu hidden" role="dialog" aria-modal="true" aria-label="Game Menu">
       <div class="pause-panel">
         <div class="pause-header">
-          <div><span>Game Menu</span><small class="pause-session-label">Expedition 1 · Offline</small></div>
+          <div><span>Game Menu</span><small><span class="pause-session-label">Expedition 1 · Offline</span><span aria-hidden="true"> · </span><span class="pause-save-status" data-save-state="unsaved">Not saved</span></small></div>
           <button class="resume-btn">Resume</button>
         </div>
         <div class="menu-tabs" role="tablist" aria-label="Game menu sections">
@@ -495,6 +495,7 @@ let terrainWorkerInFlight = 0
 let terrainGenerationEpoch = 0
 const terrainWorker = typeof Worker !== 'undefined' ? new ProceduralTerrainWorkerClient() : null
 const idleTasks = new IdleTaskQueue()
+const saveActivity = new SaveActivityTracker()
 let lastTerrainEnsureScanKey = ''
 let lastTerrainCenterKey = ''
 let pendingTerrainEnsure: { x: number; z: number } | null = null
@@ -511,12 +512,31 @@ const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
 const playerMotion = new PlayerMotionController()
+const saveStatusElements = [
+  document.querySelector<HTMLElement>('.hud-save-status')!,
+  document.querySelector<HTMLElement>('.pause-save-status')!,
+]
 let crystalPower = 68
 let carriedCrystal = 0
 let collectedGlowShards = 0
 let lastSurvivalToastAt = 0
 let simulationElapsedTime = 0
 let lastAutoSaveAt = 0
+let autoSavePending = false
+
+function updateSaveActivityUi(now = Date.now()) {
+  const label = saveActivity.label(now)
+  saveStatusElements.forEach((element) => {
+    element.textContent = label
+    element.dataset.saveState = saveActivity.state
+  })
+}
+
+function cancelPendingAutoSave() {
+  if (!autoSavePending) return
+  idleTasks.cancel()
+  autoSavePending = false
+}
 let worldSeed = createWorldSeed()
 const EXPLORATION_GOAL_SHARDS = 6
 const SHARD_WARD_PROTECTION = 0.03
@@ -1315,12 +1335,21 @@ function getWorldSaveSystem(slot: WorldSlotId = activeWorldSlot) {
 }
 
 function saveWorld(silent = false) {
-  const result = getWorldSaveSystem().save(serializeWorld())
+  cancelPendingAutoSave()
+  saveActivity.begin()
+  updateSaveActivityUi()
+  const snapshot = serializeWorld()
+  const result = getWorldSaveSystem().save(snapshot)
   if (!result.ok) {
+    saveActivity.fail()
+    updateSaveActivityUi()
     updateSaveMeta('Save failed. Local storage may be full or unavailable.')
     if (!silent) showToast('Save failed · storage unavailable')
     return false
   }
+  saveActivity.complete(snapshot.savedAt)
+  lastAutoSaveAt = simulationElapsedTime
+  updateSaveActivityUi()
   updateSaveMeta()
   updateWorldSlotUi()
   if (!silent) showToast('World saved')
@@ -1328,14 +1357,19 @@ function saveWorld(silent = false) {
 }
 
 function loadWorld() {
+  cancelPendingAutoSave()
   const saves = getWorldSaveSystem()
   if (!saves.hasSave()) {
+    saveActivity.reset()
+    updateSaveActivityUi()
     updateSaveMeta('No local save yet. Autosave starts after you begin exploring.')
     showToast('No save yet')
     return false
   }
   const data = saves.load()
   if (!data) {
+    saveActivity.fail()
+    updateSaveActivityUi()
     updateSaveMeta('Primary save is damaged. Use Recover if a backup is available.')
     updateWorldSlotUi()
     showToast('Save is broken · recovery available')
@@ -1343,11 +1377,15 @@ function loadWorld() {
   }
   try {
     applySavedWorld(data)
+    saveActivity.hydrate(data.savedAt)
+    updateSaveActivityUi()
     updateSaveMeta()
     updateWorldSlotUi()
     showToast('World loaded')
     return true
   } catch {
+    saveActivity.fail()
+    updateSaveActivityUi()
     showToast('Save is broken')
     return false
   }
@@ -1366,6 +1404,9 @@ function exportWorld() {
 }
 
 function importWorld(file: File) {
+  cancelPendingAutoSave()
+  saveActivity.begin()
+  updateSaveActivityUi()
   const reader = new FileReader()
   reader.addEventListener('load', () => {
     try {
@@ -1373,13 +1414,19 @@ function importWorld(file: File) {
       const data = saves.importText(String(reader.result))
       if (!data) throw new Error('Invalid save structure')
       applySavedWorld(data)
-      const result = saves.save(serializeWorld())
+      const snapshot = serializeWorld()
+      const result = saves.save(snapshot)
       if (!result.ok) throw result.error
+      saveActivity.complete(snapshot.savedAt)
+      lastAutoSaveAt = simulationElapsedTime
+      updateSaveActivityUi()
       updateSaveMeta()
       updateWorldSlotUi()
       updateHotbar()
       showToast('Save imported')
     } catch {
+      saveActivity.fail()
+      updateSaveActivityUi()
       showToast('Import failed')
     }
   })
@@ -1387,8 +1434,11 @@ function importWorld(file: File) {
 }
 
 function resetWorld() {
+  cancelPendingAutoSave()
   const cleared = getWorldSaveSystem().clear()
   if (!cleared.ok) {
+    saveActivity.fail()
+    updateSaveActivityUi()
     showToast('New World failed · storage unavailable')
     return false
   }
@@ -1404,6 +1454,8 @@ function resetWorld() {
   survivalVitals.reset()
   simulationElapsedTime = 0
   lastAutoSaveAt = 0
+  saveActivity.reset()
+  updateSaveActivityUi()
   generateWorld()
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
   playerMotion.reset()
@@ -1443,14 +1495,22 @@ function updateSaveMeta(message?: string) {
 }
 
 function recoverWorld() {
+  cancelPendingAutoSave()
+  saveActivity.begin()
+  updateSaveActivityUi()
   const recovered = getWorldSaveSystem().recover()
   if (!recovered) {
+    saveActivity.fail()
+    updateSaveActivityUi()
     showToast('No recovery backup available')
     updateWorldSlotUi()
     return false
   }
   try {
     applySavedWorld(recovered)
+    saveActivity.hydrate(recovered.savedAt)
+    lastAutoSaveAt = simulationElapsedTime
+    updateSaveActivityUi()
     updateHotbar()
     updateProgressionUi()
     updateSaveMeta()
@@ -1458,6 +1518,8 @@ function recoverWorld() {
     showToast('World recovered from backup')
     return true
   } catch {
+    saveActivity.fail()
+    updateSaveActivityUi()
     showToast('Recovery backup is invalid')
     return false
   }
@@ -1490,6 +1552,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./player/PlayerMotionControllerSmoke').then(({ assertPlayerMotionControllerSmoke }) => {
     assertPlayerMotionControllerSmoke()
+  }).catch((error) => console.error(error))
+  void import('./game/SaveActivityTrackerSmoke').then(({ assertSaveActivityTrackerSmoke }) => {
+    assertSaveActivityTrackerSmoke()
   }).catch((error) => console.error(error))
 }
 
@@ -2330,7 +2395,11 @@ recipeList.addEventListener('click', (event) => {
 document.querySelector<HTMLButtonElement>('.session-option[data-session="singleplayer"]')!.querySelector('strong')!.textContent = localSession.session.label
 document.querySelector<HTMLButtonElement>('.multiplayer-entry')!.title = multiplayerSession.session.label
 if (getWorldSaveSystem().hasSave()) loadWorld()
-else updateSaveMeta()
+else {
+  saveActivity.reset()
+  updateSaveActivityUi()
+  updateSaveMeta()
+}
 updateHotbar()
 updateProgressionUi()
 updateWorldSlotUi()
@@ -2494,6 +2563,7 @@ function openPauseMenu() {
   isPaused = true
   updateProgressionUi()
   updateSaveMeta()
+  updateSaveActivityUi()
   setPauseMenuTab(activePauseMenuTab)
   pauseMenu.classList.remove('hidden')
   document.body.classList.add('menu-open')
@@ -3395,9 +3465,16 @@ function formatPerformanceNumber(value: number) {
 
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes
 let lastIdleFrameAt = -Infinity
+let lastSaveActivityRefreshAt = -Infinity
 
 function scheduleAutoSave() {
+  if (autoSavePending) return
+  autoSavePending = true
+  saveActivity.begin()
+  updateSaveActivityUi()
   idleTasks.schedule(() => {
+    autoSavePending = false
+    lastAutoSaveAt = simulationElapsedTime
     saveWorld(true)
   })
 }
@@ -3423,8 +3500,11 @@ function animate() {
   simulationElapsedTime += dt
   const elapsedTime = simulationElapsedTime
   if (hasStarted && elapsedTime - lastAutoSaveAt > AUTO_SAVE_INTERVAL) {
-    lastAutoSaveAt = elapsedTime
     scheduleAutoSave()
+  }
+  if (elapsedTime - lastSaveActivityRefreshAt >= 15) {
+    lastSaveActivityRefreshAt = elapsedTime
+    updateSaveActivityUi()
   }
   rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
   rebuildOptimizedChunkMeshes(runtimeLimits.meshBatchSize, runtimeLimits.meshBudgetMs)

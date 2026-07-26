@@ -11,6 +11,16 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .title { position: absolute; left: 24px; top: 20px; padding: 14px 18px; border: 1px solid rgba(255,255,255,.22); background: linear-gradient(135deg, rgba(10,18,40,.58), rgba(24,47,77,.28)); backdrop-filter: blur(18px); border-radius: 20px; box-shadow: 0 20px 70px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.18); }
 .eyebrow { display: block; margin-bottom: 4px; font-size: 10px; font-weight: 800; letter-spacing: .22em; color: #a7eaff; opacity: .9; }
 .title h1 { margin: 0; font-size: 22px; letter-spacing: .1em; }
+.title-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.save-status { flex: none; padding: 3px 6px; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; color: rgba(255,255,255,.7); background: rgba(255,255,255,.06); font-size: 8px; font-weight: 900; letter-spacing: .02em; text-shadow: none; white-space: nowrap; }
+.save-status::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: #fff3a8; vertical-align: 1px; }
+[data-save-state="saved"] { color: #a8ffb9; }
+[data-save-state="saved"]::before { background: #a8ffb9; }
+[data-save-state="saving"] { color: #9ee8ff; }
+[data-save-state="saving"]::before { background: #9ee8ff; }
+[data-save-state="error"] { color: #ffd7fa; }
+[data-save-state="error"]::before { background: #ff8cba; }
+.pause-save-status { white-space: nowrap; }
 .title p { margin: 4px 0 0; opacity: .84; font-size: 13px; }
 .crosshair { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); filter: drop-shadow(0 0 10px rgba(122,213,255,.9)); }
 .crosshair::before, .crosshair::after { content: ""; position: absolute; background: rgba(255,255,255,.9); border-radius: 2px; }
@@ -719,6 +729,11 @@ body[data-hud-density="minimal"] .perf-badge {
 
 body[data-hud-density="minimal"] .title h1 {
   font-size: 14px;
+}
+
+body[data-hud-density="minimal"] .save-status {
+  padding: 2px 5px;
+  font-size: 7px;
 }
 
 body[data-hud-density="minimal"] .survival-badge {

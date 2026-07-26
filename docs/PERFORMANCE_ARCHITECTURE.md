@@ -50,6 +50,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
 - Ultra-low devices tune adaptive quality against a 30 FPS target without imposing a
   refresh-rate-dependent frame cap.
 - Autosaves serialize during an idle callback when available.
+- Idle autosaves are coalesced to one pending callback and cancelled before world transitions,
+  preventing redundant serialization and late writes against a different active slot.
 - Constrained tiers disable live HUD backdrop blur and render one nine-slot palette at a time;
   all 18 materials remain available in the paused backpack.
 
