@@ -260,16 +260,27 @@ app.innerHTML = `
             <div><span class="eyebrow">SINGLE PLAYER</span><strong>Wayfinder Progression</strong></div>
             <span class="tool-tier-value">Hand Tools</span>
           </div>
-          <div class="expedition-section-heading objective-heading"><strong>Objectives</strong><button class="claim-all-objectives" type="button" disabled>No rewards ready</button></div>
-          <div class="objective-list"></div>
-          <div class="expedition-section-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
-          <div class="inventory-grid"></div>
-          <div class="expedition-section-heading"><strong>Build Pattern</strong><small>Uses the selected material · B cycles on desktop.</small></div>
-          <div class="build-pattern-options" role="group" aria-label="Build pattern">
-            ${BUILD_PATTERNS.map(({ id, name, blockCount }) => `<button type="button" class="build-pattern-btn ${id === 'single' ? 'active' : ''}" data-build-pattern="${id}" aria-pressed="${id === 'single'}"><strong>${name}</strong><small>×${blockCount}</small></button>`).join('')}
+          <div class="expedition-nav" role="tablist" aria-label="Expedition sections">
+            <button class="expedition-nav-btn active" type="button" role="tab" data-expedition-view="journey" aria-selected="true">Journey</button>
+            <button class="expedition-nav-btn" type="button" role="tab" data-expedition-view="backpack" aria-selected="false">Backpack</button>
+            <button class="expedition-nav-btn" type="button" role="tab" data-expedition-view="workshop" aria-selected="false">Workshop</button>
           </div>
-          <div class="expedition-section-heading"><strong>Crafting</strong><small>Recipes consume materials from this expedition only.</small></div>
-          <div class="recipe-list"></div>
+          <div class="expedition-view active" role="tabpanel" data-expedition-page="journey">
+            <div class="expedition-section-heading objective-heading"><strong>Objectives</strong><button class="claim-all-objectives" type="button" disabled>No rewards ready</button></div>
+            <div class="objective-list"></div>
+          </div>
+          <div class="expedition-view" role="tabpanel" data-expedition-page="backpack" hidden>
+            <div class="expedition-section-heading objective-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
+            <div class="inventory-grid"></div>
+            <div class="expedition-section-heading"><strong>Build Pattern</strong><small>Uses the selected material · B cycles on desktop.</small></div>
+            <div class="build-pattern-options" role="group" aria-label="Build pattern">
+              ${BUILD_PATTERNS.map(({ id, name, blockCount }) => `<button type="button" class="build-pattern-btn ${id === 'single' ? 'active' : ''}" data-build-pattern="${id}" aria-pressed="${id === 'single'}"><strong>${name}</strong><small>×${blockCount}</small></button>`).join('')}
+            </div>
+          </div>
+          <div class="expedition-view" role="tabpanel" data-expedition-page="workshop" hidden>
+            <div class="expedition-section-heading objective-heading"><strong>Workshop</strong><small>Craft one item or safely process up to 99 complete sets.</small></div>
+            <div class="recipe-list"></div>
+          </div>
           </section>
         </section>
         <section class="menu-page" id="menu-world" role="tabpanel" data-menu-page="world" hidden>
@@ -2292,6 +2303,8 @@ const claimAllObjectivesButton = document.querySelector<HTMLButtonElement>('.cla
 const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const buildPatternButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-build-pattern]')]
+const expeditionNavButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-expedition-view]')]
+const expeditionPages = [...document.querySelectorAll<HTMLElement>('[data-expedition-page]')]
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
 const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
 const worldNameEditor = document.querySelector<HTMLFormElement>('.world-name-editor')!
@@ -2467,6 +2480,44 @@ pauseMenuTabs.forEach((button) => {
 })
 setPauseMenuTab(activePauseMenuTab)
 
+type ExpeditionView = 'journey' | 'backpack' | 'workshop'
+let activeExpeditionView: ExpeditionView = 'journey'
+
+function setExpeditionView(view: ExpeditionView) {
+  activeExpeditionView = view
+  expeditionNavButtons.forEach((button) => {
+    const active = button.dataset.expeditionView === view
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-selected', String(active))
+    button.tabIndex = active ? 0 : -1
+  })
+  expeditionPages.forEach((page) => {
+    const active = page.dataset.expeditionPage === view
+    page.classList.toggle('active', active)
+    page.hidden = !active
+  })
+}
+
+expeditionNavButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const view = button.dataset.expeditionView
+    if (view === 'journey' || view === 'backpack' || view === 'workshop') setExpeditionView(view)
+  })
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const currentIndex = expeditionNavButtons.indexOf(button)
+    const direction = event.key === 'ArrowRight' ? 1 : -1
+    const nextButton = expeditionNavButtons[(currentIndex + direction + expeditionNavButtons.length) % expeditionNavButtons.length]
+    const view = nextButton.dataset.expeditionView
+    if (view === 'journey' || view === 'backpack' || view === 'workshop') {
+      setExpeditionView(view)
+      nextButton.focus()
+    }
+  })
+})
+setExpeditionView(activeExpeditionView)
+
 function setBuildPattern(pattern: BuildPatternId, announce = true) {
   activeBuildPattern = pattern
   buildPatternButtons.forEach((button) => {
@@ -2522,6 +2573,7 @@ function updateProgressionUi() {
   }).join('')
   recipeList.innerHTML = RECIPES.map((recipe) => {
     const availability = progression.getRecipeAvailability(recipe, progressionInventory)
+    const maxCraftable = progression.getMaxCraftableCount(recipe, progressionInventory)
     const completed = availability.completed
     const ingredients = availability.ingredients.map(({ id, amount, available, missing }) => `
       <span class="recipe-ingredient ${missing > 0 ? 'missing' : 'ready'}">
@@ -2531,7 +2583,10 @@ function updateProgressionUi() {
     return `
       <article class="recipe-card ${completed ? 'complete' : ''} ${availability.craftable ? 'craftable' : 'missing-materials'}">
         <div><strong>${recipe.name}</strong><small>${recipe.description}</small><em class="recipe-ingredients">${ingredients}</em></div>
-        <button data-craft-recipe="${recipe.id}" ${completed || !availability.craftable ? 'disabled' : ''}>${completed ? 'Built' : availability.craftable ? 'Craft' : 'Missing'}</button>
+        <div class="recipe-actions">
+          <button data-craft-recipe="${recipe.id}" ${completed || !availability.craftable ? 'disabled' : ''}>${completed ? 'Built' : availability.craftable ? 'Craft 1' : 'Missing'}</button>
+          ${recipe.once ? '' : `<button class="craft-max-btn" data-craft-max="${recipe.id}" ${maxCraftable <= 0 ? 'disabled' : ''}>Max ×${maxCraftable}</button>`}
+        </div>
       </article>
     `
   }).join('')
@@ -2567,6 +2622,20 @@ claimAllObjectivesButton.addEventListener('click', () => {
 })
 
 recipeList.addEventListener('click', (event) => {
+  const maxButton = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-craft-max]')
+  if (maxButton) {
+    const result = progression.craftMany(maxButton.dataset.craftMax ?? '', progressionInventory)
+    if (!result) {
+      showToast('Missing crafting materials')
+      return
+    }
+    advanceTutorial('craft', false)
+    playGameSound('select', 0.32)
+    showToast(`${result.recipe.name} ×${result.count} crafted`)
+    updateHotbar()
+    updateProgressionUi()
+    return
+  }
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-craft-recipe]')
   if (!button) return
   const recipe = progression.craft(button.dataset.craftRecipe ?? '', progressionInventory)
@@ -2909,6 +2978,7 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault()
     if (isPaused && activePauseMenuTab === 'expedition') closePauseMenu()
     else {
+      setExpeditionView('backpack')
       setPauseMenuTab('expedition')
       openPauseMenu()
     }

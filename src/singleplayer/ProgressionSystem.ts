@@ -38,6 +38,11 @@ export type RecipeAvailability = {
   ingredients: RecipeIngredientAvailability[]
 }
 
+export type CraftResult = {
+  recipe: Recipe
+  count: number
+}
+
 export type ProgressionStats = {
   mined: number
   placed: number
@@ -159,6 +164,17 @@ export class ProgressionSystem {
     return this.getRecipeAvailability(recipe, inventory).craftable
   }
 
+  getMaxCraftableCount(recipe: Recipe, inventory: InventoryPort, limit = 99) {
+    if (recipe.once && (this.crafted[recipe.id] ?? 0) > 0) return 0
+    const boundedLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 99
+    const ingredientLimit = recipe.ingredients.reduce(
+      (available, ingredient) => Math.min(available, Math.floor(inventory.count(ingredient.id) / ingredient.amount)),
+      boundedLimit,
+    )
+    const availableCount = Math.max(0, ingredientLimit)
+    return recipe.once ? Math.min(1, availableCount) : availableCount
+  }
+
   getRecipeAvailability(recipe: Recipe, inventory: InventoryPort): RecipeAvailability {
     const completed = Boolean(recipe.once && (this.crafted[recipe.id] ?? 0) > 0)
     const ingredients = recipe.ingredients.map(({ id, amount }) => {
@@ -178,20 +194,32 @@ export class ProgressionSystem {
   }
 
   craft(recipeId: string, inventory: InventoryPort) {
-    const recipe = RECIPES.find(({ id }) => id === recipeId)
-    if (!recipe || !this.canCraft(recipe, inventory)) return null
+    return this.craftMany(recipeId, inventory, 1)?.recipe ?? null
+  }
 
+  craftMany(recipeId: string, inventory: InventoryPort, requestedCount = 99): CraftResult | null {
+    const recipe = RECIPES.find(({ id }) => id === recipeId)
+    if (!recipe) return null
+    const count = this.getMaxCraftableCount(recipe, inventory, requestedCount)
+    if (count <= 0) return null
+
+    const removed: Ingredient[] = []
     for (const ingredient of recipe.ingredients) {
-      if (!inventory.remove(ingredient.id, ingredient.amount)) return null
+      const amount = ingredient.amount * count
+      if (!inventory.remove(ingredient.id, amount)) {
+        removed.forEach(({ id, amount: removedAmount }) => inventory.add(id, removedAmount))
+        return null
+      }
+      removed.push({ id: ingredient.id, amount })
     }
     if (recipe.reward.kind === 'blocks') {
-      inventory.add(recipe.reward.id, recipe.reward.amount)
+      inventory.add(recipe.reward.id, recipe.reward.amount * count)
     } else {
       this.toolTier = Math.max(this.toolTier, recipe.reward.tier) as ToolTier
     }
-    this.crafted[recipe.id] = (this.crafted[recipe.id] ?? 0) + 1
-    this.stats.crafted += 1
-    return recipe
+    this.crafted[recipe.id] = (this.crafted[recipe.id] ?? 0) + count
+    this.stats.crafted += count
+    return { recipe, count }
   }
 
   recordMine(amount = 1) {

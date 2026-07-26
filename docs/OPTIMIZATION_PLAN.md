@@ -119,7 +119,9 @@ High-impact tasks:
 - Block hardness and tool-speed progression are integrated through one allocation-free mining
   session shared by desktop and touch input paths.
 - Crafting clarity is integrated with exact material availability, reward previews, idempotent
-  bulk claiming and responsive ingredient chips.
+  bulk claiming, safe max-batch crafting and responsive ingredient chips.
+- Expedition content is segmented into Journey, Backpack and Workshop views so short displays render
+  one focused task at a time without duplicating progression state.
 - Four bounded building patterns are integrated with reusable planning storage, atomic validation,
   batched world mutation and a one-draw instanced preview.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.

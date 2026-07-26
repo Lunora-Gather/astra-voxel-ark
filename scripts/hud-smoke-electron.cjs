@@ -251,6 +251,12 @@ async function readState(win, label) {
         activeMenuTab: document.querySelector('.menu-tab.active')?.dataset.menuTab || null,
         menuTabsVisible: visibleCount('.menu-tab'),
         expeditionVisible: visible('.expedition-panel'),
+        expeditionNavButtons: document.querySelectorAll('.expedition-nav-btn').length,
+        activeExpeditionViews: document.querySelectorAll('.expedition-nav-btn.active').length,
+        activeExpeditionView: document.querySelector('.expedition-nav-btn.active')?.dataset.expeditionView || null,
+        journeyViewVisible: visible('[data-expedition-page="journey"]'),
+        backpackViewVisible: visible('[data-expedition-page="backpack"]'),
+        workshopViewVisible: visible('[data-expedition-page="workshop"]'),
         settingsVisible: visible('.settings-grid'),
         tutorialVisible: visible('.tutorial'),
         tutorialFullyVisible: !visible('.tutorial') || fullyVisible(rectOf('.tutorial')),
@@ -318,6 +324,7 @@ async function readState(win, label) {
         claimAllDisabled: document.querySelector('.claim-all-objectives')?.disabled ?? true,
         claimAllText: document.querySelector('.claim-all-objectives')?.textContent?.trim() || '',
         recipeCards: document.querySelectorAll('.recipe-card').length,
+        craftMaxButtons: document.querySelectorAll('[data-craft-max]').length,
         recipeIngredientTokens: document.querySelectorAll('.recipe-ingredient').length,
         missingRecipeIngredients: document.querySelectorAll('.recipe-ingredient.missing').length,
         readyRecipeIngredients: document.querySelectorAll('.recipe-ingredient.ready').length,
@@ -730,6 +737,26 @@ async function runScenario(win, scenario) {
   if (expeditionMenu.activeMenuTab !== 'expedition' || !expeditionMenu.expeditionVisible) {
     fail('Expedition tab should expose progression content', expeditionMenu)
   }
+  if (
+    expeditionMenu.expeditionNavButtons !== 3 ||
+    expeditionMenu.activeExpeditionViews !== 1 ||
+    expeditionMenu.activeExpeditionView !== 'journey' ||
+    !expeditionMenu.journeyViewVisible ||
+    expeditionMenu.backpackViewVisible ||
+    expeditionMenu.workshopViewVisible
+  ) {
+    fail('Expedition should open as one focused Journey view', expeditionMenu)
+  }
+  await click(win, '.expedition-nav-btn[data-expedition-view="backpack"]')
+  const backpackView = await readState(win, `${scenario.label}:backpack-view`)
+  if (
+    backpackView.activeExpeditionView !== 'backpack' ||
+    !backpackView.backpackViewVisible ||
+    backpackView.journeyViewVisible ||
+    backpackView.workshopViewVisible
+  ) {
+    fail('Backpack navigation should show only inventory and building tools', backpackView)
+  }
   if (expeditionMenu.inventoryCards !== 18 || expeditionMenu.activeInventoryCards !== 1) {
     fail('Expedition tab should expose the complete backpack with one selected material', expeditionMenu)
   }
@@ -750,6 +777,17 @@ async function runScenario(win, scenario) {
     fail('Building pattern selection should update the active pattern and material cost', wallPattern)
   }
   await click(win, '.build-pattern-btn[data-build-pattern="single"]')
+  await click(win, '.expedition-nav-btn[data-expedition-view="workshop"]')
+  const workshopView = await readState(win, `${scenario.label}:workshop-view`)
+  if (
+    workshopView.activeExpeditionView !== 'workshop' ||
+    !workshopView.workshopViewVisible ||
+    workshopView.journeyViewVisible ||
+    workshopView.backpackViewVisible ||
+    workshopView.craftMaxButtons !== 3
+  ) {
+    fail('Workshop navigation should isolate recipes and expose repeatable batch crafting', workshopView)
+  }
   if (
     expeditionMenu.objectiveRewards !== 5 ||
     !expeditionMenu.claimAllVisible ||
@@ -774,6 +812,7 @@ async function runScenario(win, scenario) {
       fail('Crafting a tool should update the live progression UI and feedback', craftedTool)
     }
   }
+  await click(win, '.expedition-nav-btn[data-expedition-view="backpack"]')
   await click(win, '.inventory-card[data-inventory-block="gold"]')
   const backpackSelection = await readState(win, `${scenario.label}:backpack-selection`)
   if (backpackSelection.hotbarPage !== '2' || backpackSelection.activeInventoryCards !== 1) {
@@ -859,7 +898,12 @@ async function runScenario(win, scenario) {
   if (scenario.label === 'desktop') {
     await pressKey(win, 'KeyE', 'e')
     const keyboardBackpack = await readState(win, `${scenario.label}:keyboard-backpack`)
-    if (!keyboardBackpack.menuOpen || keyboardBackpack.activeMenuTab !== 'expedition') fail('E should open the backpack directly', keyboardBackpack)
+    if (
+      !keyboardBackpack.menuOpen ||
+      keyboardBackpack.activeMenuTab !== 'expedition' ||
+      keyboardBackpack.activeExpeditionView !== 'backpack' ||
+      !keyboardBackpack.backpackViewVisible
+    ) fail('E should open the Backpack expedition view directly', keyboardBackpack)
     await pressKey(win, 'KeyE', 'e')
     const keyboardBackpackClosed = await readState(win, `${scenario.label}:keyboard-backpack-closed`)
     if (keyboardBackpackClosed.menuOpen) fail('E should close the focused backpack', keyboardBackpackClosed)

@@ -22,6 +22,18 @@ export function assertProgressionSystemSmoke() {
     throw new Error('Progression system smoke failed: one-time recipes should become completed')
   }
 
+  const bricks = RECIPES.find(({ id }) => id === 'brick-batch')
+  if (!bricks) throw new Error('Progression system smoke failed: repeatable brick recipe should exist')
+  const batchInventory = new InventorySystem(['clay', 'stone', 'brick'], { clay: 13, stone: 6 })
+  const batchProgression = new ProgressionSystem()
+  if (batchProgression.getMaxCraftableCount(bricks, batchInventory) !== 3) {
+    throw new Error('Progression system smoke failed: max crafting should use the limiting ingredient')
+  }
+  const brickBatch = batchProgression.craftMany(bricks.id, batchInventory)
+  if (brickBatch?.count !== 3 || batchInventory.count('brick') !== 12 || batchInventory.count('clay') !== 1) {
+    throw new Error('Progression system smoke failed: batch crafting should consume and reward exact totals')
+  }
+
   progression.recordMine(24)
   progression.recordPlacement(16)
   const claimed = progression.claimCompletedObjectives(inventory)

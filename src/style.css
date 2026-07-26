@@ -228,6 +228,10 @@ body.menu-open .menu-toggle-btn { display: none; }
 .expedition-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 11px; }
 .expedition-heading strong { display: block; font-size: 15px; }
 .tool-tier-value { flex: none; padding: 7px 10px; border-radius: 999px; color: #071120; background: linear-gradient(135deg, #9ee8ff, #fff3a8); font-size: 11px; font-weight: 900; }
+.expedition-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; padding: 4px; border: 1px solid rgba(255,255,255,.1); border-radius: 13px; background: rgba(3,8,22,.24); }
+.expedition-nav-btn { pointer-events: auto; min-height: 32px; padding: 6px 8px; color: rgba(255,255,255,.56); border: 1px solid transparent; border-radius: 9px; background: transparent; font-size: 9px; font-weight: 900; cursor: pointer; }
+.expedition-nav-btn.active { color: #071120; border-color: rgba(255,255,255,.48); background: linear-gradient(135deg, #9ee8ff, #a8ffb9); }
+.expedition-view[hidden] { display: none; }
 .objective-list, .recipe-list { display: grid; gap: 7px; }
 .expedition-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 13px 2px 7px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); }
 .expedition-section-heading strong { font-size: 11px; }
@@ -263,6 +267,8 @@ body.menu-open .menu-toggle-btn { display: none; }
 .recipe-ingredient.missing b { color: #ffd7fa; }
 .objective-card button, .recipe-card button { flex: none; pointer-events: auto; min-width: 54px; border: 1px solid rgba(169,239,255,.3); border-radius: 999px; padding: 7px 9px; color: #071120; background: #9ee8ff; font-size: 10px; font-weight: 900; cursor: pointer; }
 .objective-card button:disabled, .recipe-card button:disabled { color: rgba(255,255,255,.4); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.1); cursor: default; }
+.recipe-actions { display: grid; flex: none; gap: 4px; }
+.recipe-card .craft-max-btn { color: rgba(255,255,255,.84); background: rgba(168,255,185,.1); border-color: rgba(168,255,185,.25); }
 .objective-card.complete { border-color: rgba(168,255,185,.28); }
 .recipe-card.craftable { border-color: rgba(158,232,255,.28); background: rgba(115,214,255,.075); }
 .objective-card.claimed, .recipe-card.complete { opacity: .58; }

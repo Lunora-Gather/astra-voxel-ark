@@ -43,6 +43,9 @@ target. Mining state is intentionally not persisted.
 
 `ProgressionSystem.getRecipeAvailability` is the canonical recipe readiness calculation. It returns
 exact available and missing counts so the expedition UI never reimplements crafting rules.
+`getMaxCraftableCount` derives a bounded quantity from the limiting ingredient, while `craftMany`
+removes all ingredient totals before granting the combined reward and restores prior removals if an
+inventory adapter unexpectedly rejects a later debit. One-time tools remain capped at one.
 `claimCompletedObjectives` grants every currently completed, unclaimed reward in one synchronous
 operation and records each claim before the next UI refresh; repeated calls cannot duplicate rewards.
 The existing progression snapshot remains the persistence boundary.
