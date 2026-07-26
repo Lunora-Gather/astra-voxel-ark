@@ -308,6 +308,10 @@ async function readState(win, label) {
         hotbarPage: document.querySelector('.hotbar')?.dataset.page || null,
         inventoryCards: document.querySelectorAll('.inventory-card').length,
         activeInventoryCards: document.querySelectorAll('.inventory-card.active').length,
+        buildPatternButtons: document.querySelectorAll('.build-pattern-btn').length,
+        activeBuildPatterns: document.querySelectorAll('.build-pattern-btn.active').length,
+        activeBuildPattern: document.querySelector('.build-pattern-btn.active')?.dataset.buildPattern || null,
+        blockCountText: document.querySelector('.block-count')?.textContent?.trim() || '',
         toolTierText: document.querySelector('.tool-tier-value')?.textContent?.trim() || '',
         objectiveRewards: document.querySelectorAll('.objective-card em').length,
         claimAllVisible: visible('.claim-all-objectives'),
@@ -729,6 +733,23 @@ async function runScenario(win, scenario) {
   if (expeditionMenu.inventoryCards !== 18 || expeditionMenu.activeInventoryCards !== 1) {
     fail('Expedition tab should expose the complete backpack with one selected material', expeditionMenu)
   }
+  if (
+    expeditionMenu.buildPatternButtons !== 4 ||
+    expeditionMenu.activeBuildPatterns !== 1 ||
+    expeditionMenu.activeBuildPattern !== 'single'
+  ) {
+    fail('Expedition tab should expose four building patterns with Single selected', expeditionMenu)
+  }
+  await click(win, '.build-pattern-btn[data-build-pattern="wall"]')
+  const wallPattern = await readState(win, `${scenario.label}:wall-pattern`)
+  if (
+    wallPattern.activeBuildPatterns !== 1 ||
+    wallPattern.activeBuildPattern !== 'wall' ||
+    !wallPattern.blockCountText.includes('Wall ×6')
+  ) {
+    fail('Building pattern selection should update the active pattern and material cost', wallPattern)
+  }
+  await click(win, '.build-pattern-btn[data-build-pattern="single"]')
   if (
     expeditionMenu.objectiveRewards !== 5 ||
     !expeditionMenu.claimAllVisible ||

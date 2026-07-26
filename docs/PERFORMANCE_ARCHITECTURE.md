@@ -98,6 +98,11 @@ normal objects, so the per-frame crosshair query does not allocate temporary vec
 the returned coordinates and block id directly instead of reparsing a block key and performing a
 second lookup. The heavier picker smoke module is loaded only by Electron smoke URLs.
 
+Multi-block building keeps its hot path bounded to nine voxels. `BuildPatternPlanner` mutates a
+preallocated position buffer, placement wraps all edits in one world batch, and the preview uses one
+`InstancedMesh` regardless of pattern size. Single-block mode retains the original lightweight mesh;
+no blueprint creates a mesh or draw call per planned block.
+
 ## Player collision hot path
 
 `src/player/Collision.ts` owns the integer-centered block and eye-point player collision contract.

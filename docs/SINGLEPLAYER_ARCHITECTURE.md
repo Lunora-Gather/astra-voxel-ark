@@ -47,6 +47,13 @@ exact available and missing counts so the expedition UI never reimplements craft
 operation and records each claim before the next UI refresh; repeated calls cannot duplicate rewards.
 The existing progression snapshot remains the persistence boundary.
 
+`src/singleplayer/BuildPatternSystem.ts` owns renderer-independent plans for single-block, pillar,
+wall and platform placement. Its planner reuses one fixed nine-position result buffer. `main.ts`
+validates the whole plan against inventory, height, occupied voxels and player collision before
+applying one block batch, so a pattern either succeeds completely or leaves the world unchanged.
+Pattern choice is transient interface state; placed blocks remain ordinary player deltas in the v8
+save format, preserving existing worlds and the future session boundary.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.

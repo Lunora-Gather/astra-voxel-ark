@@ -4,7 +4,20 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
-import { InventorySystem, MiningSession, ProgressionSystem, RECIPES, SurvivalVitals, TutorialGuide, type TutorialStepId } from './singleplayer'
+import {
+  BUILD_PATTERNS,
+  BuildPatternPlanner,
+  InventorySystem,
+  MiningSession,
+  ProgressionSystem,
+  RECIPES,
+  SurvivalVitals,
+  TutorialGuide,
+  getBuildPatternDefinition,
+  isBuildPatternId,
+  type BuildPatternId,
+  type TutorialStepId,
+} from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
 import { PlayerCollisionResolver, PlayerMotionController, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
@@ -133,7 +146,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Hold left to mine · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Hold Break to mine · Tap palette to switch<br/>Menu opens backpack · Repair the Ark Core</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Hold Break to mine · Tap Place to build<br/>Patterns are in Menu · Expedition</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -247,6 +260,10 @@ app.innerHTML = `
           <div class="objective-list"></div>
           <div class="expedition-section-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
           <div class="inventory-grid"></div>
+          <div class="expedition-section-heading"><strong>Build Pattern</strong><small>Uses the selected material · B cycles on desktop.</small></div>
+          <div class="build-pattern-options" role="group" aria-label="Build pattern">
+            ${BUILD_PATTERNS.map(({ id, name, blockCount }) => `<button type="button" class="build-pattern-btn ${id === 'single' ? 'active' : ''}" data-build-pattern="${id}" aria-pressed="${id === 'single'}"><strong>${name}</strong><small>×${blockCount}</small></button>`).join('')}
+          </div>
           <div class="expedition-section-heading"><strong>Crafting</strong><small>Recipes consume materials from this expedition only.</small></div>
           <div class="recipe-list"></div>
           </section>
@@ -519,6 +536,8 @@ const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
 const tutorialGuide = new TutorialGuide()
 const miningSession = new MiningSession()
+const buildPatternPlanner = new BuildPatternPlanner()
+let activeBuildPattern: BuildPatternId = 'single'
 const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
@@ -1140,8 +1159,8 @@ function addToInventory(id: BlockId, amount = 1) {
   inventory.add(id, amount)
 }
 
-function consumeInventory(id: BlockId) {
-  return inventory.remove(id)
+function consumeInventory(id: BlockId, amount = 1) {
+  return inventory.remove(id, amount)
 }
 
 function readSavedInventory(savedInventory: SavedWorld['inventory']) {
@@ -1591,6 +1610,9 @@ if (isSmokeTest) {
   void import('./singleplayer/ProgressionSystemSmoke').then(({ assertProgressionSystemSmoke }) => {
     assertProgressionSystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./singleplayer/BuildPatternSystemSmoke').then(({ assertBuildPatternSystemSmoke }) => {
+    assertBuildPatternSystemSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1635,12 +1657,16 @@ const previewMaterial = new THREE.MeshStandardMaterial({
   emissiveIntensity: 0.2,
 })
 previewMaterial.depthWrite = false
+const patternPreviewMaterial = previewMaterial.clone()
+patternPreviewMaterial.depthWrite = false
 const previewOutlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.025, 1.025, 1.025))
 const previewOutlineMaterial = new THREE.LineBasicMaterial({ color: 0xa8ffb9, transparent: true, opacity: 0.95, depthTest: false })
 const targetOutlineGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.018, 1.018, 1.018))
 const targetOutlineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.88, depthTest: false })
 let previewMesh: THREE.Mesh | null = null
 let previewOutlineMesh: THREE.LineSegments | null = null
+let patternPreviewMesh: THREE.InstancedMesh | null = null
+const patternPreviewMatrix = new THREE.Matrix4()
 const targetOutlineMesh = new THREE.LineSegments(targetOutlineGeometry, targetOutlineMaterial)
 targetOutlineMesh.renderOrder = 12
 targetOutlineMesh.visible = false
@@ -2018,8 +2044,9 @@ function countBlocksInInventory(blockId: BlockId): number {
 
 function updateBlockInfo() {
   const block = BLOCKS[selected]
+  const pattern = getBuildPatternDefinition(activeBuildPattern)
   blockName.textContent = block.name
-  blockCount.textContent = String(countBlocksInInventory(block.id))
+  blockCount.textContent = `${countBlocksInInventory(block.id)} · ${pattern.name}${pattern.blockCount > 1 ? ` ×${pattern.blockCount}` : ''}`
 }
 
 function updateHotbar() {
@@ -2242,6 +2269,7 @@ const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
 const claimAllObjectivesButton = document.querySelector<HTMLButtonElement>('.claim-all-objectives')!
 const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
+const buildPatternButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-build-pattern]')]
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
 const worldSlotButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-world-slot]')]
 const worldNameEditor = document.querySelector<HTMLFormElement>('.world-name-editor')!
@@ -2416,6 +2444,32 @@ pauseMenuTabs.forEach((button) => {
   })
 })
 setPauseMenuTab(activePauseMenuTab)
+
+function setBuildPattern(pattern: BuildPatternId, announce = true) {
+  activeBuildPattern = pattern
+  buildPatternButtons.forEach((button) => {
+    const active = button.dataset.buildPattern === pattern
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(active))
+  })
+  updateBlockInfo()
+  if (announce) {
+    const definition = getBuildPatternDefinition(pattern)
+    showToast(`${definition.name} pattern · ${definition.blockCount} block${definition.blockCount === 1 ? '' : 's'}`)
+  }
+}
+
+function cycleBuildPattern() {
+  const index = BUILD_PATTERNS.findIndex(({ id }) => id === activeBuildPattern)
+  setBuildPattern(BUILD_PATTERNS[(index + 1) % BUILD_PATTERNS.length].id)
+}
+
+buildPatternButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const pattern = button.dataset.buildPattern
+    if (isBuildPatternId(pattern)) setBuildPattern(pattern)
+  })
+})
 
 function formatReward(reward: Array<{ id: BlockId; amount: number }>) {
   return reward.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
@@ -2839,9 +2893,13 @@ document.addEventListener('keydown', (e) => {
     return
   }
   if (isPaused) return
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'Space', 'Tab'].includes(e.code)) e.preventDefault()
+  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyB', 'ShiftLeft', 'Space', 'Tab'].includes(e.code)) e.preventDefault()
   if (e.code === 'Tab') {
     switchHotbarPage()
+    return
+  }
+  if (e.code === 'KeyB') {
+    cycleBuildPattern()
     return
   }
   keys.add(e.code)
@@ -2873,6 +2931,8 @@ window.addEventListener('blur', () => {
 
 const placeNormal = new THREE.Vector3()
 const placePosition = new THREE.Vector3()
+const buildFacing = new THREE.Vector3()
+const buildCollisionPosition = new THREE.Vector3()
 const hitBlockPosition = new THREE.Vector3()
 const upNormal = new THREE.Vector3(0, 1, 0)
 const blockPicker = new VoxelBlockPicker({ maxDistance: RAYCAST_REACH })
@@ -2929,53 +2989,61 @@ function breakTargetBlock(expectedKey?: string) {
   return false
 }
 
+function planBuildPattern(hit: NonNullable<ReturnType<typeof pickBlock>>) {
+  hitBlockPosition.set(hit.x, hit.y, hit.z)
+  const canReplaceWater = hit.id === 'water' && BLOCKS[selected].id !== 'water'
+  if (canReplaceWater) {
+    placePosition.copy(hitBlockPosition)
+  } else {
+    placeNormal.copy(hit.normal.lengthSq() > 0 ? hit.normal : upNormal)
+    placePosition.copy(hitBlockPosition).add(placeNormal).round()
+  }
+  camera.getWorldDirection(buildFacing)
+  return buildPatternPlanner.plan(activeBuildPattern, placePosition, buildFacing)
+}
+
+function validateBuildPlan(
+  plan: ReturnType<BuildPatternPlanner['plan']>,
+  selectedBlock: BlockId,
+) {
+  if (countBlocksInInventory(selectedBlock) < plan.count) {
+    return `Need ${plan.count} ${blockNames.get(selectedBlock) ?? selectedBlock}`
+  }
+  for (let index = 0; index < plan.count; index++) {
+    const position = plan.positions[index]
+    if (position.y <= 0 || position.y > 128) return 'Pattern outside build height'
+    const existing = blockData.get(blockKey(position.x, position.y, position.z))
+    if (existing && !(existing === 'water' && selectedBlock !== 'water')) return 'Pattern blocked'
+    buildCollisionPosition.set(position.x, position.y, position.z)
+    if (wouldTrapPlayer(buildCollisionPosition)) return 'Pattern too close'
+  }
+  return ''
+}
+
 function placeTargetBlock() {
   const hit = pickBlock()
   if (!hit || hit.distance > RAYCAST_REACH) return
-  const hitKey = blockKey(hit.x, hit.y, hit.z)
   const selectedBlock = BLOCKS[selected].id
-  hitBlockPosition.set(hit.x, hit.y, hit.z)
-  const hitBlockId = hit.id
-  const canReplaceWater = hitBlockId === 'water' && selectedBlock !== 'water'
-
-  if (countBlocksInInventory(selectedBlock) <= 0) {
-    showToast(`No ${BLOCKS[selected].name}`)
+  const plan = planBuildPattern(hit)
+  const invalidReason = validateBuildPlan(plan, selectedBlock)
+  if (invalidReason) {
+    showToast(invalidReason)
     return
   }
 
-  if (canReplaceWater) {
-    if (wouldTrapPlayer(hitBlockPosition)) {
-      showToast('Too close to place')
-      return
+  withBlockBatch(() => {
+    for (let index = 0; index < plan.count; index++) {
+      const position = plan.positions[index]
+      const key = blockKey(position.x, position.y, position.z)
+      if (blockData.get(key) === 'water' && selectedBlock !== 'water') removeBlockAtKey(key)
+      addBlock(position.x, position.y, position.z, selectedBlock, 'player')
     }
-    playGameSound('place', 0.25)
-    removeBlockAtKey(hitKey)
-    addBlock(hitBlockPosition.x, hitBlockPosition.y, hitBlockPosition.z, selectedBlock, 'player')
-    consumeInventory(selectedBlock)
-    progression.recordPlacement()
-    advanceTutorial('place')
-    selectNextAvailableBlock()
-    updateHotbar()
-    updateProgressionUi()
-    return
-  }
-
-  placeNormal.copy(hit.normal.lengthSq() > 0 ? hit.normal : upNormal)
-  placePosition.copy(hitBlockPosition).add(placeNormal).round()
-  const key = blockKey(placePosition.x, placePosition.y, placePosition.z)
-  if (blocks.has(key)) {
-    showToast('Blocked')
-    return
-  }
-  if (wouldTrapPlayer(placePosition)) {
-    showToast('Too close to place')
-    return
-  }
+  })
   playGameSound('place', 0.25)
-  addBlock(placePosition.x, placePosition.y, placePosition.z, selectedBlock, 'player')
-  consumeInventory(selectedBlock)
-  progression.recordPlacement()
+  consumeInventory(selectedBlock, plan.count)
+  progression.recordPlacement(plan.count)
   advanceTutorial('place')
+  if (plan.count > 1) showToast(`${getBuildPatternDefinition(activeBuildPattern).name} built · ${plan.count} blocks`)
   selectNextAvailableBlock()
   updateHotbar()
   updateProgressionUi()
@@ -3738,46 +3806,62 @@ function animate() {
   const hit = aimingActive ? pickBlock() : undefined
   if (hit && hit.distance <= RAYCAST_REACH) {
     hitBlockPosition.set(hit.x, hit.y, hit.z)
-    const hitBlockId = hit.id
-    const canReplaceWater = hitBlockId === 'water' && BLOCKS[selected].id !== 'water'
     targetOutlineMesh.position.copy(hitBlockPosition)
     targetOutlineMesh.visible = true
-    
-    if (canReplaceWater) {
-      placePosition.copy(hitBlockPosition)
+
+    const selectedBlock = BLOCKS[selected].id
+    const plan = planBuildPattern(hit)
+    const isValidPlacement = validateBuildPlan(plan, selectedBlock) === ''
+    if (plan.count === 1) {
+      if (!previewMesh) {
+        previewMesh = new THREE.Mesh(previewGeometry, previewMaterial)
+        previewMesh.castShadow = false
+        previewMesh.receiveShadow = false
+        previewMesh.renderOrder = 10
+        scene.add(previewMesh)
+      }
+      if (!previewOutlineMesh) {
+        previewOutlineMesh = new THREE.LineSegments(previewOutlineGeometry, previewOutlineMaterial)
+        previewOutlineMesh.renderOrder = 11
+        scene.add(previewOutlineMesh)
+      }
+      previewMesh.position.copy(placePosition)
+      previewMesh.scale.setScalar(1.01)
+      const material = previewMesh.material as THREE.MeshStandardMaterial
+      material.opacity = isValidPlacement ? 0.28 : 0.46
+      material.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
+      material.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
+      material.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
+      previewMesh.visible = true
+      previewOutlineMesh.position.copy(placePosition)
+      previewOutlineMaterial.color.setHex(isValidPlacement ? 0xa8ffb9 : 0xff7777)
+      previewOutlineMaterial.opacity = isValidPlacement ? 0.92 : 1
+      previewOutlineMesh.visible = true
+      if (patternPreviewMesh) patternPreviewMesh.visible = false
     } else {
-      placeNormal.copy(hit.normal.lengthSq() > 0 ? hit.normal : upNormal)
-      placePosition.copy(hitBlockPosition).add(placeNormal).round()
+      if (!patternPreviewMesh) {
+        patternPreviewMesh = new THREE.InstancedMesh(previewGeometry, patternPreviewMaterial, 9)
+        patternPreviewMesh.castShadow = false
+        patternPreviewMesh.receiveShadow = false
+        patternPreviewMesh.frustumCulled = false
+        patternPreviewMesh.renderOrder = 10
+        scene.add(patternPreviewMesh)
+      }
+      for (let index = 0; index < plan.count; index++) {
+        const position = plan.positions[index]
+        patternPreviewMatrix.makeTranslation(position.x, position.y, position.z)
+        patternPreviewMesh.setMatrixAt(index, patternPreviewMatrix)
+      }
+      patternPreviewMesh.count = plan.count
+      patternPreviewMesh.instanceMatrix.needsUpdate = true
+      patternPreviewMaterial.opacity = isValidPlacement ? 0.24 : 0.4
+      patternPreviewMaterial.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
+      patternPreviewMaterial.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
+      patternPreviewMaterial.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
+      patternPreviewMesh.visible = true
+      if (previewMesh) previewMesh.visible = false
+      if (previewOutlineMesh) previewOutlineMesh.visible = false
     }
-    
-    const key = blockKey(placePosition.x, placePosition.y, placePosition.z)
-    const hasInventory = countBlocksInInventory(BLOCKS[selected].id) > 0
-    const isValidPlacement = hasInventory && (canReplaceWater || !blocks.has(key)) && !wouldTrapPlayer(placePosition)
-    
-    if (!previewMesh) {
-      previewMesh = new THREE.Mesh(previewGeometry, previewMaterial)
-      previewMesh.castShadow = false
-      previewMesh.receiveShadow = false
-      previewMesh.renderOrder = 10
-      scene.add(previewMesh)
-    }
-    if (!previewOutlineMesh) {
-      previewOutlineMesh = new THREE.LineSegments(previewOutlineGeometry, previewOutlineMaterial)
-      previewOutlineMesh.renderOrder = 11
-      scene.add(previewOutlineMesh)
-    }
-    previewMesh.position.copy(placePosition)
-    previewMesh.scale.setScalar(1.01)
-    const material = previewMesh.material as THREE.MeshStandardMaterial
-    material.opacity = isValidPlacement ? 0.28 : 0.46
-    material.color.setHex(isValidPlacement ? BLOCKS[selected].color : 0xff6666)
-    material.emissive.setHex(isValidPlacement ? 0x234d2c : 0xff3333)
-    material.emissiveIntensity = isValidPlacement ? 0.18 : 0.35
-    previewMesh.visible = true
-    previewOutlineMesh.position.copy(placePosition)
-    previewOutlineMaterial.color.setHex(isValidPlacement ? 0xa8ffb9 : 0xff7777)
-    previewOutlineMaterial.opacity = isValidPlacement ? 0.92 : 1
-    previewOutlineMesh.visible = true
   } else {
     targetOutlineMesh.visible = false
     if (previewMesh) {
@@ -3786,6 +3870,7 @@ function animate() {
     if (previewOutlineMesh) {
       previewOutlineMesh.visible = false
     }
+    if (patternPreviewMesh) patternPreviewMesh.visible = false
   }
 
   if (shardBeacon.visible) {
