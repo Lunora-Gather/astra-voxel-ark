@@ -135,6 +135,8 @@ High-impact tasks:
 - Clouds and sparkles are integrated through two instanced draw objects with packed reusable state,
   preserving tier-specific counts and adaptive animation budgets while removing up to 192 individual
   decoration meshes from the scene graph.
+- Block-break and shard particles share two instanced pools instead of one scene mesh per particle;
+  per-tier capacities remain bounded, block color stays per instance and burst setup is allocation-free.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

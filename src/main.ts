@@ -1676,6 +1676,9 @@ if (isSmokeTest) {
   void import('./render/SkyDecorationSystemSmoke').then(({ assertSkyDecorationSystemSmoke }) => {
     assertSkyDecorationSystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./app/ParticleEffectsPipelineSmoke').then(({ assertParticleEffectsPipelineSmoke }) => {
+    assertParticleEffectsPipelineSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {

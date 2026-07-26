@@ -54,7 +54,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
   share the same normalized acceleration path without per-frame vector allocation.
 - Hold-to-mine progress reuses one session result object and reads absolute time, so slow frames do
   not lengthen mining or allocate progress objects.
-- Particle meshes are pooled.
+- Break and shard particles use two shared instanced pools. Active instances stay compact, inactive
+  effects submit no draw, and burst setup reuses position and velocity storage.
 - Point lights use allocation and active-light budgets.
 - Hidden pages do no rendering work.
 - Paused screens run at 10 FPS.
