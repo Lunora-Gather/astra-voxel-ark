@@ -151,7 +151,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Hold Break to mine · Tap Place to build<br/>Patterns are in Menu · Expedition</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump / swim<br/>Hold left mine · Right place · B pattern<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Jump becomes Swim in water<br/>Hold Break to mine · Tap Place to build</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -1598,6 +1598,15 @@ function isSolidBlockAt(x: number, y: number, z: number) {
   return !!id && id !== 'water'
 }
 
+function isPlayerInWater(position: THREE.Vector3) {
+  const x = Math.round(position.x)
+  const z = Math.round(position.z)
+  const torsoY = Math.round(position.y - PLAYER_HEIGHT * 0.55)
+  const feetY = Math.round(position.y - PLAYER_HEIGHT + 0.18)
+  return blockData.get(packBlockKey(x, torsoY, z)) === 'water' ||
+    blockData.get(packBlockKey(x, feetY, z)) === 'water'
+}
+
 const playerCollision = new PlayerCollisionResolver({
   lookup: isSolidBlockAt,
   collider: {
@@ -1676,8 +1685,10 @@ function movePlayerHorizontal(delta: THREE.Vector3) {
 function movePlayerVertical(deltaY: number) {
   const pos = controls.object.position
   const result = playerCollision.moveVertical(pos, deltaY)
-  if (result.grounded) applyLandingImpact(playerMotion.land())
-  else if (result.collided) playerMotion.cancelVertical()
+  if (result.grounded) {
+    const impactSpeed = playerMotion.land()
+    applyLandingImpact(isPlayerInWater(pos) ? 0 : impactSpeed)
+  } else if (result.collided) playerMotion.cancelVertical()
 }
 
 // 放置预览 ghost box
@@ -3217,6 +3228,16 @@ const breakButton = document.querySelector<HTMLButtonElement>('.break-btn')!
 const placeButton = document.querySelector<HTMLButtonElement>('.place-btn')!
 const mineProgress = document.querySelector<HTMLDivElement>('.mine-progress')!
 const mineRing = document.querySelector<HTMLDivElement>('.mine-ring')!
+let lastPlayerInWater: boolean | null = null
+
+function syncPlayerWaterUi(inWater: boolean) {
+  if (inWater === lastPlayerInWater) return
+  lastPlayerInWater = inWater
+  jumpButton.textContent = inWater ? 'Swim' : 'Jump'
+  jumpButton.setAttribute('aria-label', inWater ? 'Swim upward' : 'Jump')
+  document.body.dataset.playerMedium = inWater ? 'water' : 'air'
+}
+syncPlayerWaterUi(false)
 let joystickPointerId: number | null = null
 let lookPointerId: number | null = null
 let previousLookX = 0
@@ -4010,6 +4031,8 @@ function animate() {
   stars.visible = day < 0.48
   skyColor.lerpColors(nightSkyColor, daySkyColor, day)
   sceneFog.color.copy(skyColor)
+  const playerInWater = isPlayerInWater(controls.object.position)
+  syncPlayerWaterUi(playerInWater)
   updateSurvivalLoop(dt, day, elapsedTime)
 
   let moveRightInput = 0
@@ -4023,7 +4046,7 @@ function animate() {
     moveForwardInput -= mobileMove.y
   }
   const motionActive = controls.isLocked || mobileActive
-  const motionStep = playerMotion.update(moveRightInput, moveForwardInput, keys.has('ShiftLeft'), motionActive, dt)
+  const motionStep = playerMotion.update(moveRightInput, moveForwardInput, keys.has('ShiftLeft'), motionActive, dt, playerInWater)
   if (motionActive) {
     previousPosition.copy(controls.object.position)
     controls.moveRight(motionStep.right)
@@ -4064,7 +4087,8 @@ function animate() {
   const floor = playerCollision.findFloorAt(pos.x, pos.z, pos.y)
   if (pos.y < floor) {
     pos.y = floor
-    applyLandingImpact(playerMotion.land())
+    const impactSpeed = playerMotion.land()
+    applyLandingImpact(isPlayerInWater(pos) ? 0 : impactSpeed)
   }
   else if (pos.y > floor + 0.05) playerMotion.setGrounded(false)
   if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)

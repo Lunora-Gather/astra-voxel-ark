@@ -7,6 +7,12 @@ export type PlayerMotionConfig = {
   airStopping: number
   jumpVelocity: number
   gravity: number
+  swimSpeed: number
+  waterAcceleration: number
+  waterGravity: number
+  waterDrag: number
+  swimVelocity: number
+  waterMaxFallSpeed: number
   maxDeltaSeconds: number
 }
 
@@ -25,6 +31,12 @@ export const DEFAULT_PLAYER_MOTION_CONFIG: PlayerMotionConfig = {
   airStopping: 2.5,
   jumpVelocity: 8.2,
   gravity: 21.5,
+  swimSpeed: 4.2,
+  waterAcceleration: 8,
+  waterGravity: 4.5,
+  waterDrag: 4,
+  swimVelocity: 3.6,
+  waterMaxFallSpeed: 3,
   maxDeltaSeconds: 0.05,
 }
 
@@ -38,6 +50,7 @@ export class PlayerMotionController {
   private forwardVelocity = 0
   private verticalVelocity = 0
   private grounded = false
+  private inWater = false
   private readonly step: PlayerMotionStep = { right: 0, forward: 0, vertical: 0 }
 
   constructor(config: Partial<PlayerMotionConfig> = {}) {
@@ -52,8 +65,13 @@ export class PlayerMotionController {
     return this.verticalVelocity
   }
 
-  update(rightInput: number, forwardInput: number, sprinting: boolean, active: boolean, deltaSeconds: number) {
+  get isInWater() {
+    return this.inWater
+  }
+
+  update(rightInput: number, forwardInput: number, sprinting: boolean, active: boolean, deltaSeconds: number, inWater = false) {
     const dt = clampFinite(deltaSeconds, 0, this.config.maxDeltaSeconds, 0)
+    this.inWater = inWater
     let right = finiteOrZero(rightInput)
     let forward = finiteOrZero(forwardInput)
     const inputLengthSq = right * right + forward * forward
@@ -66,9 +84,11 @@ export class PlayerMotionController {
     if (!active) {
       this.stopHorizontal()
     } else {
-      const speed = sprinting ? this.config.sprintSpeed : this.config.walkSpeed
+      const speed = inWater ? this.config.swimSpeed : sprinting ? this.config.sprintSpeed : this.config.walkSpeed
       const hasInput = right * right + forward * forward > 0
-      const response = hasInput
+      const response = inWater
+        ? this.config.waterAcceleration
+        : hasInput
         ? this.grounded ? this.config.groundAcceleration : this.config.airAcceleration
         : this.grounded ? this.config.groundStopping : this.config.airStopping
       const blend = 1 - Math.exp(-response * dt)
@@ -79,7 +99,13 @@ export class PlayerMotionController {
       }
     }
 
-    this.verticalVelocity -= this.config.gravity * dt
+    if (inWater) {
+      this.verticalVelocity -= this.config.waterGravity * dt
+      this.verticalVelocity *= Math.exp(-this.config.waterDrag * dt)
+      this.verticalVelocity = Math.max(-this.config.waterMaxFallSpeed, this.verticalVelocity)
+    } else {
+      this.verticalVelocity -= this.config.gravity * dt
+    }
     this.step.right = this.rightVelocity * dt
     this.step.forward = this.forwardVelocity * dt
     this.step.vertical = this.verticalVelocity * dt
@@ -87,6 +113,11 @@ export class PlayerMotionController {
   }
 
   jump() {
+    if (this.inWater) {
+      this.verticalVelocity = Math.max(this.verticalVelocity, this.config.swimVelocity)
+      this.grounded = false
+      return true
+    }
     if (!this.grounded) return false
     this.verticalVelocity = this.config.jumpVelocity
     this.grounded = false
@@ -117,6 +148,7 @@ export class PlayerMotionController {
     this.stopHorizontal()
     this.verticalVelocity = 0
     this.grounded = grounded
+    this.inWater = false
     this.step.right = 0
     this.step.forward = 0
     this.step.vertical = 0
@@ -133,6 +165,12 @@ function sanitizeConfig(config: PlayerMotionConfig): PlayerMotionConfig {
     airStopping: positiveFinite(config.airStopping, DEFAULT_PLAYER_MOTION_CONFIG.airStopping),
     jumpVelocity: positiveFinite(config.jumpVelocity, DEFAULT_PLAYER_MOTION_CONFIG.jumpVelocity),
     gravity: positiveFinite(config.gravity, DEFAULT_PLAYER_MOTION_CONFIG.gravity),
+    swimSpeed: positiveFinite(config.swimSpeed, DEFAULT_PLAYER_MOTION_CONFIG.swimSpeed),
+    waterAcceleration: positiveFinite(config.waterAcceleration, DEFAULT_PLAYER_MOTION_CONFIG.waterAcceleration),
+    waterGravity: positiveFinite(config.waterGravity, DEFAULT_PLAYER_MOTION_CONFIG.waterGravity),
+    waterDrag: positiveFinite(config.waterDrag, DEFAULT_PLAYER_MOTION_CONFIG.waterDrag),
+    swimVelocity: positiveFinite(config.swimVelocity, DEFAULT_PLAYER_MOTION_CONFIG.swimVelocity),
+    waterMaxFallSpeed: positiveFinite(config.waterMaxFallSpeed, DEFAULT_PLAYER_MOTION_CONFIG.waterMaxFallSpeed),
     maxDeltaSeconds: positiveFinite(config.maxDeltaSeconds, DEFAULT_PLAYER_MOTION_CONFIG.maxDeltaSeconds),
   }
 }

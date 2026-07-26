@@ -11,7 +11,8 @@ const expectations = [
   [vitals.includes('applyDamage(amount: number)'), 'one-shot survival damage adapter'],
   [vitalsSmoke.includes('safe landing threshold'), 'safe landing runtime coverage'],
   [vitalsSmoke.includes('zero health should not count repeated deaths'), 'death idempotency coverage'],
-  [main.includes('applyLandingImpact(playerMotion.land())'), 'collision-to-survival integration'],
+  [main.includes('const impactSpeed = playerMotion.land()'), 'landing speed captured before reset'],
+  [main.includes('applyLandingImpact(isPlayerInWater(pos) ? 0 : impactSpeed)'), 'water-safe collision-to-survival integration'],
   [main.includes("showToast(`Hard landing"), 'clear landing feedback'],
   [main.includes("import('./singleplayer/SurvivalVitalsSmoke')"), 'lazy Electron survival smoke'],
 ]

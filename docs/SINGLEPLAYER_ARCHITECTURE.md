@@ -27,6 +27,11 @@ orientation changes, world loading and respawn explicitly reset the relevant mot
 `SurvivalVitals.getFallDamage` owns the safe landing threshold and deterministic damage curve, while
 `applyDamage` records a fatal transition only once. The browser adapter supplies sound, haptics,
 health HUD feedback and the existing Ark respawn without adding renderer state to either rule module.
+The same motion controller accepts an optional water state. It applies swim-speed horizontal
+movement, exponential vertical drag, capped sinking and airborne upward input without a second
+touch-specific controller. `main.ts` derives that state from two packed-key torso/feet lookups and
+updates the Jump/Swim label only when the medium changes. Landing while immersed suppresses fall
+damage but still resets vertical velocity.
 
 `src/world/WorldCoordinates.ts` owns Minecraft-style block coordinate rounding and display/clipboard
 formats. The roomy and compact desktop HUD exposes a copyable biome/location card; minimal HUDs omit

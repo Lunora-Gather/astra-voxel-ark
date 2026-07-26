@@ -244,6 +244,7 @@ async function readState(win, label) {
         bodyClasses: document.body.className,
         density: document.body.dataset.hudDensity || null,
         runtimePressure: document.body.dataset.runtimePressure || null,
+        playerMedium: document.body.dataset.playerMedium || null,
         startVisible: visible('.start'),
         rotatePromptVisible: visible('.rotate-prompt'),
         rotatePromptFullyVisible: fullyVisible(rectOf('.rotate-prompt > div')),
@@ -334,6 +335,7 @@ async function readState(win, label) {
         joystickVisible: visible('.joystick'),
         touchActionsVisible: visible('.touch-actions'),
         touchButtonsVisible: visibleCount('.touch-btn'),
+        jumpButtonText: document.querySelector('.jump-btn')?.textContent?.trim() || '',
         joystickRect: rectOf('.joystick'),
         touchButtonRects: [...document.querySelectorAll('.touch-btn')].map((button) => {
           const rect = button.getBoundingClientRect();
@@ -385,6 +387,7 @@ function assertGameplayState(state) {
   if (state.pressedTouchButtons) fail('Touch buttons should not remain pressed after input reset', state)
   if (state.mineProgressVisible) fail('Mining progress should not remain visible after input reset', state)
   if (!['normal', 'strained', 'critical'].includes(state.runtimePressure)) fail('Runtime pressure guard should expose a valid state', state)
+  if (state.playerMedium !== 'air' || state.jumpButtonText !== 'Jump') fail('Player medium should initialize with the standard Jump action', state)
   if (!state.saveStatusVisible || !state.saveStatusFullyVisible) fail('Persistent save status should fit in the gameplay HUD', state)
   if (!['unsaved', 'saving', 'saved', 'error'].includes(state.saveStatusState)) fail('Save status should expose a valid state', state)
   if (state.label.startsWith('desktop:')) {

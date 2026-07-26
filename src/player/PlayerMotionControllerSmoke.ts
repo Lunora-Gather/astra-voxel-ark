@@ -44,6 +44,16 @@ export function assertPlayerMotionControllerSmoke() {
     throw new Error('Player motion smoke failed: landing did not report and reset downward motion')
   }
 
+  const swimMotion = new PlayerMotionController({ waterAcceleration: 1000 })
+  const swimStep = swimMotion.update(0, 1, true, true, 0.05, true)
+  if (!swimMotion.isInWater || swimStep.forward <= 0 || swimStep.forward / 0.05 > swimMotion.config.swimSpeed + 0.001) {
+    throw new Error('Player motion smoke failed: water should cap horizontal movement at swim speed')
+  }
+  for (let i = 0; i < 40; i += 1) swimMotion.update(0, 0, false, true, 0.05, true)
+  if (swimMotion.verticalSpeed < -swimMotion.config.waterMaxFallSpeed || !swimMotion.jump() || swimMotion.verticalSpeed <= 0) {
+    throw new Error('Player motion smoke failed: water should cap falling and allow airborne swimming')
+  }
+
   const lowRateDistance = simulateForwardDistance(20, 0.05)
   const highRateDistance = simulateForwardDistance(60, 1 / 60)
   if (Math.abs(lowRateDistance - highRateDistance) > 0.12) {

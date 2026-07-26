@@ -10,13 +10,18 @@ const expectations = [
   [controller.includes('1 - Math.exp(-response * dt)'), 'frame-rate-aware acceleration'],
   [controller.includes('maxDeltaSeconds: 0.05'), 'long-frame delta cap'],
   [controller.includes('jump()'), 'grounded jump rule'],
+  [controller.includes('waterMaxFallSpeed'), 'bounded water descent'],
+  [controller.includes('this.inWater'), 'shared water movement state'],
   [runtimeSmoke.includes('diagonal touch input was not normalized'), 'touch normalization runtime coverage'],
   [runtimeSmoke.includes('sprint speed ratio changed'), 'sprint runtime coverage'],
   [runtimeSmoke.includes('frame-rate drift'), 'low-frame-rate runtime coverage'],
+  [runtimeSmoke.includes('water should cap falling and allow airborne swimming'), 'swimming runtime coverage'],
   [runtimeSmoke.includes('hot-path step should be reused'), 'allocation runtime coverage'],
   [main.includes('new PlayerMotionController()'), 'live motion integration'],
   [main.includes("import('./player/PlayerMotionControllerSmoke')"), 'lazy Electron motion smoke'],
   [main.includes('playerMotion.stopHorizontal()'), 'input reset integration'],
+  [main.includes('isPlayerInWater(controls.object.position)'), 'live water detection'],
+  [main.includes('syncPlayerWaterUi(playerInWater)'), 'adaptive swim control feedback'],
 ]
 
 const forbidden = [
