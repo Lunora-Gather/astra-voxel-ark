@@ -29,6 +29,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
 - Budgeted biome and block-coordinate HUD with click-to-copy location sharing
 - Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling
+- Hysteresis-based runtime performance guard that temporarily trims world work, lights and cosmetics during sustained frame pressure
 - Persistent 30/60 FPS frame cap plus sound volume and mute controls
 - Optional compact performance HUD with frame, world, draw-call and GPU resource diagnostics
 - Health, cold-night damage and Ark recovery

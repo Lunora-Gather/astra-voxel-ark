@@ -9,6 +9,13 @@ The single-player runtime treats low-end hardware as a first-class target.
 terrain concurrency, mesh rebuild time, particles, point lights, and decorative animation.
 The graphics setting remains an override inside the safe bounds of the detected device.
 
+`src/performance/RuntimePerformanceGuard.ts` adds a second, transient layer for sustained runtime
+pressure. Sample hysteresis moves through `normal`, `strained`, and `critical` rather than reacting
+to individual slow frames. It scales visible-face summaries, greedy-mesh work, terrain cadence,
+cosmetics and point lights. Critical pressure temporarily subtracts one from the effective terrain
+radius, never below the spawn-safe radius, without rewriting the player's stored view distance.
+Recovery happens one level at a time.
+
 ## Terrain pipeline
 
 `src/world/ProceduralTerrain.ts` is the deterministic source of terrain, biome materials,
@@ -18,6 +25,10 @@ applies completed plans in bounded batches.
 
 Worker requests are guarded by a generation epoch. Loading or resetting a world invalidates
 old responses so stale terrain cannot leak into the new session.
+
+Queued and completed terrain plans are also checked against the current effective radius before
+main-thread application. This prevents distant work requested before a pressure transition or fast
+player movement from consuming frame time; returning to that area queues deterministic terrain again.
 
 ## Residency
 

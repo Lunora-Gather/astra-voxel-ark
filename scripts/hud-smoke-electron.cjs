@@ -243,6 +243,7 @@ async function readState(win, label) {
         viewport,
         bodyClasses: document.body.className,
         density: document.body.dataset.hudDensity || null,
+        runtimePressure: document.body.dataset.runtimePressure || null,
         startVisible: visible('.start'),
         rotatePromptVisible: visible('.rotate-prompt'),
         rotatePromptFullyVisible: fullyVisible(rectOf('.rotate-prompt > div')),
@@ -361,6 +362,7 @@ function assertGameplayState(state) {
   if (state.perfVisible) fail('Performance HUD should be hidden by default', state)
   if (state.pressedTouchButtons) fail('Touch buttons should not remain pressed after input reset', state)
   if (state.mineProgressVisible) fail('Mining progress should not remain visible after input reset', state)
+  if (!['normal', 'strained', 'critical'].includes(state.runtimePressure)) fail('Runtime pressure guard should expose a valid state', state)
   if (!state.saveStatusVisible || !state.saveStatusFullyVisible) fail('Persistent save status should fit in the gameplay HUD', state)
   if (!['unsaved', 'saving', 'saved', 'error'].includes(state.saveStatusState)) fail('Save status should expose a valid state', state)
   if (state.label.startsWith('desktop:')) {

@@ -92,6 +92,10 @@ Status: core paths integrated. Streamed terrain uses the worker pipeline; opaque
 Local persistence now also exposes a compact shared activity state and coalesces delayed autosaves,
 so constrained devices avoid redundant serialization while players retain visible failure feedback.
 
+The live runtime now includes a hysteresis-based pressure guard. It temporarily scales mesh,
+terrain, light and cosmetic work without changing persisted player settings, rejects stale
+out-of-radius terrain results, and restores budgets in stages after sustained recovery.
+
 High-impact tasks:
 
 - Cap active glow and crystal point lights by camera distance.

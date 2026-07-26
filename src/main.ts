@@ -16,6 +16,7 @@ import { applyPointLightBudget } from './render/lightBudget'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
 import { FrameRateLimiter } from './performance/FrameRateLimiter'
+import { RuntimePerformanceGuard } from './performance/RuntimePerformanceGuard'
 import {
   ACTIVE_WORLD_SLOT_KEY,
   WORLD_SLOT_IDS,
@@ -75,6 +76,7 @@ const runtimeLimits = runtimeProfile.limits
 const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
 let frameRateLimit: 30 | 60 = runtimeLimits.targetFps === 30 ? 30 : 60
 const gameplayFrameLimiter = new FrameRateLimiter(frameRateLimit)
+const performanceGuard = new RuntimePerformanceGuard(frameRateLimit)
 let currentFps = 0
 let currentAverageFrameMs = 0
 document.body.dataset.runtimeTier = runtimeProfile.tier
@@ -458,7 +460,10 @@ const TOUCH_LOOK_DEADZONE = 0.28
 const TOUCH_LOOK_MAX_DELTA = 34
 function adaptiveBudget(base: number, minimum: number) {
   const pressureScale = currentFps > 0 && currentFps < 36 ? 0.65 : 1
-  return Math.max(minimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale))
+  const guardScale = performanceGuard.budget.cosmeticScale
+  if (guardScale <= 0) return 0
+  const guardedMinimum = Math.max(1, Math.round(minimum * guardScale))
+  return Math.max(guardedMinimum, Math.round(base * (0.45 + renderQuality * 0.55) * pressureScale * guardScale))
 }
 type BlockSource = 'terrain' | 'player' | 'save'
 type ChunkBucket = {
@@ -1575,6 +1580,9 @@ if (isSmokeTest) {
   void import('./singleplayer/TutorialGuideSmoke').then(({ assertTutorialGuideSmoke }) => {
     assertTutorialGuideSmoke()
   }).catch((error) => console.error(error))
+  void import('./performance/RuntimePerformanceGuardSmoke').then(({ assertRuntimePerformanceGuardSmoke }) => {
+    assertRuntimePerformanceGuardSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1708,11 +1716,20 @@ function queueTerrainChunk(cx: number, cz: number) {
 function processTerrainQueue(limit = TERRAIN_CHUNKS_PER_FRAME) {
   let generated = 0
   while (generated < limit && completedTerrainPlans.length > 0) {
-    if (applyTerrainPlan(completedTerrainPlans.shift()!)) generated += 1
+    const plan = completedTerrainPlans.shift()!
+    if (!isTerrainChunkWithinActiveRadius(plan.cx, plan.cz)) {
+      queuedTerrainChunks.delete(terrainChunkKey(plan.cx, plan.cz))
+      continue
+    }
+    if (applyTerrainPlan(plan)) generated += 1
   }
   if (!terrainWorker) {
     while (generated < limit && terrainGenerationQueue.length > 0) {
       const next = terrainGenerationQueue.shift()!
+      if (!isTerrainChunkWithinActiveRadius(next.cx, next.cz)) {
+        queuedTerrainChunks.delete(terrainChunkKey(next.cx, next.cz))
+        continue
+      }
       if (generateTerrainChunk(next.cx, next.cz)) generated += 1
     }
     return
@@ -1721,6 +1738,10 @@ function processTerrainQueue(limit = TERRAIN_CHUNKS_PER_FRAME) {
   while (terrainWorkerInFlight < runtimeLimits.terrainWorkerConcurrency && terrainGenerationQueue.length > 0) {
     const next = terrainGenerationQueue.shift()!
     const key = terrainChunkKey(next.cx, next.cz)
+    if (!isTerrainChunkWithinActiveRadius(next.cx, next.cz)) {
+      queuedTerrainChunks.delete(key)
+      continue
+    }
     if (generatedTerrainChunks.has(key)) {
       queuedTerrainChunks.delete(key)
       continue
@@ -1755,6 +1776,18 @@ function ensureTerrainChunksAround(x: number, z: number, radius = terrainLoadRad
   pending.forEach(({ cx, cz }) => queueTerrainChunk(cx, cz))
 }
 
+function effectiveTerrainLoadRadius() {
+  return Math.max(INITIAL_TERRAIN_LOAD_RADIUS, terrainLoadRadius - performanceGuard.budget.viewDistancePenalty)
+}
+
+function isTerrainChunkWithinActiveRadius(cx: number, cz: number) {
+  const position = controls.object.position
+  const radius = effectiveTerrainLoadRadius()
+  const centerCx = chunkCoord(position.x)
+  const centerCz = chunkCoord(position.z)
+  return Math.abs(cx - centerCx) <= radius && Math.abs(cz - centerCz) <= radius
+}
+
 function evictTerrainChunk(cx: number, cz: number) {
   const key = terrainChunkKey(cx, cz)
   if (!generatedTerrainChunks.has(key)) return false
@@ -1778,7 +1811,7 @@ function evictTerrainChunk(cx: number, cz: number) {
 
 function evictDistantTerrainChunks(x: number, z: number) {
   const center = { cx: chunkCoord(x), cz: chunkCoord(z) }
-  const keepRadius = terrainLoadRadius + runtimeLimits.residentChunkPadding
+  const keepRadius = effectiveTerrainLoadRadius() + runtimeLimits.residentChunkPadding
   const candidates = selectChunksForEviction(
     generatedTerrainChunks,
     center,
@@ -2557,6 +2590,8 @@ function applySettings(settings: GameSettings, persist = false) {
   setPerformanceHudVisible(nextSettings.showPerf)
   frameRateLimit = nextSettings.frameRate
   gameplayFrameLimiter.setTargetFps(frameRateLimit)
+  performanceGuard.setTargetFps(frameRateLimit)
+  syncPerformanceGuardUi()
   frameRateSelect.value = String(frameRateLimit)
   document.body.dataset.frameRate = String(frameRateLimit)
 
@@ -3278,6 +3313,15 @@ let frameBudgetCount = 0
 let frameBudgetTotal = 0
 let lastQualityAdjustAt = 0
 
+function syncPerformanceGuardUi() {
+  const level = performanceGuard.currentLevel
+  document.body.dataset.runtimePressure = level
+  const mode = document.querySelector<HTMLElement>('.perf-mode')
+  if (mode) mode.textContent = level === 'normal' ? runtimeProfile.tier : `${runtimeProfile.tier} · ${level}`
+}
+
+syncPerformanceGuardUi()
+
 function updateAdaptiveQuality(avgMs: number, elapsedTime: number) {
   if (elapsedTime - lastQualityAdjustAt < 2.5) return
   const previousQuality = renderQuality
@@ -3468,7 +3512,8 @@ function cullPointLights(elapsedTime: number) {
       priority: light.userData.blockId === 'glow' ? 2 : 1,
     })
   })
-  applyPointLightBudget(playerPos, candidates, MAX_ACTIVE_GLOW_LIGHTS)
+  const guardedLightBudget = Math.floor(MAX_ACTIVE_GLOW_LIGHTS * performanceGuard.budget.pointLightScale)
+  applyPointLightBudget(playerPos, candidates, guardedLightBudget)
 }
 
 function updateInstancedBounds() {
@@ -3503,8 +3548,16 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   fpsElapsed = 0
 
   const avgMs = currentAverageFrameMs
+  const guardTransition = performanceGuard.sample({ fps: currentFps, averageFrameMs: avgMs })
+  if (guardTransition.changed) {
+    syncPerformanceGuardUi()
+    lastTerrainEnsureScanKey = ''
+    pendingTerrainEnsure = { x: controls.object.position.x, z: controls.object.position.z }
+  }
   updateAdaptiveQuality(avgMs, elapsedTime)
-  cosmeticEffectsReduced = currentFps > 0 && (currentFps < 36 || avgMs > 24 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
+  cosmeticEffectsReduced = performanceGuard.currentLevel !== 'normal' || (
+    currentFps > 0 && (currentFps < 36 || avgMs > 24 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
+  )
 
   if (!showPerformanceHud) return
   if (fpsEl && msEl) {
@@ -3564,9 +3617,12 @@ function animate() {
   if (!hasStarted || isPaused) lastIdleFrameAt = now
   if (hasStarted && !isPaused && !gameplayFrameLimiter.shouldRun(now)) return
   const dt = Math.min(clock.getDelta(), 0.05)
+  const workBudget = performanceGuard.budget
+  const meshBatchBudget = Math.max(1, Math.floor(runtimeLimits.meshBatchSize * workBudget.meshBatchScale))
+  const meshTimeBudget = Math.max(0.4, runtimeLimits.meshBudgetMs * workBudget.meshTimeScale)
   if (!hasStarted || isPaused) {
-    rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
-    rebuildOptimizedChunkMeshes(runtimeLimits.meshBatchSize, runtimeLimits.meshBudgetMs)
+    rebuildDirtyChunkVisibleFaceSummaries(workBudget.visibleFaceSummaries)
+    rebuildOptimizedChunkMeshes(meshBatchBudget, meshTimeBudget)
     updateInstancedBounds()
     renderer.render(scene, camera)
     return
@@ -3580,8 +3636,8 @@ function animate() {
     lastSaveActivityRefreshAt = elapsedTime
     updateSaveActivityUi()
   }
-  rebuildDirtyChunkVisibleFaceSummaries(currentFps > 0 && currentFps < 36 ? 4 : 12)
-  rebuildOptimizedChunkMeshes(runtimeLimits.meshBatchSize, runtimeLimits.meshBudgetMs)
+  rebuildDirtyChunkVisibleFaceSummaries(workBudget.visibleFaceSummaries)
+  rebuildOptimizedChunkMeshes(meshBatchBudget, meshTimeBudget)
   updateInstancedBounds()
   updateFrameStats(dt, elapsedTime)
   cullPointLights(elapsedTime)
@@ -3713,7 +3769,7 @@ function animate() {
     lastTerrainCenterKey = terrainCenterKey
   }
   if (pendingTerrainEnsure && elapsedTime - lastTerrainEnsureAt >= TERRAIN_SCAN_INTERVAL) {
-    ensureTerrainChunksAround(pendingTerrainEnsure.x, pendingTerrainEnsure.z)
+    ensureTerrainChunksAround(pendingTerrainEnsure.x, pendingTerrainEnsure.z, effectiveTerrainLoadRadius())
     pendingTerrainEnsure = null
     lastTerrainEnsureAt = elapsedTime
   }
@@ -3721,8 +3777,11 @@ function animate() {
     evictDistantTerrainChunks(pos.x, pos.z)
     lastTerrainEvictionAt = elapsedTime
   }
-  const terrainQueueIsUnderPressure = currentFps > 0 && (currentFps < 28 || renderQuality <= MIN_RENDER_QUALITY + 0.02)
-  const terrainQueueBudget = terrainQueueIsUnderPressure ? (terrainQueueFrameSkip++ % 4 === 0 ? 1 : 0) : TERRAIN_CHUNKS_PER_FRAME
+  const terrainQueueCadence = Math.max(
+    workBudget.terrainFrameCadence,
+    currentFps > 0 && (currentFps < 28 || renderQuality <= MIN_RENDER_QUALITY + 0.02) ? 4 : 1,
+  )
+  const terrainQueueBudget = terrainQueueFrameSkip++ % terrainQueueCadence === 0 ? TERRAIN_CHUNKS_PER_FRAME : 0
   if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
   const floor = playerCollision.findFloorAt(pos.x, pos.z, pos.y)
   if (pos.y < floor) { pos.y = floor; playerMotion.land() }
