@@ -71,6 +71,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
   persistent location card while retaining coordinates in the paused World details.
 - Contextual onboarding updates only on gameplay events. Constrained touch layouts reuse the
   existing help panel instead of adding a second visible overlay or per-frame DOM work.
+- Recipe availability, reward previews and bulk-claim state are rendered only when progression or
+  inventory changes; none participate in the frame loop.
 
 ## Audio lifecycle
 

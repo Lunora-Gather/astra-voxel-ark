@@ -41,6 +41,12 @@ block cancels the session, and completion passes the locked block key back to th
 adapter. A short touch-canvas tap remains a placement gesture, including against a tool-gated
 target. Mining state is intentionally not persisted.
 
+`ProgressionSystem.getRecipeAvailability` is the canonical recipe readiness calculation. It returns
+exact available and missing counts so the expedition UI never reimplements crafting rules.
+`claimCompletedObjectives` grants every currently completed, unclaimed reward in one synchronous
+operation and records each claim before the next UI refresh; repeated calls cannot duplicate rewards.
+The existing progression snapshot remains the persistence boundary.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.

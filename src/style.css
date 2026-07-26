@@ -232,6 +232,9 @@ body.menu-open .menu-toggle-btn { display: none; }
 .expedition-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 13px 2px 7px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); }
 .expedition-section-heading strong { font-size: 11px; }
 .expedition-section-heading small { color: rgba(255,255,255,.5); font-size: 9px; text-align: right; }
+.objective-heading { margin-top: 0; padding-top: 0; border-top: 0; }
+.claim-all-objectives { pointer-events: auto; min-height: 28px; padding: 5px 10px; color: #071120; border: 1px solid rgba(168,255,185,.42); border-radius: 999px; background: #a8ffb9; font-size: 9px; font-weight: 900; cursor: pointer; }
+.claim-all-objectives:disabled { color: rgba(255,255,255,.42); border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.07); cursor: default; }
 .inventory-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .inventory-card { pointer-events: auto; display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; padding: 7px; text-align: left; color: rgba(255,255,255,.88); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; background: rgba(255,255,255,.045); cursor: pointer; }
 .inventory-card > span:last-child { display: grid; min-width: 0; gap: 1px; }
@@ -246,10 +249,16 @@ body.menu-open .menu-toggle-btn { display: none; }
 .objective-card > div, .recipe-card > div { display: grid; min-width: 0; gap: 2px; }
 .objective-card strong, .recipe-card strong { color: rgba(255,255,255,.94); font-size: 11px; }
 .objective-card small, .recipe-card small { color: rgba(255,255,255,.64); font-size: 10px; line-height: 1.35; }
-.recipe-card em { overflow: hidden; color: #fff3a8; font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.objective-card em { color: #fff3a8; font-size: 8px; font-style: normal; }
+.recipe-ingredients { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; font-style: normal; }
+.recipe-ingredient { padding: 2px 5px; border: 1px solid rgba(168,255,185,.2); border-radius: 999px; color: rgba(216,255,224,.82); background: rgba(168,255,185,.06); font-size: 8px; white-space: nowrap; }
+.recipe-ingredient b { color: #a8ffb9; font-weight: 900; }
+.recipe-ingredient.missing { color: rgba(255,215,250,.72); border-color: rgba(255,143,207,.2); background: rgba(255,143,207,.06); }
+.recipe-ingredient.missing b { color: #ffd7fa; }
 .objective-card button, .recipe-card button { flex: none; pointer-events: auto; min-width: 54px; border: 1px solid rgba(169,239,255,.3); border-radius: 999px; padding: 7px 9px; color: #071120; background: #9ee8ff; font-size: 10px; font-weight: 900; cursor: pointer; }
 .objective-card button:disabled, .recipe-card button:disabled { color: rgba(255,255,255,.4); background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.1); cursor: default; }
 .objective-card.complete { border-color: rgba(168,255,185,.28); }
+.recipe-card.craftable { border-color: rgba(158,232,255,.28); background: rgba(115,214,255,.075); }
 .objective-card.claimed, .recipe-card.complete { opacity: .58; }
 .session-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
 .session-option { display: grid; gap: 3px; padding: 10px 12px; text-align: left; border: 1px solid rgba(255,255,255,.12); border-radius: 13px; color: white; background: rgba(255,255,255,.06); }

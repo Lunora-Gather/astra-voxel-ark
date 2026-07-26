@@ -27,6 +27,17 @@ export type Recipe = {
   once?: boolean
 }
 
+export type RecipeIngredientAvailability = Ingredient & {
+  available: number
+  missing: number
+}
+
+export type RecipeAvailability = {
+  completed: boolean
+  craftable: boolean
+  ingredients: RecipeIngredientAvailability[]
+}
+
 export type ProgressionStats = {
   mined: number
   placed: number
@@ -145,8 +156,25 @@ export class ProgressionSystem {
   }
 
   canCraft(recipe: Recipe, inventory: InventoryPort) {
-    if (recipe.once && (this.crafted[recipe.id] ?? 0) > 0) return false
-    return recipe.ingredients.every(({ id, amount }) => inventory.count(id) >= amount)
+    return this.getRecipeAvailability(recipe, inventory).craftable
+  }
+
+  getRecipeAvailability(recipe: Recipe, inventory: InventoryPort): RecipeAvailability {
+    const completed = Boolean(recipe.once && (this.crafted[recipe.id] ?? 0) > 0)
+    const ingredients = recipe.ingredients.map(({ id, amount }) => {
+      const available = inventory.count(id)
+      return {
+        id,
+        amount,
+        available,
+        missing: Math.max(0, amount - available),
+      }
+    })
+    return {
+      completed,
+      craftable: !completed && ingredients.every(({ missing }) => missing === 0),
+      ingredients,
+    }
   }
 
   craft(recipeId: string, inventory: InventoryPort) {
@@ -212,6 +240,17 @@ export class ProgressionSystem {
     objective.reward.forEach(({ id: blockId, amount }) => inventory.add(blockId, amount))
     this.claimedObjectives.add(id)
     return objective
+  }
+
+  claimCompletedObjectives(inventory: InventoryPort) {
+    const claimed: Objective[] = []
+    this.getObjectives().forEach((objective) => {
+      if (!objective.complete || objective.claimed) return
+      objective.reward.forEach(({ id, amount }) => inventory.add(id, amount))
+      this.claimedObjectives.add(objective.id)
+      claimed.push({ ...objective, claimed: true })
+    })
+    return claimed
   }
 
   snapshot(): ProgressionSnapshot {

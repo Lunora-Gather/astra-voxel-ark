@@ -243,6 +243,7 @@ app.innerHTML = `
             <div><span class="eyebrow">SINGLE PLAYER</span><strong>Wayfinder Progression</strong></div>
             <span class="tool-tier-value">Hand Tools</span>
           </div>
+          <div class="expedition-section-heading objective-heading"><strong>Objectives</strong><button class="claim-all-objectives" type="button" disabled>No rewards ready</button></div>
           <div class="objective-list"></div>
           <div class="expedition-section-heading"><strong>Backpack</strong><small>Select any material for the active nine-slot palette.</small></div>
           <div class="inventory-grid"></div>
@@ -1587,6 +1588,9 @@ if (isSmokeTest) {
   void import('./singleplayer/MiningSystemSmoke').then(({ assertMiningSystemSmoke }) => {
     assertMiningSystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./singleplayer/ProgressionSystemSmoke').then(({ assertProgressionSystemSmoke }) => {
+    assertProgressionSystemSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -2235,6 +2239,7 @@ const perfToggle = document.querySelector<HTMLInputElement>('.perf-toggle')!
 const soundToggle = document.querySelector<HTMLInputElement>('.sound-toggle')!
 const toolTierValue = document.querySelector<HTMLSpanElement>('.tool-tier-value')!
 const objectiveList = document.querySelector<HTMLDivElement>('.objective-list')!
+const claimAllObjectivesButton = document.querySelector<HTMLButtonElement>('.claim-all-objectives')!
 const inventoryGrid = document.querySelector<HTMLDivElement>('.inventory-grid')!
 const recipeList = document.querySelector<HTMLDivElement>('.recipe-list')!
 const blockNames = new Map(BLOCKS.map(({ id, name }) => [id, name]))
@@ -2412,18 +2417,21 @@ pauseMenuTabs.forEach((button) => {
 })
 setPauseMenuTab(activePauseMenuTab)
 
-function formatIngredients(ingredients: Array<{ id: BlockId; amount: number }>) {
-  return ingredients.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
+function formatReward(reward: Array<{ id: BlockId; amount: number }>) {
+  return reward.map(({ id, amount }) => `${blockNames.get(id) ?? id} ×${amount}`).join(' · ')
 }
 
 function updateProgressionUi() {
   if (!toolTierValue || !objectiveList || !inventoryGrid || !recipeList) return
-  const progressionSnapshot = progression.snapshot()
   updateTutorialUi()
   toolTierValue.textContent = progression.getToolName()
-  objectiveList.innerHTML = progression.getObjectives().map((objective) => `
+  const objectives = progression.getObjectives()
+  const claimableCount = objectives.filter(({ complete, claimed }) => complete && !claimed).length
+  claimAllObjectivesButton.disabled = claimableCount === 0
+  claimAllObjectivesButton.textContent = claimableCount > 0 ? `Claim all · ${claimableCount}` : 'No rewards ready'
+  objectiveList.innerHTML = objectives.map((objective) => `
     <article class="objective-card ${objective.complete ? 'complete' : ''} ${objective.claimed ? 'claimed' : ''}">
-      <div><strong>${objective.name}</strong><small>${objective.description} · ${Math.min(objective.current, objective.target)}/${objective.target}</small></div>
+      <div><strong>${objective.name}</strong><small>${objective.description} · ${Math.min(objective.current, objective.target)}/${objective.target}</small><em>Reward · ${formatReward(objective.reward)}</em></div>
       <button data-claim-objective="${objective.id}" ${!objective.complete || objective.claimed ? 'disabled' : ''}>${objective.claimed ? 'Claimed' : 'Claim'}</button>
     </article>
   `).join('')
@@ -2437,12 +2445,17 @@ function updateProgressionUi() {
     `
   }).join('')
   recipeList.innerHTML = RECIPES.map((recipe) => {
-    const crafted = progressionSnapshot.crafted[recipe.id] ?? 0
-    const completed = Boolean(recipe.once && crafted > 0)
+    const availability = progression.getRecipeAvailability(recipe, progressionInventory)
+    const completed = availability.completed
+    const ingredients = availability.ingredients.map(({ id, amount, available, missing }) => `
+      <span class="recipe-ingredient ${missing > 0 ? 'missing' : 'ready'}">
+        ${blockNames.get(id) ?? id} <b>${available}/${amount}</b>
+      </span>
+    `).join('')
     return `
-      <article class="recipe-card ${completed ? 'complete' : ''}">
-        <div><strong>${recipe.name}</strong><small>${recipe.description}</small><em>${formatIngredients(recipe.ingredients)}</em></div>
-        <button data-craft-recipe="${recipe.id}" ${completed || !progression.canCraft(recipe, progressionInventory) ? 'disabled' : ''}>${completed ? 'Built' : 'Craft'}</button>
+      <article class="recipe-card ${completed ? 'complete' : ''} ${availability.craftable ? 'craftable' : 'missing-materials'}">
+        <div><strong>${recipe.name}</strong><small>${recipe.description}</small><em class="recipe-ingredients">${ingredients}</em></div>
+        <button data-craft-recipe="${recipe.id}" ${completed || !availability.craftable ? 'disabled' : ''}>${completed ? 'Built' : availability.craftable ? 'Craft' : 'Missing'}</button>
       </article>
     `
   }).join('')
@@ -2464,6 +2477,15 @@ objectiveList.addEventListener('click', (event) => {
   const objective = progression.claimObjective(button.dataset.claimObjective ?? '', progressionInventory)
   if (!objective) return
   showToast(`${objective.name} reward claimed`)
+  updateHotbar()
+  updateProgressionUi()
+})
+
+claimAllObjectivesButton.addEventListener('click', () => {
+  const claimed = progression.claimCompletedObjectives(progressionInventory)
+  if (claimed.length === 0) return
+  playGameSound('select', 0.24)
+  showToast(`${claimed.length} objective reward${claimed.length === 1 ? '' : 's'} claimed`)
   updateHotbar()
   updateProgressionUi()
 })

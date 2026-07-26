@@ -117,6 +117,8 @@ High-impact tasks:
   compact help-panel fallback for short or constrained displays.
 - Block hardness and tool-speed progression are integrated through one allocation-free mining
   session shared by desktop and touch input paths.
+- Crafting clarity is integrated with exact material availability, reward previews, idempotent
+  bulk claiming and responsive ingredient chips.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

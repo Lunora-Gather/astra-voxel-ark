@@ -308,6 +308,17 @@ async function readState(win, label) {
         hotbarPage: document.querySelector('.hotbar')?.dataset.page || null,
         inventoryCards: document.querySelectorAll('.inventory-card').length,
         activeInventoryCards: document.querySelectorAll('.inventory-card.active').length,
+        toolTierText: document.querySelector('.tool-tier-value')?.textContent?.trim() || '',
+        objectiveRewards: document.querySelectorAll('.objective-card em').length,
+        claimAllVisible: visible('.claim-all-objectives'),
+        claimAllDisabled: document.querySelector('.claim-all-objectives')?.disabled ?? true,
+        claimAllText: document.querySelector('.claim-all-objectives')?.textContent?.trim() || '',
+        recipeCards: document.querySelectorAll('.recipe-card').length,
+        recipeIngredientTokens: document.querySelectorAll('.recipe-ingredient').length,
+        missingRecipeIngredients: document.querySelectorAll('.recipe-ingredient.missing').length,
+        readyRecipeIngredients: document.querySelectorAll('.recipe-ingredient.ready').length,
+        craftableRecipes: document.querySelectorAll('.recipe-card.craftable').length,
+        completedRecipes: document.querySelectorAll('.recipe-card.complete').length,
         mobileControlsVisible: visible('.mobile-controls'),
         joystickVisible: visible('.joystick'),
         touchActionsVisible: visible('.touch-actions'),
@@ -557,8 +568,8 @@ async function smokeSaveLoad(win, scenario) {
   assertSavedWorld(loaded, `${scenario.label}:load`)
   const loadedStatus = await readState(win, `${scenario.label}:loaded-status`)
   if (loadedStatus.saveStatusState !== 'saved') fail('Loaded worlds should restore saved status feedback', loadedStatus)
-  if (loadedStatus.tutorialStep !== 'backpack' || loadedStatus.tutorialProgress !== '4/6') {
-    fail('Loaded worlds should restore contextual tutorial progress', loadedStatus)
+  if (loadedStatus.tutorialStep !== 'shard' || loadedStatus.tutorialProgress !== '6/6') {
+    fail('Loaded worlds should restore and reconcile contextual tutorial progress', loadedStatus)
   }
   if (loaded.blocks.length !== saved.blocks.length) fail('Loaded world should preserve saved block count', { saved: saved.blocks.length, loaded: loaded.blocks.length })
   if (loaded.player.position.some((value, index) => Math.abs(value - resumeState.player.position[index]) > 0.001)) {
@@ -717,6 +728,30 @@ async function runScenario(win, scenario) {
   }
   if (expeditionMenu.inventoryCards !== 18 || expeditionMenu.activeInventoryCards !== 1) {
     fail('Expedition tab should expose the complete backpack with one selected material', expeditionMenu)
+  }
+  if (
+    expeditionMenu.objectiveRewards !== 5 ||
+    !expeditionMenu.claimAllVisible ||
+    !expeditionMenu.claimAllDisabled ||
+    expeditionMenu.claimAllText !== 'No rewards ready'
+  ) {
+    fail('Expedition objectives should preview rewards and expose safe bulk claiming', expeditionMenu)
+  }
+  if (
+    expeditionMenu.recipeCards !== 6 ||
+    expeditionMenu.recipeIngredientTokens !== 15 ||
+    expeditionMenu.missingRecipeIngredients <= 0 ||
+    expeditionMenu.readyRecipeIngredients <= 0 ||
+    expeditionMenu.craftableRecipes <= 0
+  ) {
+    fail('Crafting should expose exact ready and missing ingredient availability', expeditionMenu)
+  }
+  if (scenario.label === 'desktop') {
+    await click(win, '.recipe-card [data-craft-recipe="stone-kit"]')
+    const craftedTool = await readState(win, `${scenario.label}:stone-kit-crafted`)
+    if (craftedTool.toolTierText !== 'Stone Kit' || craftedTool.completedRecipes !== 1 || !craftedTool.toastText.includes('crafted')) {
+      fail('Crafting a tool should update the live progression UI and feedback', craftedTool)
+    }
   }
   await click(win, '.inventory-card[data-inventory-block="gold"]')
   const backpackSelection = await readState(win, `${scenario.label}:backpack-selection`)
