@@ -25,6 +25,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Two-page nine-slot hotbar plus a complete 18-material backpack and direct selection
 - Beacon Trail exploration loop: follow named biome landmarks, collect their shards, repair visible Ark Core modules and strengthen night survival
 - Single-player progression with tool tiers, crafting recipes, expedition objectives and claimable rewards
+- Save-aware contextual onboarding for movement, mining, placement, backpack, crafting and landmark shards, with touch-specific compact help
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
 - Budgeted biome and block-coordinate HUD with click-to-copy location sharing
 - Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling

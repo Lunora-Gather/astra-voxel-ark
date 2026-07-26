@@ -1,6 +1,6 @@
 import { BLOCKS, type BlockId } from '../blocks'
 import type { PlayerStateSnapshot } from '../player'
-import type { InventorySnapshot, ProgressionSnapshot, SurvivalVitalsSnapshot } from '../singleplayer'
+import type { InventorySnapshot, ProgressionSnapshot, SurvivalVitalsSnapshot, TutorialSnapshot } from '../singleplayer'
 
 const BLOCK_ID_SET = new Set<BlockId>(BLOCKS.map((block) => block.id))
 const MAX_SAVE_TEXT_LENGTH = 16 * 1024 * 1024
@@ -31,6 +31,7 @@ export type SavedWorldState = {
   }
   progression?: Partial<ProgressionSnapshot>
   vitals?: Partial<SurvivalVitalsSnapshot>
+  tutorial?: Partial<TutorialSnapshot>
 }
 
 export type SaveSystemOptions = {
@@ -154,7 +155,7 @@ export function isSavedTerrainChunkKey(value: unknown): value is string {
 }
 
 function arraysWithinLimit(value: Partial<SavedWorldState>) {
-  const arrays = [value.blocks, value.terrainChunks, value.removedBlocks, value.playerPlacedBlocks, value.exploration?.collectedShardBlocks]
+  const arrays = [value.blocks, value.terrainChunks, value.removedBlocks, value.playerPlacedBlocks, value.exploration?.collectedShardBlocks, value.tutorial?.completed]
   return arrays.every((entry) => !Array.isArray(entry) || entry.length <= MAX_SAVE_ARRAY_LENGTH)
 }
 

@@ -251,6 +251,16 @@ async function readState(win, label) {
         menuTabsVisible: visibleCount('.menu-tab'),
         expeditionVisible: visible('.expedition-panel'),
         settingsVisible: visible('.settings-grid'),
+        tutorialVisible: visible('.tutorial'),
+        tutorialFullyVisible: !visible('.tutorial') || fullyVisible(rectOf('.tutorial')),
+        tutorialStep: document.querySelector('.tutorial')?.dataset.tutorialStep || null,
+        tutorialTitle: document.querySelector('.tutorial-title')?.textContent?.trim() || '',
+        tutorialPrompt: document.querySelector('.tutorial-prompt')?.textContent?.trim() || '',
+        tutorialProgress: document.querySelector('.tutorial-progress')?.textContent?.trim() || '',
+        helpVisible: visible('.help'),
+        helpFullyVisible: !visible('.help') || fullyVisible(rectOf('.help')),
+        helpGuideTitle: document.querySelector('.help-guide-title')?.textContent?.trim() || '',
+        helpGuidePrompt: document.querySelector('.help-guide-prompt')?.textContent?.trim() || '',
         pointerLocked: document.pointerLockElement === document.querySelector('canvas'),
         leftStackVisible: visible('.hud-left-stack'),
         rightStackVisible: visible('.hud-right-stack'),
@@ -534,6 +544,7 @@ async function smokeSaveLoad(win, scenario) {
     ...saved,
     player: { position: [2, 15, 12], rotation: [0.2, 0.4] },
     worldTime: 42,
+    tutorial: { completed: ['move', 'mine', 'place'] },
   }
   delete resumeState.worldSeed
   await writeSavedWorld(win, resumeState)
@@ -544,6 +555,9 @@ async function smokeSaveLoad(win, scenario) {
   assertSavedWorld(loaded, `${scenario.label}:load`)
   const loadedStatus = await readState(win, `${scenario.label}:loaded-status`)
   if (loadedStatus.saveStatusState !== 'saved') fail('Loaded worlds should restore saved status feedback', loadedStatus)
+  if (loadedStatus.tutorialStep !== 'backpack' || loadedStatus.tutorialProgress !== '4/6') {
+    fail('Loaded worlds should restore contextual tutorial progress', loadedStatus)
+  }
   if (loaded.blocks.length !== saved.blocks.length) fail('Loaded world should preserve saved block count', { saved: saved.blocks.length, loaded: loaded.blocks.length })
   if (loaded.player.position.some((value, index) => Math.abs(value - resumeState.player.position[index]) > 0.001)) {
     fail('Loaded world should restore the player position', { expected: resumeState.player.position, actual: loaded.player.position })
@@ -653,7 +667,18 @@ async function runScenario(win, scenario) {
   await click(win, '.start button')
   const gameplay = await readState(win, `${scenario.label}:gameplay`)
   assertGameplayState(gameplay)
+  if (gameplay.tutorialStep !== 'move' || gameplay.tutorialProgress !== '1/6' || !gameplay.toastText.startsWith('Guide ·')) {
+    fail('New sessions should begin with contextual movement guidance', gameplay)
+  }
   if (scenario.touch) assertTouchLandscapeState(gameplay)
+  if (scenario.touch) {
+    await click(win, '.help-toggle-btn')
+    const touchGuide = await readState(win, `${scenario.label}:touch-guide`)
+    if (!touchGuide.helpVisible || !touchGuide.helpFullyVisible || !touchGuide.helpGuidePrompt.includes('joystick')) {
+      fail('Touch help should expose the contextual touch tutorial without clipping', touchGuide)
+    }
+    await click(win, '.help-toggle-btn')
+  }
   if (scenario.label === 'desktop') {
     await click(win, '.world-badge')
     const copiedCoordinates = await readState(win, `${scenario.label}:coordinates-copied`)

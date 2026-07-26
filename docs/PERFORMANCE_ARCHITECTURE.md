@@ -56,6 +56,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
   all 18 materials remain available in the paused backpack.
 - Biome, tool-tier and coordinate text share one 750 ms DOM update budget; minimal HUDs omit the
   persistent location card while retaining coordinates in the paused World details.
+- Contextual onboarding updates only on gameplay events. Constrained touch layouts reuse the
+  existing help panel instead of adding a second visible overlay or per-frame DOM work.
 
 ## Audio lifecycle
 

@@ -43,6 +43,9 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .count { position: absolute; right: 4px; bottom: 3px; font-size: 11px; font-weight: 900; color: #ffd7fa; opacity: .88; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 1px rgba(0, 0, 0, 0.95); }
 .help { position: absolute; right: 24px; top: 20px; max-width: 270px; padding: 15px 17px; border-radius: 20px; border: 1px solid rgba(255,255,255,.18); background: linear-gradient(135deg, rgba(10,18,40,.52), rgba(26,45,72,.24)); backdrop-filter: blur(18px); font-size: 13px; line-height: 1.72; box-shadow: 0 18px 60px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.14); }
 .help strong { color: #c7f2ff; letter-spacing: .08em; }
+.help-guide { display: grid; gap: 2px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.13); line-height: 1.35; }
+.help-guide-title { font-size: 9px; text-transform: uppercase; }
+.help-guide-prompt { color: rgba(255,255,255,.92); font-size: 11px; }
 .mobile-help { display: none; }
 .world-badge { pointer-events: auto; position: absolute; right: 24px; bottom: 112px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 7px; padding: 8px 12px; text-align: left; border-radius: 14px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(16px); font-size: 11px; color: rgba(255,255,255,.88); cursor: pointer; }
 .world-badge .badge-pulse { grid-row: 1 / 3; width: 7px; height: 7px; border-radius: 50%; background: #a8ffb9; box-shadow: 0 0 10px rgba(168,255,185,.72); }
@@ -76,7 +79,12 @@ body.constrained-runtime .hud * { -webkit-backdrop-filter: none !important; back
 .save-tools button:active { transform: scale(0.94) translateY(0); background: rgba(157,232,255,.32); border-color: rgba(169,239,255,.85); }
 .import-input { display: none; }
 .tutorial { pointer-events: none; position: absolute; left: 24px; top: 295px; max-width: 320px; padding: 12px 16px; border-radius: 18px; background: linear-gradient(135deg, rgba(9,14,31,.62), rgba(33,54,82,.34)); border: 1px solid rgba(255,255,255,.2); backdrop-filter: blur(18px); font-size: 13px; color: rgba(255,255,255,.88); transition: top 0.3s ease; }
-.tutorial p { margin: 0; }
+.tutorial { display: flex; align-items: center; gap: 10px; }
+.tutorial-progress { flex: none; display: grid; place-items: center; min-width: 34px; height: 26px; border-radius: 999px; color: #071120; background: #9ee8ff; font: 900 9px/1 monospace; text-shadow: none; }
+.tutorial p { display: grid; min-width: 0; gap: 2px; margin: 0; }
+.tutorial-title { color: #c7f2ff; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
+.tutorial-prompt { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.tutorial[data-tutorial-step="complete"] .tutorial-progress { background: #a8ffb9; }
 
 .survival-badge {
   position: absolute;
@@ -915,6 +923,10 @@ body.show-perf-hud[data-hud-density="minimal"] .perf-badge {
   gap: 4px;
   font-size: 9px;
   border-radius: 14px;
+}
+
+body.touch-layout.help-open .menu-toggle-btn {
+  display: none;
 }
 
 body.show-perf-hud[data-hud-density="minimal"] .perf-row {

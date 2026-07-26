@@ -109,6 +109,8 @@ High-impact tasks:
 - Named save slots are integrated as isolated, resilient metadata with responsive editing and name-aware exports.
 - Biome-aware landmark templates are integrated with deterministic legacy coordinates, named navigation and resident-chunk cleanup.
 - Block coordinates are integrated with budgeted HUD updates, copy feedback and compact-menu fallback.
+- Contextual onboarding is integrated with save-aware progression, touch-specific prompts and a
+  compact help-panel fallback for short or constrained displays.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

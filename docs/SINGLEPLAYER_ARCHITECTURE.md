@@ -28,6 +28,12 @@ orientation changes, world loading and respawn explicitly reset the relevant mot
 formats. The roomy and compact desktop HUD exposes a copyable biome/location card; minimal HUDs omit
 that card to preserve touch space, while the World menu always includes the current position.
 
+`src/singleplayer/TutorialGuide.ts` owns the ordered, deterministic onboarding state without DOM or
+renderer dependencies. Actual movement, mining, placement, backpack, crafting and shard events
+advance it through narrow adapters in `main.ts`. Its optional compact snapshot is stored per world;
+older saves infer already-finished steps from progression statistics. Roomy HUDs show the current
+step directly, while constrained touch layouts mirror it into the existing help panel.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.
@@ -45,6 +51,7 @@ available:
 - missing world seed uses legacy seed `00000000`, preserving pre-v8 terrain exactly;
 - missing progression starts at hand tools with empty statistics;
 - missing vitals starts at full health;
+- missing tutorial state derives completed actions from existing progression statistics;
 - existing blocks, inventory, survival charge and shard progress retain their old behavior.
 
 Three local expedition slots share the same v8 schema. Slot 1 intentionally keeps the original

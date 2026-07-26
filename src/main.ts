@@ -4,7 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
-import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals } from './singleplayer'
+import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals, TutorialGuide, type TutorialStepId } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
 import { PlayerCollisionResolver, PlayerMotionController, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
@@ -116,8 +116,9 @@ app.innerHTML = `
           </div>
         </div>
       </div>
-      <div class="tutorial">
-        <p><strong>Tips:</strong> Click to enter · Follow beacon to shards · Save often</p>
+      <div class="tutorial" data-tutorial-step="move" role="status" aria-live="polite">
+        <span class="tutorial-progress">1/6</span>
+        <p><strong class="tutorial-title">First Steps</strong><span class="tutorial-prompt">Use WASD to move</span></p>
       </div>
       <div class="compass-badge" aria-live="polite">
         <span class="compass-arrow">↑</span>
@@ -130,7 +131,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap palette badge to switch · Menu for backpack<br/>Repair Ark Core with shards</span></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap palette badge to switch · Menu for backpack<br/>Repair Ark Core with shards</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -510,6 +511,7 @@ const landmarkShardNames = new Map<string, string>()
 const collectedShardBlocks = new Set<string>()
 const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
+const tutorialGuide = new TutorialGuide()
 const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
@@ -1220,6 +1222,7 @@ function serializeWorld(): SavedWorld {
     },
     progression: progression.snapshot(),
     vitals: survivalVitals.snapshot(),
+    tutorial: tutorialGuide.snapshot(),
   }
 }
 
@@ -1318,6 +1321,8 @@ function applySavedWorld(data: SavedWorld) {
     })
   }
   progression.restore(data.progression)
+  tutorialGuide.restore(data.tutorial)
+  tutorialGuide.syncProgression(progression.snapshot().stats)
   survivalVitals.restore(data.vitals)
   progression.setShardCount(collectedGlowShards)
   rebuildLandmarkShardBlocks()
@@ -1453,6 +1458,7 @@ function resetWorld() {
   collectedGlowShards = 0
   collectedShardBlocks.clear()
   progression.reset()
+  tutorialGuide.reset()
   survivalVitals.reset()
   simulationElapsedTime = 0
   lastAutoSaveAt = 0
@@ -1565,6 +1571,9 @@ if (isSmokeTest) {
   }).catch((error) => console.error(error))
   void import('./world/WorldCoordinatesSmoke').then(({ assertWorldCoordinatesSmoke }) => {
     assertWorldCoordinatesSmoke()
+  }).catch((error) => console.error(error))
+  void import('./singleplayer/TutorialGuideSmoke').then(({ assertTutorialGuideSmoke }) => {
+    assertTutorialGuideSmoke()
   }).catch((error) => console.error(error))
 }
 
@@ -2159,6 +2168,11 @@ let mobileActive = false
 const helpToggleBtn = document.querySelector<HTMLButtonElement>('.help-toggle-btn')!
 const helpPanel = document.querySelector<HTMLDivElement>('.help')!
 const tutorialPanel = document.querySelector<HTMLDivElement>('.tutorial')!
+const tutorialProgress = tutorialPanel.querySelector<HTMLSpanElement>('.tutorial-progress')!
+const tutorialTitle = tutorialPanel.querySelector<HTMLElement>('.tutorial-title')!
+const tutorialPrompt = tutorialPanel.querySelector<HTMLElement>('.tutorial-prompt')!
+const helpGuideTitle = helpPanel.querySelector<HTMLElement>('.help-guide-title')!
+const helpGuidePrompt = helpPanel.querySelector<HTMLElement>('.help-guide-prompt')!
 const menuToggleBtn = document.querySelector<HTMLButtonElement>('.menu-toggle-btn')!
 const pauseMenu = document.querySelector<HTMLDivElement>('.pause-menu')!
 const resumeButton = document.querySelector<HTMLButtonElement>('.resume-btn')!
@@ -2166,6 +2180,8 @@ type PauseMenuTab = 'settings' | 'expedition' | 'world'
 const pauseMenuTabs = [...document.querySelectorAll<HTMLButtonElement>('[data-menu-tab]')]
 const pauseMenuPages = [...document.querySelectorAll<HTMLElement>('[data-menu-page]')]
 let activePauseMenuTab: PauseMenuTab = 'settings'
+let renderedTutorialStep = ''
+let announcedTutorialStep = ''
 const sensitivityInput = document.querySelector<HTMLInputElement>('.sensitivity-input')!
 const sensitivityValue = document.querySelector<HTMLOutputElement>('.sensitivity-value')!
 const fovInput = document.querySelector<HTMLInputElement>('.fov-input')!
@@ -2192,6 +2208,31 @@ const worldSeedButton = document.querySelector<HTMLButtonElement>('.world-seed')
 const pauseSessionLabel = document.querySelector<HTMLElement>('.pause-session-label')!
 const sessionCurrentLabel = document.querySelector<HTMLElement>('.session-current')!
 const startPrimaryButton = start.querySelector<HTMLButtonElement>('.panel > button:not(.start-multiplayer)')!
+
+function updateTutorialUi(announce = false) {
+  const progressionSnapshot = progression.snapshot()
+  tutorialGuide.syncProgression(progressionSnapshot.stats)
+  const step = tutorialGuide.current()
+  if (step.id !== renderedTutorialStep) {
+    const progress = tutorialGuide.getProgress()
+    tutorialPanel.dataset.tutorialStep = step.id
+    tutorialProgress.textContent = `${progress.current}/${progress.total}`
+    tutorialTitle.textContent = step.title
+    tutorialPrompt.textContent = tutorialGuide.prompt(isTouchDevice)
+    helpGuideTitle.textContent = `${step.title} · ${progress.current}/${progress.total}`
+    helpGuidePrompt.textContent = tutorialGuide.prompt(isTouchDevice)
+    renderedTutorialStep = step.id
+  }
+  if (announce && step.id !== announcedTutorialStep) {
+    showToast(`Guide · ${tutorialGuide.prompt(isTouchDevice)}`)
+    announcedTutorialStep = step.id
+  }
+}
+
+function advanceTutorial(id: TutorialStepId, announce = true) {
+  if (!tutorialGuide.complete(id)) return
+  updateTutorialUi(announce)
+}
 
 function updateWorldSlotUi() {
   const activeLabel = worldSlotNames[activeWorldSlot]
@@ -2299,6 +2340,7 @@ worldSlotButtons.forEach((button) => {
 
 function setPauseMenuTab(tab: PauseMenuTab) {
   activePauseMenuTab = tab
+  if (tab === 'expedition') advanceTutorial('backpack')
   pauseMenuTabs.forEach((button) => {
     const active = button.dataset.menuTab === tab
     button.classList.toggle('active', active)
@@ -2340,6 +2382,7 @@ function formatIngredients(ingredients: Array<{ id: BlockId; amount: number }>) 
 function updateProgressionUi() {
   if (!toolTierValue || !objectiveList || !inventoryGrid || !recipeList) return
   const progressionSnapshot = progression.snapshot()
+  updateTutorialUi()
   toolTierValue.textContent = progression.getToolName()
   objectiveList.innerHTML = progression.getObjectives().map((objective) => `
     <article class="objective-card ${objective.complete ? 'complete' : ''} ${objective.claimed ? 'claimed' : ''}">
@@ -2396,6 +2439,7 @@ recipeList.addEventListener('click', (event) => {
     showToast('Missing crafting materials')
     return
   }
+  advanceTutorial('craft', false)
   playGameSound('select', 0.28)
   showToast(`${recipe.name} crafted`)
   updateHotbar()
@@ -2667,22 +2711,18 @@ helpToggleBtn.addEventListener('click', (e) => {
   e.preventDefault()
   e.stopPropagation()
   const isVisible = helpPanel.classList.toggle('visible-mobile')
-  tutorialPanel.classList.toggle('visible-mobile', isVisible)
+  document.body.classList.toggle('help-open', isVisible)
   helpToggleBtn.textContent = isVisible ? '×' : '?'
   applyHudLayoutClass()
 })
-
-if (isTouchDevice) {
-  const tutorial = document.querySelector<HTMLDivElement>('.tutorial')
-  if (tutorial) {
-    tutorial.innerHTML = `<p><strong>🎮 Tips:</strong> Drag to look · Joystick to move · Tap Palette for more blocks · Menu opens backpack</p>`
-  }
-}
 
 function updateOrientationClass() {
   applyHudLayoutClass()
   document.body.classList.toggle('portrait-touch', isTouchDevice && window.innerHeight > window.innerWidth)
   if (isTouchDevice && window.innerHeight > window.innerWidth) {
+    helpPanel.classList.remove('visible-mobile')
+    document.body.classList.remove('help-open')
+    helpToggleBtn.textContent = '?'
     keys.clear()
     playerMotion.stopHorizontal()
     mobileMove.set(0, 0)
@@ -2698,6 +2738,7 @@ function updateOrientationClass() {
 start.querySelector('button')!.addEventListener('click', () => {
   unlockGameAudio()
   hasStarted = true
+  updateTutorialUi(true)
   closePauseMenu(false)
   if (isTouchDevice) {
     mobileActive = true
@@ -2815,6 +2856,7 @@ function breakTargetBlock() {
     removeBlockAtKey(minedKey, 'player')
     addToInventory(blockId)
     progression.recordMine()
+    advanceTutorial('mine')
     const collectedShard = collectExplorationShard(minedKey, blockId)
     if (canAbsorbCharge) absorbCrystalPower(blockId, !collectedShard)
     updateHotbar()
@@ -2846,6 +2888,7 @@ function placeTargetBlock() {
     addBlock(hitBlockPosition.x, hitBlockPosition.y, hitBlockPosition.z, selectedBlock, 'player')
     consumeInventory(selectedBlock)
     progression.recordPlacement()
+    advanceTutorial('place')
     selectNextAvailableBlock()
     updateHotbar()
     updateProgressionUi()
@@ -2867,6 +2910,7 @@ function placeTargetBlock() {
   addBlock(placePosition.x, placePosition.y, placePosition.z, selectedBlock, 'player')
   consumeInventory(selectedBlock)
   progression.recordPlacement()
+  advanceTutorial('place')
   selectNextAvailableBlock()
   updateHotbar()
   updateProgressionUi()
@@ -2887,6 +2931,7 @@ function collectExplorationShard(blockKey: string, blockId: BlockId) {
   collectedShardBlocks.add(blockKey)
   collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedGlowShards + 1)
   progression.setShardCount(collectedGlowShards)
+  advanceTutorial('shard', false)
   const moduleName = ARK_MODULE_NAMES[Math.max(0, collectedGlowShards - 1)] ?? 'Core'
   showToast(collectedGlowShards >= EXPLORATION_GOAL_SHARDS
     ? `Ark Core restored: ${EXPLORATION_GOAL_SHARDS}/${EXPLORATION_GOAL_SHARDS} shards`
@@ -3652,6 +3697,12 @@ function animate() {
     movementDelta.copy(controls.object.position).sub(previousPosition)
     controls.object.position.copy(previousPosition)
     movePlayerHorizontal(movementDelta)
+    if (
+      !tutorialGuide.isComplete('move') &&
+      controls.object.position.distanceToSquared(previousPosition) > 0.0025
+    ) {
+      advanceTutorial('move')
+    }
   }
 
   movePlayerVertical(motionStep.vertical)
