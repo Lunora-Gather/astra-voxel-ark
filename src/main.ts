@@ -19,6 +19,7 @@ import { FrameRateLimiter } from './performance/FrameRateLimiter'
 import {
   ACTIVE_WORLD_SLOT_KEY,
   WORLD_SLOT_IDS,
+  buildLandmarkPlan,
   buildProceduralChunkPlan,
   createWorldSeed,
   formatWorldSeed,
@@ -510,6 +511,7 @@ let lastTerrainEvictionAt = -Infinity
 const removedTerrainBlocks = new Set<string>()
 const playerPlacedBlocks = new Set<string>()
 const landmarkShardBlocks = new Set<string>()
+const landmarkShardNames = new Map<string, string>()
 const collectedShardBlocks = new Set<string>()
 const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
@@ -1168,6 +1170,7 @@ function clearWorldBlocks() {
   removedTerrainBlocks.clear()
   playerPlacedBlocks.clear()
   landmarkShardBlocks.clear()
+  landmarkShardNames.clear()
   optimizedChunks.clear()
   chunkMeshRenderer.clear()
 }
@@ -1213,45 +1216,18 @@ function isValidTerrainChunkKey(key: unknown): key is string {
   return isTerrainChunkInBounds(cx, cz)
 }
 
-function getLandmarkShardKeysForChunk(cx: number, cz: number) {
-  const shardKeys: string[] = []
-  if (cx === 0 && cz === 0) return shardKeys
-  const seededHash = (value: number) => hashNoise(value + (worldSeed === 0 ? 0 : worldSeed * 0.61803398875))
-  const roll = seededHash(cx * 92821 + cz * 68917 + 17)
-  if (roll > 0.28) return shardKeys
-
-  const startX = cx * CHUNK_SIZE
-  const startZ = cz * CHUNK_SIZE
-  const originX = startX + 2 + Math.floor(seededHash(cx * 317 + cz * 911 + 3) * 4)
-  const originZ = startZ + 2 + Math.floor(seededHash(cx * 613 + cz * 271 + 5) * 4)
-  const originY = terrainHeightAt(originX, originZ) + 1
-  if (originY <= 4) return shardKeys
-
-  if (roll < 0.11) {
-    shardKeys.push(blockKey(originX, originY + 2, originZ))
-  } else if (roll < 0.2) {
-    const clusterSize = 4 + Math.floor(seededHash(cx * 149 + cz * 463 + 29) * 4)
-    for (let i = 0; i < clusterSize; i++) {
-      const dx = Math.floor(seededHash(cx * 101 + cz * 103 + i * 37) * 3) - 1
-      const dz = Math.floor(seededHash(cx * 107 + cz * 109 + i * 41) * 3) - 1
-      const dy = i > 3 ? 1 : 0
-      shardKeys.push(blockKey(originX + dx, originY + dy, originZ + dz))
-    }
-  } else {
-    shardKeys.push(blockKey(originX, originY + 2, originZ))
-  }
-  return shardKeys
-}
-
 function rebuildLandmarkShardBlocks() {
   landmarkShardBlocks.clear()
+  landmarkShardNames.clear()
   generatedTerrainChunks.forEach((key) => {
     const [cx, cz] = key.split(',').map(Number)
     if (!Number.isInteger(cx) || !Number.isInteger(cz)) return
-    getLandmarkShardKeysForChunk(cx, cz).forEach((shardKey) => {
+    const landmark = buildLandmarkPlan(cx, cz, CHUNK_SIZE, worldSeed, terrainHeightAt)
+    landmark?.shardKeys.forEach((shardKey) => {
       const id = blockData.get(shardKey)
       if ((id === 'glow' || id === 'crystal') && !playerPlacedBlocks.has(shardKey) && !collectedShardBlocks.has(shardKey)) {
         landmarkShardBlocks.add(shardKey)
+        landmarkShardNames.set(shardKey, landmark.name)
       }
     })
   })
@@ -1518,6 +1494,9 @@ if (isSmokeTest) {
   void import('./player/CollisionSmoke').then(({ assertCollisionSmoke }) => {
     assertCollisionSmoke()
   }).catch((error) => console.error(error))
+  void import('./world/LandmarkTemplatesSmoke').then(({ assertLandmarkTemplatesSmoke }) => {
+    assertLandmarkTemplatesSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1628,7 +1607,10 @@ function applyTerrainPlan(plan: ProceduralChunkPlan) {
   })
   plan.landmarkShardKeys.forEach((shardKey) => {
     const id = blockData.get(shardKey)
-    if ((id === 'glow' || id === 'crystal') && !collectedShardBlocks.has(shardKey)) landmarkShardBlocks.add(shardKey)
+    if ((id === 'glow' || id === 'crystal') && !collectedShardBlocks.has(shardKey)) {
+      landmarkShardBlocks.add(shardKey)
+      if (plan.landmark) landmarkShardNames.set(shardKey, plan.landmark.name)
+    }
   })
   const firstDiscovery = !discoveredTerrainChunks.has(key)
   generatedTerrainChunks.add(key)
@@ -1702,7 +1684,11 @@ function evictTerrainChunk(cx: number, cz: number) {
   withBlockBatch(() => {
     residentBlocks.forEach(({ x, y, z }) => {
       const blockKeyValue = blockKey(x, y, z)
-      if (!playerPlacedBlocks.has(blockKeyValue)) removeBlockAtKey(blockKeyValue)
+      if (!playerPlacedBlocks.has(blockKeyValue)) {
+        landmarkShardBlocks.delete(blockKeyValue)
+        landmarkShardNames.delete(blockKeyValue)
+        removeBlockAtKey(blockKeyValue)
+      }
     })
   })
   generatedTerrainChunks.delete(key)
@@ -2006,6 +1992,7 @@ function findNearestShard() {
     dx: hitBlockPosition.x - pos.x,
     dz: hitBlockPosition.z - pos.z,
     distance: Math.sqrt(nearestDistanceSq),
+    landmarkName: landmarkShardNames.get(nearestKey) ?? 'Core Shard',
   }
 }
 
@@ -2027,7 +2014,7 @@ function updateCompassUi(nearest: ReturnType<typeof findNearestShard>) {
   const yaw = controls.object.rotation.y
   const worldAngle = Math.atan2(nearest.dx, -nearest.dz)
   compassArrow.style.transform = `rotate(${worldAngle - yaw}rad)`
-  compassDistance.textContent = `${directionLabel(nearest.dx, nearest.dz)} · ${Math.round(nearest.distance)}m`
+  compassDistance.textContent = `${nearest.landmarkName} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
   shardBeacon.position.set(nearest.x, nearest.y + 2.35, nearest.z)
   shardBeacon.visible = true
 }
@@ -2819,6 +2806,7 @@ function collectExplorationShard(blockKey: string, blockId: BlockId) {
   compassBadge.classList.add('pulse')
   window.setTimeout(() => compassBadge.classList.remove('pulse'), 650)
   landmarkShardBlocks.delete(blockKey)
+  landmarkShardNames.delete(blockKey)
   collectedShardBlocks.add(blockKey)
   collectedGlowShards = Math.min(EXPLORATION_GOAL_SHARDS, collectedGlowShards + 1)
   progression.setShardCount(collectedGlowShards)

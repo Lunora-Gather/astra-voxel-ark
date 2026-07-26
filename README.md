@@ -22,7 +22,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Android shell via Capacitor
 - Ubuntu Linux and Windows desktop shells via Electron Builder
 - Two-page nine-slot hotbar plus a complete 18-material backpack and direct selection
-- Beacon Trail exploration loop: collect landmark shards, repair visible Ark Core modules and strengthen night survival
+- Beacon Trail exploration loop: follow named biome landmarks, collect their shards, repair visible Ark Core modules and strengthen night survival
 - Single-player progression with tool tiers, crafting recipes, expedition objectives and claimable rewards
 - Four deterministic biomes with layered copper, gold, crystal and obsidian resources
 - Worker-planned terrain, resident chunk eviction, and four-tier low-end device scaling

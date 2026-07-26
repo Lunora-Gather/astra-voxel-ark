@@ -1,6 +1,7 @@
 import type { BlockId } from '../blocks'
 import { getBiomeAt } from './Biomes'
 import { terrainNoise } from '../worldMath'
+import { buildLandmarkPlan, type LandmarkPlan } from './LandmarkTemplates'
 import { getWorldSeedOffsets, normalizeWorldSeed } from './WorldSeed'
 
 export type ProceduralBlock = { x: number; y: number; z: number; id: BlockId }
@@ -10,13 +11,13 @@ export type ProceduralChunkPlan = {
   blocks: ProceduralBlock[]
   grassTufts: Array<[number, number, number]>
   landmarkShardKeys: string[]
+  landmark: LandmarkPlan | null
 }
 
 export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: number, worldSeed = 0): ProceduralChunkPlan {
   const normalizedSeed = normalizeWorldSeed(worldSeed)
   const blockMap = new Map<string, ProceduralBlock>()
   const grassTufts: Array<[number, number, number]> = []
-  const landmarkShardKeys: string[] = []
   const add = (x: number, y: number, z: number, id: BlockId) => {
     const key = `${x},${y},${z}`
     if (!blockMap.has(key)) blockMap.set(key, { x, y, z, id })
@@ -42,8 +43,22 @@ export function buildProceduralChunkPlan(cx: number, cz: number, chunkSize: numb
     }
   }
 
-  addLandmark(add, landmarkShardKeys, cx, cz, chunkSize, normalizedSeed)
-  return { cx, cz, blocks: [...blockMap.values()], grassTufts, landmarkShardKeys }
+  const landmark = buildLandmarkPlan(
+    cx,
+    cz,
+    chunkSize,
+    normalizedSeed,
+    (x, z) => proceduralTerrainHeightAt(x, z, normalizedSeed),
+  )
+  landmark?.blocks.forEach(({ x, y, z, id }) => add(x, y, z, id))
+  return {
+    cx,
+    cz,
+    blocks: [...blockMap.values()],
+    grassTufts,
+    landmarkShardKeys: landmark?.shardKeys ?? [],
+    landmark,
+  }
 }
 
 export function proceduralTerrainHeightAt(x: number, z: number, worldSeed = 0) {
@@ -76,54 +91,6 @@ function addTree(add: (x: number, y: number, z: number, id: BlockId) => void, x:
       add(x + dx, top + dy, z + dz, 'leaves')
     }
   }
-}
-
-function addLandmark(
-  add: (x: number, y: number, z: number, id: BlockId) => void,
-  shardKeys: string[],
-  cx: number,
-  cz: number,
-  chunkSize: number,
-  worldSeed: number,
-) {
-  if (cx === 0 && cz === 0) return
-  const roll = seededHash(cx * 92821 + cz * 68917 + 17, worldSeed)
-  if (roll > 0.28) return
-  const originX = cx * chunkSize + 2 + Math.floor(seededHash(cx * 317 + cz * 911 + 3, worldSeed) * 4)
-  const originZ = cz * chunkSize + 2 + Math.floor(seededHash(cx * 613 + cz * 271 + 5, worldSeed) * 4)
-  const originY = proceduralTerrainHeightAt(originX, originZ, worldSeed) + 1
-  if (originY <= 4) return
-  const landmark = (dx: number, dy: number, dz: number, id: BlockId) => {
-    const x = originX + dx
-    const y = originY + dy
-    const z = originZ + dz
-    add(x, y, z, id)
-    if (id === 'glow' || id === 'crystal') shardKeys.push(`${x},${y},${z}`)
-  }
-
-  if (roll < 0.11) {
-    const blocks: Array<[number, number, number, BlockId]> = [
-      [0, 0, 0, 'moss'], [1, 0, 0, 'stone'], [-1, 0, 0, 'moss'], [0, 0, 1, 'stone'],
-      [0, 1, 0, 'brick'], [1, 1, 0, 'moss'], [0, 1, 1, 'brick'], [0, 2, 0, 'glow'],
-      [-1, 0, 1, 'gravel'], [1, 0, 1, 'gravel'],
-    ]
-    blocks.forEach(([dx, dy, dz, id]) => landmark(dx, dy, dz, id))
-    return
-  }
-  if (roll < 0.2) {
-    const clusterSize = 4 + Math.floor(seededHash(cx * 149 + cz * 463 + 29, worldSeed) * 4)
-    for (let i = 0; i < clusterSize; i += 1) {
-      const dx = Math.floor(seededHash(cx * 101 + cz * 103 + i * 37, worldSeed) * 3) - 1
-      const dz = Math.floor(seededHash(cx * 107 + cz * 109 + i * 41, worldSeed) * 3) - 1
-      landmark(dx, i > 3 ? 1 : 0, dz, i === 0 ? 'glow' : 'crystal')
-    }
-    return
-  }
-  landmark(0, 0, 0, 'obsidian')
-  landmark(0, 1, 0, 'stone')
-  landmark(0, 2, 0, 'crystal')
-  landmark(1, 0, 0, 'gravel')
-  landmark(-1, 0, 0, 'gravel')
 }
 
 function seededNoise(worldSeed: number, ...values: number[]) {

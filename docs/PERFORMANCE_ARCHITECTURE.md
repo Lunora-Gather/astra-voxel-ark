@@ -30,7 +30,9 @@ The runtime distinguishes:
 `src/world/ChunkResidency.ts` selects the farthest resident chunks outside the retention
 radius. Eviction removes deterministic terrain but keeps the discovery record, removed-block
 deltas, collected shards, and player-placed blocks. Returning to an area regenerates terrain
-and reapplies those deltas.
+and reapplies those deltas. Runtime landmark shard and name indexes are evicted with their chunk
+and rebuilt from the shared deterministic template when it becomes resident again, preventing
+stale compass targets and keeping navigation memory proportional to resident terrain.
 
 ## Main-thread budgets
 

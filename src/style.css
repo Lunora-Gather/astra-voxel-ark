@@ -469,8 +469,13 @@ body:not(.touch-layout) .mobile-controls { display: none; }
   transition: transform 0.18s ease;
 }
 .compass-distance {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   font-weight: 800;
   opacity: 0.92;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .compass-badge.complete .compass-arrow {
   background: rgba(168,255,185,.16);

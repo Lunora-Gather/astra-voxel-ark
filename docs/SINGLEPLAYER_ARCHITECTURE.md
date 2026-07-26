@@ -11,6 +11,12 @@ The live game remains in `src/main.ts`, but new gameplay rules must not be imple
 
 The single-player rules do not import Three.js, DOM APIs, local storage or a transport library. This keeps them testable and lets a future authoritative multiplayer host reuse or replace rules without coupling networking to rendering.
 
+`src/world/LandmarkTemplates.ts` is the single deterministic source for Moss Shrine, Crystal Bloom
+and Waystone layouts. It preserves the legacy hash thresholds and coordinates used by existing
+worlds, while attaching biome-specific landmark names for the compass. Both Worker terrain creation
+and save restoration consume the same planner. Resident-chunk eviction removes corresponding shard
+and name entries so constrained devices never retain navigation targets for unloaded terrain.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.
