@@ -29,6 +29,7 @@ import { buildChunkMeshData } from './render/ChunkMeshBuilder'
 import { ChunkMeshRenderer } from './render/ChunkMeshRenderer'
 import { isGreedyMeshEligible } from './render/BlockRenderLayers'
 import { applyPointLightBudget } from './render/lightBudget'
+import { SkyDecorationSystem } from './render/SkyDecorationSystem'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
 import { FrameRateLimiter } from './performance/FrameRateLimiter'
@@ -647,8 +648,6 @@ grassBladeMesh.receiveShadow = enableBlockShadows
 grassBladeMesh.frustumCulled = true
 world.add(grassBladeMesh)
 let blockMutationVersion = 0
-let cloudAnimationCursor = 0
-let sparkleAnimationCursor = 0
 let cosmeticEffectsReduced = false
 let terrainQueueFrameSkip = 0
 const STARTER_INVENTORY: Partial<Record<BlockId, number>> = {
@@ -1674,6 +1673,9 @@ if (isSmokeTest) {
   void import('./singleplayer/ArkRestSystemSmoke').then(({ assertArkRestSystemSmoke }) => {
     assertArkRestSystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./render/SkyDecorationSystemSmoke').then(({ assertSkyDecorationSystemSmoke }) => {
+    assertSkyDecorationSystemSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1999,37 +2001,13 @@ const starPointMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.28, siz
 const stars = new THREE.Points(starBufferGeo, starPointMat)
 scene.add(stars)
 
-const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, roughness: 1 })
-const cloudGeo = new THREE.SphereGeometry(1, 16, 8)
-const clouds = new THREE.Group()
 const maxClouds = runtimeProfile.tier === 'ultra-low' ? 2 : lowPowerMode ? 3 : runtimeProfile.tier === 'standard' ? 12 : 18
-for (let i = 0; i < maxClouds; i++) {
-  const cloud = new THREE.Group()
-  const x = (Math.random() - 0.5) * 95
-  const z = (Math.random() - 0.5) * 95
-  const y = 18 + Math.random() * 16
-  cloud.position.set(x, y, z)
-  for (let j = 0; j < 4; j++) {
-    const puff = new THREE.Mesh(cloudGeo, cloudMat)
-    puff.position.set((j - 1.5) * 1.3, Math.sin(j) * 0.35, (Math.random() - 0.5) * 1.2)
-    puff.scale.set(2.5 + Math.random() * 2.2, 0.42 + Math.random() * 0.25, 1.0 + Math.random() * 0.9)
-    cloud.add(puff)
-  }
-  clouds.add(cloud)
-}
-scene.add(clouds)
-
-const sparkles = new THREE.Group()
-const sparkleGeo = new THREE.IcosahedronGeometry(0.055, 0)
-const sparkleMat = new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.82 })
 const maxSparkles = runtimeProfile.tier === 'ultra-low' ? 0 : lowPowerMode ? 6 : runtimeProfile.tier === 'standard' ? 72 : 120
-for (let i = 0; i < maxSparkles; i++) {
-  const sparkle = new THREE.Mesh(sparkleGeo, sparkleMat)
-  sparkle.position.set((Math.random() - 0.5) * 62, 5 + Math.random() * 18, (Math.random() - 0.5) * 62)
-  sparkle.userData.seed = Math.random() * Math.PI * 2
-  sparkles.add(sparkle)
-}
-scene.add(sparkles)
+const skyDecorations = new SkyDecorationSystem({
+  scene,
+  cloudCount: maxClouds,
+  sparkleCount: maxSparkles,
+})
 
 const shardBeacon = new THREE.Group()
 const shardBeaconRing = new THREE.Mesh(
@@ -4229,25 +4207,11 @@ function animate() {
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)
   waterTimeUniform.value = elapsedTime
   grassTimeUniform.value = elapsedTime
-  if (!cosmeticEffectsReduced) clouds.rotation.y += dt * 0.006
-  const cloudCount = clouds.children.length
-  const cloudUpdates = cosmeticEffectsReduced ? 0 : Math.min(cloudCount, adaptiveBudget(cloudCount, Math.min(3, cloudCount)))
-  if (cloudAnimationCursor >= cloudCount) cloudAnimationCursor = 0
-  for (let i = 0; i < cloudUpdates; i++) {
-    const cloud = clouds.children[cloudAnimationCursor]
-    cloud.position.x += Math.sin(elapsedTime * 0.08 + cloudAnimationCursor) * dt * 0.03
-    cloudAnimationCursor = (cloudAnimationCursor + 1) % cloudCount
-  }
-  const sparkleCount = sparkles.children.length
-  const sparkleUpdates = Math.min(sparkleCount, adaptiveBudget(sparkleCount, lowPowerMode ? 12 : 24))
-  if (sparkleAnimationCursor >= sparkleCount) sparkleAnimationCursor = 0
-  for (let i = 0; i < sparkleUpdates; i++) {
-    const sparkle = sparkles.children[sparkleAnimationCursor]
-    const seed = sparkle.userData.seed as number
-    sparkle.position.y += Math.sin(elapsedTime * 1.4 + seed) * dt * 0.08
-    sparkle.rotation.y += dt * 1.2
-    sparkleAnimationCursor = (sparkleAnimationCursor + 1) % sparkleCount
-  }
+  const cloudUpdates = cosmeticEffectsReduced
+    ? 0
+    : adaptiveBudget(skyDecorations.cloudCount, Math.min(3, skyDecorations.cloudCount))
+  const sparkleUpdates = adaptiveBudget(skyDecorations.sparkleCount, lowPowerMode ? 12 : 24)
+  skyDecorations.update(dt, elapsedTime, cloudUpdates, sparkleUpdates, cosmeticEffectsReduced)
   renderer.render(scene, camera)
 }
 animate()
@@ -4264,5 +4228,6 @@ window.addEventListener('pagehide', () => {
   if (hasStarted) getWorldSaveSystem().save(serializeWorld())
   terrainWorker?.dispose()
   particleEffects.dispose()
+  skyDecorations.dispose()
   audioSystem.dispose()
 }, { once: true })

@@ -40,7 +40,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Health, safe-threshold fall damage, cold-night exposure and Ark recovery
 - Night-only Ark shelter rest near the core, advancing to dawn with bounded health and power recovery
 - Dreamy day-night cycle
-- Soft fog, shadows, stars, clouds, sparkles, animated water, swaying grass and emissive blocks
+- Soft fog, shadows, stars, two-draw instanced clouds and sparkles, animated water, swaying grass and emissive blocks
 - Procedural pixel textures for every block type
 - Small code modules for block definitions, procedural textures and terrain math
 - Polished glassmorphism HUD and landing panel

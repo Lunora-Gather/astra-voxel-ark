@@ -132,6 +132,9 @@ High-impact tasks:
   block lookups, bounded vertical speed and change-only Jump/Swim feedback.
 - Ark shelter rest closes the cold-night loop through a deterministic time/distance rule and existing
   save fields, with one Journey card and no scene or per-frame allocation.
+- Clouds and sparkles are integrated through two instanced draw objects with packed reusable state,
+  preserving tier-specific counts and adaptive animation budgets while removing up to 192 individual
+  decoration meshes from the scene graph.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence

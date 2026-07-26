@@ -129,6 +129,14 @@ terrain/mesh queues, draw calls, triangles, geometries and textures. Large count
 shows the latest collected frame immediately. Minimal layouts constrain it to the right safe column,
 and the menu hides its redundant toggle button so the two controls cannot overlap.
 
+## Sky decoration batching
+
+`src/render/SkyDecorationSystem.ts` owns cloud and sparkle rendering. Every quality tier uses one
+instanced cloud mesh and one instanced sparkle mesh, replacing up to 192 independent decoration
+meshes with two draw objects. Packed typed-array state and reusable transform objects keep animation
+allocation-free, while the existing adaptive budgets still cap how many cloud and sparkle instances
+are rewritten each frame. Ultra-low mode retains its reduced counts and can omit sparkles entirely.
+
 ## Compatibility boundary
 
 Multiplayer remains a disabled session gateway. Performance and world-lifecycle code is
