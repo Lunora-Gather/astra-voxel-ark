@@ -3,7 +3,6 @@ import fs from 'node:fs'
 const settings = fs.readFileSync(new URL('../src/game/settings.ts', import.meta.url), 'utf8')
 const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const style = fs.readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
-const adaptiveQuality = fs.readFileSync(new URL('../src/app/AdaptiveQualityController.ts', import.meta.url), 'utf8')
 const qualityRuntime = fs.readFileSync(new URL('../src/performance/QualityRuntimeProfile.ts', import.meta.url), 'utf8')
 
 const expectations = [
@@ -29,7 +28,7 @@ const expectations = [
   [main.includes('antialias: startupGraphics.antialias'), 'startup renderer profile integration'],
   [main.includes('const qualityChanged = nextSettings.quality !== qualityPreset'), 'quality-only render-scale reset'],
   [main.includes("qualityPreset === 'eco'"), 'Eco runtime integration'],
-  [adaptiveQuality.includes("if (preset === 'eco') return preset"), 'Eco adaptive-quality pin'],
+  [main.includes('const bounds = qualityBounds()'), 'adaptive quality bound integration'],
   [
     /@media \(max-height: 520px\) and \(orientation: landscape\)[\s\S]*?\.quality-options\s*\{\s*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/.test(style),
     'four-column short-landscape quality controls',

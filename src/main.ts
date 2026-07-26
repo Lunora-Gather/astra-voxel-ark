@@ -79,7 +79,7 @@ import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } fr
 import { PageLifecycleSaveCoordinator, SaveActivityTracker, SettingsStore, type GameSettings, type QualityPreset } from './game'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v1.5.0 Wayfinder Progression'
+const GAME_VERSION_LABEL = 'v1.0.0 Full Release'
 const smokeParams = new URLSearchParams(window.location.hash.slice(1))
 const isSmokeTest = smokeParams.has('smoke')
 const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
@@ -348,7 +348,7 @@ app.innerHTML = `
         </section>
       </div>
     </div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><div class="start-features"><span>Offline world</span><span>Autosave</span><span>Adaptive performance</span></div><div class="start-actions"><button class="start-primary">Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.0</h2><p>Gather, craft, build and restore the Ark Core</p><div class="start-features"><span>Offline world</span><span>Autosave</span><span>Adaptive performance</span></div><div class="start-actions"><button class="start-primary">Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div></div>
   </div>
 `
 
@@ -501,14 +501,6 @@ const chunkMeshRenderer = new ChunkMeshRenderer({
 })
 const particleEffects = new ParticleEffectsPipeline({
   scene,
-  flags: {
-    diagnostics: false,
-    chunkMeshDiagnostics: false,
-    chunkMeshRenderer: true,
-    terrainWorker: false,
-    particlePool: true,
-    lightBudget: true,
-  },
   poolSize: runtimeLimits.particlePoolSize,
   lowPowerMode,
 })

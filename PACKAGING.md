@@ -74,5 +74,5 @@ Recommended release flow:
 1. Merge a verified pull request into `main`.
 2. Confirm GitHub Pages deploy succeeds.
 3. Bump `package.json` version and the visible `GAME_VERSION_LABEL` in `src/main.ts`.
-4. Create and push a version tag such as `v1.4.1` when desktop/mobile artifacts are needed.
+4. Create and push a semantic version tag such as `v1.0.0` when desktop/mobile artifacts are needed.
 5. Inspect the published GitHub Release assets before announcing them externally.

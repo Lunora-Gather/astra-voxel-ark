@@ -1,11 +1,10 @@
 import * as THREE from 'three'
 import { BLOCKS, type BlockId } from '../blocks'
-import { InstancedParticlePool } from '../render'
-import type { OptimizationFeatureFlags } from './FeatureFlags'
+import { InstancedParticlePool } from '../render/ParticlePool'
 
 export type ParticleEffectsPipelineOptions = {
   scene: THREE.Scene
-  flags: OptimizationFeatureFlags
+  enabled?: boolean
   poolSize: number
   lowPowerMode?: boolean
 }
@@ -31,8 +30,8 @@ export class ParticleEffectsPipeline {
   private readonly tempPosition = new THREE.Vector3()
   private readonly tempVelocity = new THREE.Vector3()
 
-  constructor({ scene, flags, poolSize, lowPowerMode = false }: ParticleEffectsPipelineOptions) {
-    this.enabled = flags.particlePool
+  constructor({ scene, enabled = true, poolSize, lowPowerMode = false }: ParticleEffectsPipelineOptions) {
+    this.enabled = enabled
     this.lowPowerMode = lowPowerMode
 
     if (!this.enabled) return

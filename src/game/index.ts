@@ -1,4 +1,3 @@
-export * from './legacySettings'
 export * from './PageLifecycleSaveCoordinator'
 export * from './performance'
 export * from './SaveActivityTracker'

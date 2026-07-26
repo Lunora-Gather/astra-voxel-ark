@@ -12,6 +12,7 @@ const expectations = [
   [pool.includes('THREE.DynamicDrawUsage'), 'dynamic instance buffer usage'],
   [pool.includes('this.mesh.count = this.active.length'), 'active instance compaction'],
   [(pipeline.match(/new InstancedParticlePool/g) ?? []).length === 2, 'two shared effect batches'],
+  [pipeline.includes('enabled = true'), 'default-on live particle pipeline'],
   [!pipeline.includes('position.clone()'), 'allocation-free burst positions'],
   [!pipeline.includes('blockPools'), 'no material pool per block'],
   [runtimeSmoke.includes('two instanced draw objects'), 'runtime draw-object contract'],

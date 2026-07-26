@@ -5,14 +5,6 @@ export function assertParticleEffectsPipelineSmoke() {
   const scene = new THREE.Scene()
   const particles = new ParticleEffectsPipeline({
     scene,
-    flags: {
-      diagnostics: false,
-      chunkMeshDiagnostics: false,
-      chunkMeshRenderer: true,
-      terrainWorker: false,
-      particlePool: true,
-      lightBudget: true,
-    },
     poolSize: 36,
   })
 
