@@ -39,9 +39,9 @@ export function assertPlayerMotionControllerSmoke() {
   }
   for (let i = 0; i < 12; i += 1) jumpMotion.update(0, 0, false, true, 0.05)
   if (jumpMotion.verticalSpeed >= 0) throw new Error('Player motion smoke failed: gravity did not reverse the jump')
-  jumpMotion.land()
-  if (!jumpMotion.isGrounded || jumpMotion.verticalSpeed !== 0) {
-    throw new Error('Player motion smoke failed: landing did not reset vertical motion')
+  const landingImpact = jumpMotion.land()
+  if (!jumpMotion.isGrounded || jumpMotion.verticalSpeed !== 0 || landingImpact <= 0) {
+    throw new Error('Player motion smoke failed: landing did not report and reset downward motion')
   }
 
   const lowRateDistance = simulateForwardDistance(20, 0.05)

@@ -23,6 +23,10 @@ same allocation-free controller; `main.ts` only rotates its reused displacement 
 `PointerLockControls` and passes the result to `PlayerCollisionResolver`. Delta time is capped at
 50 ms so a stalled low-end frame cannot create a tunneling-sized movement step. Pause, focus loss,
 orientation changes, world loading and respawn explicitly reset the relevant motion state.
+`PlayerMotionController.land()` returns the downward impact speed before clearing velocity.
+`SurvivalVitals.getFallDamage` owns the safe landing threshold and deterministic damage curve, while
+`applyDamage` records a fatal transition only once. The browser adapter supplies sound, haptics,
+health HUD feedback and the existing Ark respawn without adding renderer state to either rule module.
 
 `src/world/WorldCoordinates.ts` owns Minecraft-style block coordinate rounding and display/clipboard
 formats. The roomy and compact desktop HUD exposes a copyable biome/location card; minimal HUDs omit

@@ -35,7 +35,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 - Hysteresis-based runtime performance guard that temporarily trims world work, lights and cosmetics during sustained frame pressure
 - Persistent 30/60 FPS frame cap plus sound volume and mute controls
 - Optional compact performance HUD with frame, world, draw-call and GPU resource diagnostics
-- Health, cold-night damage and Ark recovery
+- Health, safe-threshold fall damage, cold-night exposure and Ark recovery
 - Dreamy day-night cycle
 - Soft fog, shadows, stars, clouds, sparkles, animated water, swaying grass and emissive blocks
 - Procedural pixel textures for every block type

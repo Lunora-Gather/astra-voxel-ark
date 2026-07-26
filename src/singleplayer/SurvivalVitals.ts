@@ -10,6 +10,14 @@ export type SurvivalUpdate = {
   died: boolean
 }
 
+const SAFE_LANDING_SPEED = 11
+const FALL_DAMAGE_PER_SPEED = 5.5
+
+export function getFallDamage(impactSpeed: number) {
+  const excessSpeed = Math.max(0, finiteNonNegative(impactSpeed) - SAFE_LANDING_SPEED)
+  return Math.round(excessSpeed * FALL_DAMAGE_PER_SPEED * 10) / 10
+}
+
 export class SurvivalVitals {
   readonly maxHealth = 100
   private health = this.maxHealth
@@ -28,12 +36,25 @@ export class SurvivalVitals {
     const damage = Math.max(0, coldExposure) * 5 * Math.max(0, deltaSeconds)
     const recovery = canRecover && damage === 0 ? 1.25 * Math.max(0, deltaSeconds) : 0
     this.health = clamp(this.health - damage + recovery, 0, this.maxHealth)
-    const died = this.health <= 0
+    const died = before > 0 && this.health <= 0
     if (died) this.deaths += 1
     return {
       health: this.health,
       damageTaken: Math.max(0, before - this.health),
       recovered: Math.max(0, this.health - before),
+      died,
+    }
+  }
+
+  applyDamage(amount: number): SurvivalUpdate {
+    const before = this.health
+    this.health = clamp(this.health - finiteNonNegative(amount), 0, this.maxHealth)
+    const died = before > 0 && this.health <= 0
+    if (died) this.deaths += 1
+    return {
+      health: this.health,
+      damageTaken: Math.max(0, before - this.health),
+      recovered: 0,
       died,
     }
   }
@@ -59,6 +80,10 @@ export class SurvivalVitals {
 
 function finiteClamp(value: unknown, min: number, max: number, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback
+}
+
+function finiteNonNegative(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
 function clamp(value: number, min: number, max: number) {

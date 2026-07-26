@@ -13,6 +13,7 @@ import {
   SurvivalVitals,
   TutorialGuide,
   getBuildPatternDefinition,
+  getFallDamage,
   isBuildPatternId,
   type BuildPatternId,
   type TutorialStepId,
@@ -1641,6 +1642,9 @@ if (isSmokeTest) {
   void import('./singleplayer/ProgressionSystemSmoke').then(({ assertProgressionSystemSmoke }) => {
     assertProgressionSystemSmoke()
   }).catch((error) => console.error(error))
+  void import('./singleplayer/SurvivalVitalsSmoke').then(({ assertSurvivalVitalsSmoke }) => {
+    assertSurvivalVitalsSmoke()
+  }).catch((error) => console.error(error))
   void import('./singleplayer/BuildPatternSystemSmoke').then(({ assertBuildPatternSystemSmoke }) => {
     assertBuildPatternSystemSmoke()
   }).catch((error) => console.error(error))
@@ -1672,8 +1676,8 @@ function movePlayerHorizontal(delta: THREE.Vector3) {
 function movePlayerVertical(deltaY: number) {
   const pos = controls.object.position
   const result = playerCollision.moveVertical(pos, deltaY)
-  if (result.collided) playerMotion.cancelVertical()
-  if (result.grounded) playerMotion.setGrounded(true)
+  if (result.grounded) applyLandingImpact(playerMotion.land())
+  else if (result.collided) playerMotion.cancelVertical()
 }
 
 // 放置预览 ghost box
@@ -3609,6 +3613,27 @@ function respawnPlayer() {
   showToast('Wayfinder recovered at the Ark')
 }
 
+function updateHealthUi() {
+  const health = Math.round(survivalVitals.getHealth())
+  if (healthBarEl) healthBarEl.style.width = `${health}%`
+  if (healthValEl) healthValEl.textContent = `${health}%`
+}
+
+function applyLandingImpact(impactSpeed: number) {
+  const damage = getFallDamage(impactSpeed)
+  if (damage <= 0) return
+  const update = survivalVitals.applyDamage(damage)
+  updateHealthUi()
+  playGameSound('break', 0.18)
+  vibrateTouch([14, 24, 20])
+  if (update.died) {
+    respawnPlayer()
+    updateHealthUi()
+    return
+  }
+  showToast(`Hard landing · -${Math.round(update.damageTaken)} health`)
+}
+
 function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const deepNight = day < 0.23
   const night = day < 0.38
@@ -3672,9 +3697,7 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const threatText = `${phase} · ${threat}`
 
   if (!threatValEl || !crystalBarEl || !crystalValEl || !survivalBadgeEl) return
-  const health = Math.round(survivalVitals.getHealth())
-  if (healthBarEl) healthBarEl.style.width = `${health}%`
-  if (healthValEl) healthValEl.textContent = `${health}%`
+  updateHealthUi()
   if (
     elapsedTime - lastSurvivalUiAt < 0.25 &&
     chargeInt === lastSurvivalCharge &&
@@ -4039,7 +4062,10 @@ function animate() {
   const terrainQueueBudget = terrainQueueFrameSkip++ % terrainQueueCadence === 0 ? TERRAIN_CHUNKS_PER_FRAME : 0
   if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
   const floor = playerCollision.findFloorAt(pos.x, pos.z, pos.y)
-  if (pos.y < floor) { pos.y = floor; playerMotion.land() }
+  if (pos.y < floor) {
+    pos.y = floor
+    applyLandingImpact(playerMotion.land())
+  }
   else if (pos.y > floor + 0.05) playerMotion.setGrounded(false)
   if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)
   updateMining()

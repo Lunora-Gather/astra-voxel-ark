@@ -98,8 +98,10 @@ export class PlayerMotionController {
   }
 
   land() {
+    const impactSpeed = Math.max(0, -this.verticalVelocity)
     this.grounded = true
     this.verticalVelocity = 0
+    return impactSpeed
   }
 
   cancelVertical() {
