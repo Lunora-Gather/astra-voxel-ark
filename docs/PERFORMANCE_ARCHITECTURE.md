@@ -7,7 +7,17 @@ The single-player runtime treats low-end hardware as a first-class target.
 `src/performance/DeviceProfile.ts` classifies the current device into `ultra-low`, `low`,
 `standard`, or `high`. The policy controls pixel ratio, dynamic render scale, frame target,
 terrain concurrency, mesh rebuild time, particles, point lights, and decorative animation.
-The graphics setting remains an override inside the safe bounds of the detected device.
+
+The tier picks defaults and hard safety rails; the user-facing quality preset decides the look.
+`resolveQualityRuntimeProfile` maps preset × tier to a terrain render style — `merged-flat`
+(one vertex-colored Lambert mesh per chunk), `textured-lambert` (textured per-vertex lighting)
+or `textured-standard` (full PBR) — plus shadow availability and shadow-map size (512 on
+constrained tiers, 1024 otherwise). Eco is merged-flat everywhere; low-tier Balanced unlocks
+textured Lambert terrain; low-tier High additionally unlocks compact shadows; ultra-low High
+unlocks textures but never shadows. Switching presets swaps the renderer's material sources and
+marks every chunk dirty, so meshes rebuild progressively inside the normal frame budgets.
+View distance is a player choice up to Far on `low` (Normal on `ultra-low`); the pressure guard
+still subtracts radius under sustained load and Eco still caps it to Near.
 
 `src/performance/RuntimePerformanceGuard.ts` adds a second, transient layer for sustained runtime
 pressure. Sample hysteresis moves through `normal`, `strained`, and `critical` rather than reacting

@@ -955,11 +955,12 @@ async function runScenario(win, scenario) {
   ) {
     fail('Eco graphics should atomically enable the persisted low-cost runtime profile', eco)
   }
-  await setSelect(win, '.view-distance-select', tunedViewDistance)
   const tunedFrameRate = '30'
   await setSelect(win, '.frame-rate-select', tunedFrameRate)
   await setRange(win, '.volume-input', 25)
   await click(win, '.quality-btn[data-quality="low"]')
+  // Eco clamps view distance to Near, so pick the tuned distance after leaving Eco.
+  await setSelect(win, '.view-distance-select', tunedViewDistance)
   await setCheckbox(win, '.perf-toggle', true)
   await setCheckbox(win, '.sound-toggle', false)
   const tuned = await readState(win, `${scenario.label}:settings-tuned`)

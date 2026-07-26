@@ -2,7 +2,7 @@ import './style.css'
 import * as THREE from 'three'
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js'
 import { BLOCKS, type BlockId } from './blocks'
-import { animateBlockMaterials, createBlockMaterials } from './textures'
+import { animateBlockMaterials, createBlockLambertMaterials, createBlockMaterials } from './textures'
 import {
   BUILD_PATTERNS,
   BuildHistorySystem,
@@ -36,7 +36,7 @@ import { SkyDecorationSystem } from './render/SkyDecorationSystem'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
 import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
 import { FrameRateLimiter } from './performance/FrameRateLimiter'
-import { resolveQualityRuntimeProfile } from './performance/QualityRuntimeProfile'
+import { resolveQualityRuntimeProfile, type TerrainRenderStyle } from './performance/QualityRuntimeProfile'
 import { RuntimePerformanceGuard } from './performance/RuntimePerformanceGuard'
 import {
   ACTIVE_WORLD_SLOT_KEY,
@@ -381,7 +381,7 @@ function applyRenderQuality() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio * renderQuality, runtimeLimits.maxPixelRatio))
 }
 applyRenderQuality()
-renderer.shadowMap.enabled = startupSettings.quality !== 'eco' && startupSettings.quality !== 'low' && !lowPowerMode
+renderer.shadowMap.enabled = startupGraphics.allowShadows
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 // The world is static between edits and the sun crawls, so re-render shadows on a cadence instead of every frame.
 renderer.shadowMap.autoUpdate = false
@@ -395,6 +395,7 @@ scene.add(controls.object)
 let mouseLookSpeed = startupSettings.sensitivity / 100
 let touchLookSpeed = 0.00245
 let qualityPreset: QualityPreset = startupSettings.quality
+let activeGraphicsProfile = startupGraphics
 let showPerformanceHud = startupSettings.showPerf
 const MAX_LOOK_PITCH = THREE.MathUtils.degToRad(85)
 const lookStabilizerEuler = new THREE.Euler(0, 0, 0, 'YXZ')
@@ -420,7 +421,7 @@ scene.add(hemi)
 const sun = new THREE.DirectionalLight(0xfff3c4, 2.9)
 sun.position.set(38, 55, 22)
 sun.castShadow = renderer.shadowMap.enabled
-sun.shadow.mapSize.set(1024, 1024)
+sun.shadow.mapSize.set(startupGraphics.shadowMapSize, startupGraphics.shadowMapSize)
 sun.shadow.camera.left = -56
 sun.shadow.camera.right = 56
 sun.shadow.camera.top = 56
@@ -494,16 +495,29 @@ const worldSlotNameStore = new WorldSlotNameStore()
 let worldSlotNames = worldSlotNameStore.load()
 const CHUNK_SIZE = 8
 const optimizedChunks = new ChunkManager(CHUNK_SIZE)
-const lowFidelityTerrainMaterial = lowPowerMode
-  ? new THREE.MeshLambertMaterial({ vertexColors: true })
-  : null
+// Terrain material sets are created lazily per render style; textures are shared across sets.
+let mergedFlatTerrainMaterial: THREE.MeshLambertMaterial | null = null
+let lambertBlockMaterials: Map<BlockId, THREE.Material | THREE.Material[]> | null = null
+
+function terrainMaterialSourcesFor(style: TerrainRenderStyle) {
+  if (style === 'merged-flat') {
+    if (!mergedFlatTerrainMaterial) mergedFlatTerrainMaterial = new THREE.MeshLambertMaterial({ vertexColors: true })
+    return { materials, mergedMaterial: mergedFlatTerrainMaterial }
+  }
+  if (style === 'textured-lambert') {
+    if (!lambertBlockMaterials) lambertBlockMaterials = createBlockLambertMaterials(materials)
+    return { materials: lambertBlockMaterials, mergedMaterial: null }
+  }
+  return { materials, mergedMaterial: null }
+}
+
+let activeTerrainStyle: TerrainRenderStyle = startupGraphics.terrainStyle
 const chunkMeshRenderer = new ChunkMeshRenderer({
   scene: world,
-  materials,
-  mergedMaterial: lowFidelityTerrainMaterial,
+  ...terrainMaterialSourcesFor(activeTerrainStyle),
   blockColors: new Map(BLOCKS.map(({ id, color }) => [id, color])),
-  castShadow: !lowPowerMode,
-  receiveShadow: !lowPowerMode,
+  castShadow: startupGraphics.allowShadows,
+  receiveShadow: startupGraphics.allowShadows,
 })
 const particleEffects = new ParticleEffectsPipeline({
   scene,
@@ -630,7 +644,18 @@ grassBladeMaterial.onBeforeCompile = (shader) => {
     `
   )
 }
-const enableBlockShadows = !lowPowerMode
+let worldShadowFlagsEnabled = startupGraphics.allowShadows
+
+function applyWorldShadowFlags(enabled: boolean) {
+  if (worldShadowFlagsEnabled === enabled) return
+  worldShadowFlagsEnabled = enabled
+  chunkMeshRenderer.setShadowFlags(enabled, enabled)
+  instancedBlockMeshes.forEach((mesh, id) => {
+    mesh.castShadow = enabled && instancedShadowCasterIds.has(id)
+    mesh.receiveShadow = enabled
+  })
+  if (grassBladeMesh) grassBladeMesh.receiveShadow = enabled
+}
 const MAX_GLOW_LIGHTS = Math.max(runtimeLimits.activePointLights * 3, runtimeLimits.activePointLights)
 const MAX_ACTIVE_GLOW_LIGHTS = runtimeLimits.activePointLights
 
@@ -640,7 +665,7 @@ grassBladeGeo.translate(0, 0.29, 0)
 grassBladeMesh = new THREE.InstancedMesh(grassBladeGeo, grassBladeMaterial, Math.max(3, GRASS_ANIMATION_BUDGET * 3))
 grassBladeMesh.count = 0
 grassBladeMesh.castShadow = false
-grassBladeMesh.receiveShadow = enableBlockShadows
+grassBladeMesh.receiveShadow = worldShadowFlagsEnabled
 grassBladeMesh.frustumCulled = true
 grassBladeMesh.matrixAutoUpdate = false
 world.add(grassBladeMesh)
@@ -675,8 +700,8 @@ function getOrCreateInstancedBlockMesh(id: BlockId) {
   if (instancedMesh) return instancedMesh
   instancedMesh = new THREE.InstancedMesh(cubeGeometry, materials.get(id)!, INITIAL_INSTANCED_MESH_CAPACITY)
   instancedMesh.count = 0
-  instancedMesh.castShadow = enableBlockShadows && instancedShadowCasterIds.has(id)
-  instancedMesh.receiveShadow = enableBlockShadows
+  instancedMesh.castShadow = worldShadowFlagsEnabled && instancedShadowCasterIds.has(id)
+  instancedMesh.receiveShadow = worldShadowFlagsEnabled
   instancedMesh.frustumCulled = true
   instancedMesh.matrixAutoUpdate = false
   instancedMesh.userData.block = true
@@ -2692,24 +2717,42 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 function qualityBounds() {
-  return resolveQualityRuntimeProfile(qualityPreset, runtimeProfile.tier, runtimeLimits).render
+  return activeGraphicsProfile.render
+}
+
+function applyShadowMapSize(size: number) {
+  if (sun.shadow.mapSize.x === size) return
+  sun.shadow.mapSize.set(size, size)
+  // The existing depth target keeps its old resolution; drop it so three.js reallocates.
+  sun.shadow.map?.dispose()
+  sun.shadow.map = null
+  renderer.shadowMap.needsUpdate = true
 }
 
 function applyQualityPreset(nextPreset: QualityPreset, resetScale = false) {
   qualityPreset = nextPreset
+  activeGraphicsProfile = resolveQualityRuntimeProfile(nextPreset, runtimeProfile.tier, runtimeLimits)
   const bounds = qualityBounds()
   renderQuality = resetScale ? bounds.start : clampNumber(renderQuality, bounds.min, bounds.max)
   const ecoMode = nextPreset === 'eco'
   document.body.classList.toggle('eco-runtime', ecoMode)
   shardBeaconLight.intensity = ecoMode || lowPowerMode ? 0 : 0.9
   updateArkCoreVisual()
+  if (activeGraphicsProfile.terrainStyle !== activeTerrainStyle) {
+    activeTerrainStyle = activeGraphicsProfile.terrainStyle
+    chunkMeshRenderer.setMaterialSources(terrainMaterialSourcesFor(activeTerrainStyle))
+    // Existing chunk meshes rebuild progressively inside the normal frame budgets.
+    optimizedChunks.markAllChunksDirty()
+  }
+  applyShadowMapSize(activeGraphicsProfile.shadowMapSize)
+  applyWorldShadowFlags(activeGraphicsProfile.allowShadows)
   syncShadowBudget()
   applyRenderQuality()
   qualityButtons.forEach((button) => button.classList.toggle('active', button.dataset.quality === nextPreset))
 }
 
 function syncShadowBudget() {
-  const enabled = qualityPreset !== 'eco' && qualityPreset !== 'low' && !lowPowerMode && performanceGuard.budget.shadows
+  const enabled = activeGraphicsProfile.allowShadows && performanceGuard.budget.shadows
   if (enabled && !renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true
   renderer.shadowMap.enabled = enabled
   sun.castShadow = enabled

@@ -16,13 +16,18 @@ export type RenderedChunkMesh = {
   meshes: THREE.Mesh[]
 }
 
+export type ChunkMaterialSources = {
+  materials: Map<BlockId, THREE.Material | THREE.Material[]>
+  mergedMaterial: THREE.Material | null
+}
+
 export class ChunkMeshRenderer {
   private readonly scene: THREE.Object3D
-  private readonly materials: Map<BlockId, THREE.Material | THREE.Material[]>
-  private readonly mergedMaterial: THREE.Material | null
+  private materials: Map<BlockId, THREE.Material | THREE.Material[]>
+  private mergedMaterial: THREE.Material | null
   private readonly blockColors: Map<BlockId, THREE.ColorRepresentation>
-  private readonly castShadow: boolean
-  private readonly receiveShadow: boolean
+  private castShadow: boolean
+  private receiveShadow: boolean
   private readonly renderedChunks = new Map<string, RenderedChunkMesh>()
 
   constructor({
@@ -66,6 +71,27 @@ export class ChunkMeshRenderer {
 
   getChunk(key: string) {
     return this.renderedChunks.get(key) ?? null
+  }
+
+  /**
+   * Swaps the material set used for future chunk builds. Callers mark all
+   * chunks dirty afterwards so existing meshes rebuild within frame budgets.
+   */
+  setMaterialSources({ materials, mergedMaterial }: ChunkMaterialSources) {
+    this.materials = materials
+    this.mergedMaterial = mergedMaterial
+  }
+
+  setShadowFlags(castShadow: boolean, receiveShadow: boolean) {
+    if (this.castShadow === castShadow && this.receiveShadow === receiveShadow) return
+    this.castShadow = castShadow
+    this.receiveShadow = receiveShadow
+    for (const rendered of this.renderedChunks.values()) {
+      for (const mesh of rendered.meshes) {
+        mesh.castShadow = castShadow
+        mesh.receiveShadow = receiveShadow
+      }
+    }
   }
 
   removeChunk(key: string) {
