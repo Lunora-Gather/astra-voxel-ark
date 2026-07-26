@@ -433,19 +433,17 @@ export function createBlockMaterials() {
   ])
   materials.set('leaves', blockMaterial('leaves', leavesTexture(), { alphaTest: 0.08 }))
   materials.set('water', blockMaterial('water', waterTexture(), {
-    depthWrite: false,
+    depthWrite: true,
     emissive: 0x10395e,
     emissiveIntensity: 0.08,
-    opacity: 0.62,
+    opacity: 0.72,
     roughness: 0.06,
     metalness: 0.02,
   }))
   materials.set('crystal', blockMaterial('crystal', crystalTexture(), {
     emissive: 0x5e45c8,
-    emissiveIntensity: 0.62,
-    opacity: 0.88,
-    transparent: true,
-    roughness: 0.18,
+    emissiveIntensity: 0.48,
+    roughness: 0.24,
     metalness: 0.14,
   }))
   materials.set('glow', blockMaterial('glow', glowTexture(), {

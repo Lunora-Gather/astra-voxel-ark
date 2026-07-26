@@ -1,6 +1,7 @@
 export * from './blockKey'
 export * from './Biomes'
 export * from './Flora'
+export * from './SpawnArea'
 export * from './ChunkResidency'
 export * from './LandmarkTemplates'
 export * from './ProceduralTerrain'

@@ -48,6 +48,9 @@ import {
   formatWorldCoordinates,
   formatWorldCoordinatesForClipboard,
   getFloraDefinition,
+  ARK_CORE_POSITION,
+  PLAYER_SPAWN,
+  PLAYER_SPAWN_ROTATION,
   proceduralTerrainHeightAt,
   getWorldExportSlug,
   getWorldSlotSaveKey,
@@ -171,11 +174,7 @@ app.innerHTML = `
       </div>
       <div class="compass-badge" aria-live="polite">
         <span class="compass-arrow">↑</span>
-        <span class="compass-distance">Beacon scanning</span>
-      </div>
-      <div class="wayfinder-badge">
-        <span class="wayfinder-label">Expedition</span>
-        <span class="wayfinder-value">Scanning</span>
+        <span class="compass-distance">Core 0/6 · Scanning</span>
       </div>
     </div>
 
@@ -358,16 +357,15 @@ const daySkyColor = new THREE.Color(0xaedcff)
 const skyColor = new THREE.Color(0xaedcff)
 const sceneFog = new THREE.FogExp2(
   skyColor,
-  runtimeProfile.tier === 'ultra-low' ? 0.04 : lowPowerMode ? 0.03 : 0.018,
+  runtimeProfile.tier === 'ultra-low' ? 0.019 : lowPowerMode ? 0.014 : 0.009,
 )
 scene.background = skyColor
 scene.fog = sceneFog
 
-const PLAYER_SPAWN = { x: 0, y: 12, z: 18 } as const
-const ARK_CORE_POSITION = { x: 0, y: 7.6, z: 10 } as const
 const camera = new THREE.PerspectiveCamera(startupSettings.fov, window.innerWidth / window.innerHeight, 0.1, 600)
 camera.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
 camera.rotation.order = 'YXZ'
+camera.rotation.set(PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw, 0)
 
 const renderer = new THREE.WebGLRenderer({
   antialias: startupGraphics.antialias,
@@ -726,7 +724,7 @@ function isInstancedBlockRef(visual: BlockVisual | undefined): visual is Instanc
   return Boolean(visual && !(visual instanceof THREE.Mesh) && visual.kind === 'instanced')
 }
 
-const TRANSPARENT_BLOCK_IDS = new Set<BlockId>(['leaves', 'water', 'crystal', 'glow'])
+const TRANSPARENT_BLOCK_IDS = new Set<BlockId>(['water'])
 function isOpaqueBlockId(id: BlockId | undefined): boolean {
   return Boolean(id) && !TRANSPARENT_BLOCK_IDS.has(id as BlockId)
 }
@@ -1355,7 +1353,7 @@ function applySavedWorld(data: SavedWorld) {
   worldSeed = normalizeWorldSeed(data.worldSeed, 0)
   const playerState = sanitizePlayerState(data.player, {
     position: [PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z],
-    rotation: [0, 0],
+    rotation: [PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw],
   }, {
     maxHorizontal: (TERRAIN_MAX_RADIUS + 1) * CHUNK_SIZE,
   })
@@ -1429,6 +1427,7 @@ function applySavedWorld(data: SavedWorld) {
   survivalVitals.restore(data.vitals)
   progression.setShardCount(collectedGlowShards)
   rebuildLandmarkShardBlocks()
+  syncArkCoreToTerrain()
   crystalPower = typeof data.survival?.crystalPower === 'number' ? Math.max(0, Math.min(100, data.survival.crystalPower)) : 68
   carriedCrystal = typeof data.survival?.carriedCrystal === 'number' ? Math.max(0, Math.floor(data.survival.carriedCrystal)) : 0
   restorePlayerState(playerState)
@@ -1569,6 +1568,8 @@ function resetWorld() {
   updateSaveActivityUi()
   generateWorld()
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
+  controls.object.rotation.set(PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw, 0)
+  syncArkCoreToTerrain()
   playerMotion.reset()
   updateHotbar()
   updateProgressionUi()
@@ -1751,7 +1752,7 @@ function restorePlayerState(state: PlayerStateSnapshot) {
     if (!playerCollision.collidesAt(controls.object.position)) return
   }
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
-  controls.object.rotation.set(0, 0, 0)
+  controls.object.rotation.set(PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw, 0)
 }
 
 function movePlayerHorizontal(delta: THREE.Vector3) {
@@ -2040,11 +2041,18 @@ resetButton.addEventListener('click', () => {
   resetWorld()
 })
 const platform = new THREE.Mesh(
-  new THREE.CylinderGeometry(40, 48, 2, runtimeProfile.tier === 'ultra-low' ? 32 : lowPowerMode ? 48 : runtimeProfile.tier === 'standard' ? 64 : 96),
-  new THREE.MeshStandardMaterial({ color: 0x55657b, roughness: 0.9 })
+  new THREE.CircleGeometry(72, runtimeProfile.tier === 'ultra-low' ? 24 : lowPowerMode ? 32 : 48),
+  new THREE.MeshBasicMaterial({
+    color: 0x8cc9df,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
 )
-platform.position.y = -2
-platform.receiveShadow = !lowPowerMode
+platform.position.y = -3.2
+platform.rotation.x = -Math.PI / 2
+platform.renderOrder = -1
 scene.add(platform)
 
 const maxStars = runtimeProfile.tier === 'ultra-low' ? 20 : lowPowerMode ? 40 : runtimeProfile.tier === 'standard' ? 160 : 260
@@ -2086,25 +2094,43 @@ scene.add(shardBeacon)
 
 const arkCore = new THREE.Group()
 const arkCoreBase = new THREE.Mesh(
-  new THREE.CylinderGeometry(1.15, 1.35, 0.28, 6),
-  new THREE.MeshStandardMaterial({ color: 0x22334c, roughness: 0.72, metalness: 0.18 })
+  new THREE.CylinderGeometry(1.08, 1.34, 0.34, 8),
+  new THREE.MeshStandardMaterial({
+    color: 0x49647c,
+    emissive: 0x101d2c,
+    emissiveIntensity: 0.24,
+    roughness: 0.58,
+    metalness: 0.24,
+  })
+)
+const arkCoreDeck = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.86, 1.08, 0.18, 8),
+  new THREE.MeshStandardMaterial({
+    color: 0x7892aa,
+    emissive: 0x203952,
+    emissiveIntensity: 0.32,
+    roughness: 0.42,
+    metalness: 0.28,
+  })
 )
 const arkCoreRing = new THREE.Mesh(
-  new THREE.TorusGeometry(1.32, 0.035, 8, 48),
-  new THREE.MeshBasicMaterial({ color: 0x9ee8ff, transparent: true, opacity: 0.24 })
+  new THREE.TorusGeometry(1.28, 0.045, 6, 32),
+  new THREE.MeshBasicMaterial({ color: 0xa8efff, transparent: true, opacity: 0.42 })
 )
 const arkCoreSpire = new THREE.Mesh(
-  new THREE.OctahedronGeometry(0.42, 0),
-  new THREE.MeshStandardMaterial({ color: 0x6a7cff, emissive: 0x2b3b9a, emissiveIntensity: 0.22, roughness: 0.34, metalness: 0.2 })
+  new THREE.OctahedronGeometry(0.46, 0),
+  new THREE.MeshStandardMaterial({ color: 0x8e9bff, emissive: 0x4d5ce0, emissiveIntensity: 0.58, roughness: 0.26, metalness: 0.18 })
 )
 const arkCoreLight = new THREE.PointLight(0x9ee8ff, lowPowerMode ? 0 : 0.2, 9)
 const arkCoreModuleMaterials: THREE.MeshStandardMaterial[] = []
 const arkCoreModules: THREE.Mesh[] = []
 arkCore.position.set(ARK_CORE_POSITION.x, ARK_CORE_POSITION.y, ARK_CORE_POSITION.z)
+arkCoreDeck.position.y = 0.25
 arkCoreRing.rotation.x = Math.PI / 2
+arkCoreRing.position.y = 0.16
 arkCoreSpire.position.y = 0.82
 arkCoreLight.position.y = 0.9
-arkCore.add(arkCoreBase, arkCoreRing, arkCoreSpire, arkCoreLight)
+arkCore.add(arkCoreBase, arkCoreDeck, arkCoreRing, arkCoreSpire, arkCoreLight)
 for (let i = 0; i < EXPLORATION_GOAL_SHARDS; i += 1) {
   const angle = (i / EXPLORATION_GOAL_SHARDS) * Math.PI * 2
   const material = new THREE.MeshStandardMaterial({
@@ -2125,6 +2151,16 @@ for (let i = 0; i < EXPLORATION_GOAL_SHARDS; i += 1) {
 }
 scene.add(arkCore)
 
+function syncArkCoreToTerrain() {
+  arkCore.position.set(
+    ARK_CORE_POSITION.x,
+    terrainHeightAt(ARK_CORE_POSITION.x, ARK_CORE_POSITION.z) + 0.72,
+    ARK_CORE_POSITION.z,
+  )
+}
+
+syncArkCoreToTerrain()
+
 let selected = 0
 const HOTBAR_PAGE_SIZE = 9
 const HOTBAR_PAGE_COUNT = Math.ceil(BLOCKS.length / HOTBAR_PAGE_SIZE)
@@ -2135,7 +2171,6 @@ const blockName = blockInfo.querySelector<HTMLDivElement>('.block-name')!
 const blockCount = blockInfo.querySelector<HTMLDivElement>('.block-count')!
 const hotbarSlots: HTMLButtonElement[] = []
 const hotbarCounts: HTMLSpanElement[] = []
-const wayfinderValue = document.querySelector<HTMLSpanElement>('.wayfinder-value')!
 const compassBadge = document.querySelector<HTMLDivElement>('.compass-badge')!
 const compassArrow = document.querySelector<HTMLSpanElement>('.compass-arrow')!
 const compassDistance = document.querySelector<HTMLSpanElement>('.compass-distance')!
@@ -2248,21 +2283,21 @@ function updateCompassUi(nearest: ReturnType<typeof findNearestShard>) {
   if (collectedGlowShards >= EXPLORATION_GOAL_SHARDS) {
     compassBadge.classList.add('complete')
     compassArrow.style.transform = 'rotate(0deg)'
-    compassDistance.textContent = 'Ark core restored'
+    compassDistance.textContent = `Core ${EXPLORATION_GOAL_SHARDS}/${EXPLORATION_GOAL_SHARDS} · Online`
     shardBeacon.visible = false
     return
   }
   compassBadge.classList.remove('complete')
   if (!nearest) {
     compassArrow.style.transform = 'rotate(0deg)'
-    compassDistance.textContent = 'Scan for core shards'
+    compassDistance.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · Scan for shards`
     shardBeacon.visible = false
     return
   }
   const yaw = controls.object.rotation.y
   const worldAngle = Math.atan2(nearest.dx, -nearest.dz)
   compassArrow.style.transform = `rotate(${worldAngle - yaw}rad)`
-  compassDistance.textContent = `${nearest.landmarkName} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
+  compassDistance.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · ${nearest.landmarkName} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
   shardBeacon.position.set(nearest.x, nearest.y + 2.35, nearest.z)
   shardBeacon.visible = true
 }
@@ -2271,15 +2306,6 @@ function updateShardSignal() {
   const nearest = findNearestShard()
   updateCompassUi(nearest)
   updateArkCoreVisual()
-  if (collectedGlowShards >= EXPLORATION_GOAL_SHARDS) {
-    wayfinderValue.textContent = 'Core Online'
-    return
-  }
-  if (!nearest) {
-    wayfinderValue.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · Explore`
-    return
-  }
-  wayfinderValue.textContent = `Core ${collectedGlowShards}/${EXPLORATION_GOAL_SHARDS} · ${directionLabel(nearest.dx, nearest.dz)} ${Math.round(nearest.distance)}m`
 }
 
 function updateArkCoreVisual() {
@@ -3782,6 +3808,7 @@ function respawnPlayer() {
   carriedCrystal = Math.max(0, carriedCrystal - 1)
   crystalPower = Math.max(35, crystalPower)
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
+  controls.object.rotation.set(PLAYER_SPAWN_ROTATION.pitch, PLAYER_SPAWN_ROTATION.yaw, 0)
   playerMotion.reset()
   showToast('Wayfinder recovered at the Ark')
 }
@@ -3834,9 +3861,9 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
     coldVignetteEl.style.opacity = String(coldIntensity)
   }
 
-  renderer.toneMappingExposure = 1.08 - coldIntensity * 0.28
-  const baseFogDensity = runtimeProfile.tier === 'ultra-low' ? 0.04 : lowPowerMode ? 0.03 : 0.015
-  sceneFog.density = baseFogDensity + (1 - day) * 0.012 + coldIntensity * 0.035
+  renderer.toneMappingExposure = 1.12 - coldIntensity * 0.2
+  const baseFogDensity = runtimeProfile.tier === 'ultra-low' ? 0.019 : lowPowerMode ? 0.014 : 0.009
+  sceneFog.density = baseFogDensity + (1 - day) * 0.006 + coldIntensity * 0.018
 
   let phase = 'Day'
   let threat = carriedCrystal > 0 ? 'Protected' : shardWardLevel > 0 ? 'Beacon Ward' : 'Safe'

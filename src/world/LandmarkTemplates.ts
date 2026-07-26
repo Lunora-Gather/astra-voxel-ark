@@ -1,5 +1,6 @@
 import type { BlockId } from '../blocks'
 import { getBiomeAt, type BiomeId } from './Biomes'
+import { isSpawnAreaProtected } from './SpawnArea'
 
 export type LandmarkTemplateId = 'moss-shrine' | 'crystal-bloom' | 'waystone'
 export type LandmarkBlock = { x: number; y: number; z: number; id: BlockId }
@@ -56,12 +57,12 @@ export function buildLandmarkPlan(
   worldSeed: number,
   terrainHeightAt: (x: number, z: number) => number,
 ): LandmarkPlan | null {
-  if (cx === 0 && cz === 0) return null
   const roll = seededLandmarkHash(cx * 92821 + cz * 68917 + 17, worldSeed)
   if (roll > 0.28) return null
 
   const originX = cx * chunkSize + 2 + Math.floor(seededLandmarkHash(cx * 317 + cz * 911 + 3, worldSeed) * 4)
   const originZ = cz * chunkSize + 2 + Math.floor(seededLandmarkHash(cx * 613 + cz * 271 + 5, worldSeed) * 4)
+  if (isSpawnAreaProtected(originX, originZ, 3)) return null
   const originY = terrainHeightAt(originX, originZ) + 1
   if (originY <= 4) return null
 
