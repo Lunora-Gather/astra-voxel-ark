@@ -13,7 +13,7 @@ A polished landscape-first voxel sandbox app built with **Vite + TypeScript + Th
 ## Features
 
 - Procedural voxel island terrain
-- First-person movement with pointer lock on desktop and touch controls on mobile
+- Frame-rate-stable first-person movement with pointer lock on desktop and normalized touch controls on mobile
 - Block breaking and placing via raycasting, with player-safe placement checks
 - Three named local expedition slots with independent reproducible seeds, active-slot autosave, last-good backup recovery, and name-aware JSON export/import
 - v8 saves resume the player position, view direction, world seed and paused-safe world time

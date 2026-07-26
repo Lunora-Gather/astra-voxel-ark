@@ -6,7 +6,7 @@ import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
 import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
-import { PlayerCollisionResolver, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
+import { PlayerCollisionResolver, PlayerMotionController, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
 import { ChunkManager } from './world/ChunkManager'
 import { buildChunkMeshData } from './render/ChunkMeshBuilder'
@@ -448,14 +448,6 @@ const GRASS_ANIMATION_BUDGET = runtimeLimits.grassAnimationBudget
 const MIN_RENDER_QUALITY = runtimeLimits.minRenderScale
 const MAX_RENDER_QUALITY = runtimeLimits.maxRenderScale
 const QUALITY_STEP = 0.06
-const WALK_SPEED = 7.6
-const SPRINT_SPEED = 12.2
-const GROUND_ACCEL_RESPONSE = 14
-const GROUND_STOP_RESPONSE = 12
-const AIR_ACCEL_RESPONSE = 6
-const AIR_STOP_RESPONSE = 2.5
-const JUMP_VELOCITY = 8.2
-const GRAVITY = 21.5
 const TOUCH_JOYSTICK_DEADZONE = 0.08
 const TOUCH_JOYSTICK_EDGE = 0.42
 const TOUCH_JOYSTICK_RESPONSE = 1.28
@@ -518,8 +510,7 @@ const survivalVitals = new SurvivalVitals()
 const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
-let velocityY = 0
-let canJump = false
+const playerMotion = new PlayerMotionController()
 let crystalPower = 68
 let carriedCrystal = 0
 let collectedGlowShards = 0
@@ -1315,7 +1306,7 @@ function applySavedWorld(data: SavedWorld) {
     ? Math.max(0, data.worldTime)
     : 0
   lastAutoSaveAt = simulationElapsedTime
-  velocityY = 0
+  playerMotion.reset()
   updateProgressionUi()
 }
 
@@ -1415,7 +1406,7 @@ function resetWorld() {
   lastAutoSaveAt = 0
   generateWorld()
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
-  velocityY = 0
+  playerMotion.reset()
   updateHotbar()
   updateProgressionUi()
   updateWorldSlotUi()
@@ -1497,6 +1488,9 @@ if (isSmokeTest) {
   void import('./world/LandmarkTemplatesSmoke').then(({ assertLandmarkTemplatesSmoke }) => {
     assertLandmarkTemplatesSmoke()
   }).catch((error) => console.error(error))
+  void import('./player/PlayerMotionControllerSmoke').then(({ assertPlayerMotionControllerSmoke }) => {
+    assertPlayerMotionControllerSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1518,15 +1512,15 @@ function restorePlayerState(state: PlayerStateSnapshot) {
 
 function movePlayerHorizontal(delta: THREE.Vector3) {
   const pos = controls.object.position
-  const result = playerCollision.moveHorizontal(pos, delta, canJump && velocityY <= 0.01)
-  if (result.stepped) velocityY = 0
+  const result = playerCollision.moveHorizontal(pos, delta, playerMotion.isGrounded && playerMotion.verticalSpeed <= 0.01)
+  if (result.stepped) playerMotion.cancelVertical()
 }
 
 function movePlayerVertical(deltaY: number) {
   const pos = controls.object.position
   const result = playerCollision.moveVertical(pos, deltaY)
-  if (result.collided) velocityY = 0
-  if (result.grounded) canJump = true
+  if (result.collided) playerMotion.cancelVertical()
+  if (result.grounded) playerMotion.setGrounded(true)
 }
 
 // 放置预览 ghost box
@@ -2485,6 +2479,7 @@ function updateSettings(overrides: Partial<GameSettings> = {}) {
 
 function resetInputState() {
   keys.clear()
+  playerMotion.stopHorizontal()
   mobileMove.set(0, 0)
   joystickPointerId = null
   lookPointerId = null
@@ -2609,6 +2604,7 @@ function updateOrientationClass() {
   document.body.classList.toggle('portrait-touch', isTouchDevice && window.innerHeight > window.innerWidth)
   if (isTouchDevice && window.innerHeight > window.innerWidth) {
     keys.clear()
+    playerMotion.stopHorizontal()
     mobileMove.set(0, 0)
     joystickPointerId = null
     lookPointerId = null
@@ -2685,6 +2681,7 @@ renderer.domElement.addEventListener('wheel', (event) => {
 document.addEventListener('keyup', (e) => keys.delete(e.code))
 window.addEventListener('blur', () => {
   keys.clear()
+  playerMotion.stopHorizontal()
   mobileMove.set(0, 0)
   stick.style.transform = 'translate(-50%, -50%)'
   setJoystickActive(false)
@@ -2980,9 +2977,7 @@ joystick.addEventListener('pointerup', releaseJoystick)
 joystick.addEventListener('pointercancel', releaseJoystick)
 
 function runJump() {
-  if (!canJump) return
-  velocityY = JUMP_VELOCITY
-  canJump = false
+  if (!playerMotion.jump()) return
   playGameSound('jump', 0.2)
 }
 
@@ -3143,9 +3138,6 @@ const coldVignetteEl = document.querySelector<HTMLElement>('.cold-vignette')
 const healthBarEl = document.querySelector<HTMLElement>('.health-bar')
 const healthValEl = document.querySelector<HTMLElement>('.health-val')
 const worldBiomeEl = document.querySelector<HTMLElement>('.world-biome')
-const moveDirection = new THREE.Vector3()
-const targetMoveVelocity = new THREE.Vector3()
-const smoothedMoveVelocity = new THREE.Vector3()
 const previousPosition = new THREE.Vector3()
 const movementDelta = new THREE.Vector3()
 let fpsFrameCount = 0
@@ -3187,7 +3179,7 @@ function respawnPlayer() {
   carriedCrystal = Math.max(0, carriedCrystal - 1)
   crystalPower = Math.max(35, crystalPower)
   controls.object.position.set(PLAYER_SPAWN.x, PLAYER_SPAWN.y, PLAYER_SPAWN.z)
-  velocityY = 0
+  playerMotion.reset()
   showToast('Wayfinder recovered at the Ark')
 }
 
@@ -3528,36 +3520,28 @@ function animate() {
   sceneFog.color.copy(skyColor)
   updateSurvivalLoop(dt, day, elapsedTime)
 
-  const speed = keys.has('ShiftLeft') ? SPRINT_SPEED : WALK_SPEED
-  moveDirection.set(0, 0, 0)
-  if (keys.has('KeyW')) moveDirection.z -= 1
-  if (keys.has('KeyS')) moveDirection.z += 1
-  if (keys.has('KeyA')) moveDirection.x -= 1
-  if (keys.has('KeyD')) moveDirection.x += 1
+  let moveRightInput = 0
+  let moveForwardInput = 0
+  if (keys.has('KeyW')) moveForwardInput += 1
+  if (keys.has('KeyS')) moveForwardInput -= 1
+  if (keys.has('KeyA')) moveRightInput -= 1
+  if (keys.has('KeyD')) moveRightInput += 1
   if (mobileActive) {
-    moveDirection.x += mobileMove.x
-    moveDirection.z += mobileMove.y
+    moveRightInput += mobileMove.x
+    moveForwardInput -= mobileMove.y
   }
-  if (moveDirection.lengthSq() > 1) moveDirection.normalize()
-  targetMoveVelocity.copy(moveDirection).multiplyScalar(speed)
-  const movementResponse = moveDirection.lengthSq() > 0
-    ? canJump ? GROUND_ACCEL_RESPONSE : AIR_ACCEL_RESPONSE
-    : canJump ? GROUND_STOP_RESPONSE : AIR_STOP_RESPONSE
-  smoothedMoveVelocity.lerp(targetMoveVelocity, 1 - Math.exp(-movementResponse * dt))
-  if (smoothedMoveVelocity.lengthSq() < 0.0004) smoothedMoveVelocity.set(0, 0, 0)
-  if (controls.isLocked || mobileActive) {
+  const motionActive = controls.isLocked || mobileActive
+  const motionStep = playerMotion.update(moveRightInput, moveForwardInput, keys.has('ShiftLeft'), motionActive, dt)
+  if (motionActive) {
     previousPosition.copy(controls.object.position)
-    controls.moveRight(smoothedMoveVelocity.x * dt)
-    controls.moveForward(-smoothedMoveVelocity.z * dt)
+    controls.moveRight(motionStep.right)
+    controls.moveForward(motionStep.forward)
     movementDelta.copy(controls.object.position).sub(previousPosition)
     controls.object.position.copy(previousPosition)
     movePlayerHorizontal(movementDelta)
-  } else {
-    smoothedMoveVelocity.set(0, 0, 0)
   }
 
-  velocityY -= GRAVITY * dt
-  movePlayerVertical(velocityY * dt)
+  movePlayerVertical(motionStep.vertical)
   const pos = controls.object.position
   const terrainCenterKey = terrainChunkKey(chunkCoord(pos.x), chunkCoord(pos.z))
   if (terrainCenterKey !== lastTerrainCenterKey) {
@@ -3577,8 +3561,8 @@ function animate() {
   const terrainQueueBudget = terrainQueueIsUnderPressure ? (terrainQueueFrameSkip++ % 4 === 0 ? 1 : 0) : TERRAIN_CHUNKS_PER_FRAME
   if (terrainQueueBudget > 0) processTerrainQueue(terrainQueueBudget)
   const floor = playerCollision.findFloorAt(pos.x, pos.z, pos.y)
-  if (pos.y < floor) { pos.y = floor; velocityY = 0; canJump = true }
-  else if (pos.y > floor + 0.05) canJump = false
+  if (pos.y < floor) { pos.y = floor; playerMotion.land() }
+  else if (pos.y > floor + 0.05) playerMotion.setGrounded(false)
   if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)
   updateTouchMining()
   stabilizeFirstPersonLook()

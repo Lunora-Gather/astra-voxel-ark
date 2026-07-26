@@ -17,6 +17,13 @@ worlds, while attaching biome-specific landmark names for the compass. Both Work
 and save restoration consume the same planner. Resident-chunk eviction removes corresponding shard
 and name entries so constrained devices never retain navigation targets for unloaded terrain.
 
+`src/player/PlayerMotionController.ts` owns frame-rate-aware walking, sprinting, acceleration,
+stopping, jumping and gravity in local player space. Keyboard and normalized touch input feed the
+same allocation-free controller; `main.ts` only rotates its reused displacement through
+`PointerLockControls` and passes the result to `PlayerCollisionResolver`. Delta time is capped at
+50 ms so a stalled low-end frame cannot create a tunneling-sized movement step. Pause, focus loss,
+orientation changes, world loading and respawn explicitly reset the relevant motion state.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.
@@ -58,5 +65,5 @@ primary and recovery backup for only the active slot.
 
 1. Move renderer-state serialization and apply adapters behind a typed world snapshot boundary.
 2. Replace the legacy block map with `ChunkManager`.
-3. Extract player movement into `PlayerController`.
+3. Extract camera look policy and browser input bindings from `main.ts`.
 4. Add entity simulation through commands/events rather than direct scene mutation.

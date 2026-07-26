@@ -80,7 +80,7 @@ Recommended extraction order:
 2. `Settings` and local storage settings — integrated.
 3. `AudioSystem` — integrated.
 4. `BlockPicker` and placement helpers — picker integrated; placement policy remains in the game adapter.
-5. `PlayerController` and collision helpers — collision resolver integrated; input/velocity controller remains.
+5. `PlayerController` and collision helpers — allocation-free motion and collision controllers integrated; DOM input binding remains in the game adapter.
 6. `TerrainGenerator`.
 7. `ChunkManager`.
 8. Renderer and effects modules.
