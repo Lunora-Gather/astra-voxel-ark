@@ -327,7 +327,7 @@ app.innerHTML = `
         </section>
       </div>
     </div>
-    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><div class="start-features"><span>Offline world</span><span>Autosave</span><span>Adaptive performance</span></div><button>Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div>
+    <div class="start"><div class="panel"><span class="crest">✦</span><h2>星野方舟 v1.5</h2><p>Gather, craft, upgrade your tools and restore the Ark Core</p><div class="start-features"><span>Offline world</span><span>Autosave</span><span>Adaptive performance</span></div><div class="start-actions"><button class="start-primary">Start Local Expedition</button><button class="start-multiplayer" disabled>Multiplayer · Coming later</button></div></div></div>
   </div>
 `
 
@@ -2347,7 +2347,7 @@ const worldNameInput = document.querySelector<HTMLInputElement>('.world-name-inp
 const worldSeedButton = document.querySelector<HTMLButtonElement>('.world-seed')!
 const pauseSessionLabel = document.querySelector<HTMLElement>('.pause-session-label')!
 const sessionCurrentLabel = document.querySelector<HTMLElement>('.session-current')!
-const startPrimaryButton = start.querySelector<HTMLButtonElement>('.panel > button:not(.start-multiplayer)')!
+const startPrimaryButton = start.querySelector<HTMLButtonElement>('.start-primary')!
 
 function updateTutorialUi(announce = false) {
   const progressionSnapshot = progression.snapshot()
@@ -3064,7 +3064,7 @@ function updateOrientationClass() {
   }
 }
 
-start.querySelector('button')!.addEventListener('click', () => {
+startPrimaryButton.addEventListener('click', () => {
   unlockGameAudio()
   hasStarted = true
   updateTutorialUi(true)

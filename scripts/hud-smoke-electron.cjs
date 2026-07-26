@@ -246,6 +246,12 @@ async function readState(win, label) {
         runtimePressure: document.body.dataset.runtimePressure || null,
         playerMedium: document.body.dataset.playerMedium || null,
         startVisible: visible('.start'),
+        startPanelFullyVisible: fullyVisible(rectOf('.start .panel')),
+        startPanelRect: rectOf('.start .panel'),
+        startActionRects: [...document.querySelectorAll('.start-actions button')].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+        }),
         rotatePromptVisible: visible('.rotate-prompt'),
         rotatePromptFullyVisible: fullyVisible(rectOf('.rotate-prompt > div')),
         menuOpen: !document.querySelector('.pause-menu')?.classList.contains('hidden'),
@@ -300,7 +306,7 @@ async function readState(win, label) {
         worldNameEditorFullyVisible: fullyVisible(rectOf('.world-name-editor')),
         pauseSessionText: document.querySelector('.pause-session-label')?.textContent?.trim() || '',
         sessionCurrentText: document.querySelector('.session-current')?.textContent?.trim() || '',
-        startPrimaryText: document.querySelector('.start .panel > button:not(.start-multiplayer)')?.textContent?.trim() || '',
+        startPrimaryText: document.querySelector('.start-primary')?.textContent?.trim() || '',
         perfVisible: visible('.perf-badge'),
         perfRect: rectOf('.perf-badge'),
         perfFullyVisible: !visible('.perf-badge') || fullyVisible(rectOf('.perf-badge')),
@@ -489,6 +495,17 @@ function assertTouchPortraitState(state) {
     fail('Gameplay HUD controls should stay hidden behind the portrait rotate prompt', state)
   }
   if (state.leftStackVisible || state.rightStackVisible) fail('HUD stacks should be hidden in portrait touch layout', state)
+}
+
+function assertStartState(state) {
+  if (!state.startVisible || !state.startPanelFullyVisible) fail('Start panel should be visible and fit in the viewport', state)
+  if (state.startActionRects.length !== 2) fail('Start panel should preserve local and multiplayer actions', state)
+  if (!state.bodyClasses.includes('short-layout')) return
+  const verticalMargin = Math.min(state.startPanelRect?.top ?? 0, state.viewport.height - (state.startPanelRect?.bottom ?? state.viewport.height))
+  if (verticalMargin < 24) fail('Short landscape start panel should retain comfortable vertical margins', { verticalMargin, state })
+  if (Math.abs(state.startActionRects[0].top - state.startActionRects[1].top) > 2) {
+    fail('Short landscape start actions should share a compact row', state)
+  }
 }
 
 async function captureArtifact(win, scenario, phase, state) {
@@ -720,6 +737,7 @@ async function runScenario(win, scenario) {
     if (consoleIssues.length) fail('Console or renderer issues detected', { scenario: scenario.label, consoleIssues })
     return { scenario: scenario.label, density: initial.density, classes: initial.bodyClasses, artifacts: artifact ? [artifact] : [] }
   }
+  assertStartState(initial)
   await click(win, '.start button')
   const gameplay = await readState(win, `${scenario.label}:gameplay`)
   assertGameplayState(gameplay)
