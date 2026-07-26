@@ -4,7 +4,7 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 import { BLOCKS, type BlockId } from './blocks'
 import { animateBlockMaterials, createBlockMaterials } from './textures'
 import { blockKey } from './worldMath'
-import { InventorySystem, ProgressionSystem, RECIPES, SurvivalVitals, TutorialGuide, type TutorialStepId } from './singleplayer'
+import { InventorySystem, MiningSession, ProgressionSystem, RECIPES, SurvivalVitals, TutorialGuide, type TutorialStepId } from './singleplayer'
 import { LocalSessionGateway, ReservedMultiplayerGateway } from './session'
 import { PlayerCollisionResolver, PlayerMotionController, sanitizePlayerState, VoxelBlockPicker, type PlayerStateSnapshot } from './player'
 import { getBiomeAt } from './world/Biomes'
@@ -133,7 +133,7 @@ app.innerHTML = `
     </div>
 
     <div class="hud-stack hud-right-stack">
-      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Left break · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Tap palette badge to switch · Menu for backpack<br/>Repair Ark Core with shards</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
+      <div class="help"><strong>Controls</strong><br/><span class="desktop-help">WASD move · Space jump<br/>Mouse look · Hold left to mine · Right place<br/>1–9 select · Tab palette · E backpack<br/>Goal: repair Ark Core with 6 landmark shards</span><span class="mobile-help">Left joystick: move · Drag right: look<br/>Hold Break to mine · Tap palette to switch<br/>Menu opens backpack · Repair the Ark Core</span><div class="help-guide"><strong class="help-guide-title">Guide 1/6</strong><span class="help-guide-prompt">Use WASD to move</span></div></div>
       <div class="perf-badge" role="group" aria-label="Live performance diagnostics">
         <div class="perf-row perf-frame-row">
           <div class="perf-metric"><span class="perf-label">FPS</span><span class="perf-fps">--</span></div>
@@ -517,6 +517,7 @@ const collectedShardBlocks = new Set<string>()
 const progression = new ProgressionSystem()
 const survivalVitals = new SurvivalVitals()
 const tutorialGuide = new TutorialGuide()
+const miningSession = new MiningSession()
 const localSession = new LocalSessionGateway()
 const multiplayerSession = new ReservedMultiplayerGateway()
 const keys = new Set<string>()
@@ -1583,6 +1584,9 @@ if (isSmokeTest) {
   void import('./performance/RuntimePerformanceGuardSmoke').then(({ assertRuntimePerformanceGuardSmoke }) => {
     assertRuntimePerformanceGuardSmoke()
   }).catch((error) => console.error(error))
+  void import('./singleplayer/MiningSystemSmoke').then(({ assertMiningSystemSmoke }) => {
+    assertMiningSystemSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -2644,7 +2648,7 @@ function resetInputState() {
   stick.style.transform = 'translate(-50%, -50%)'
   setJoystickActive(false)
   clearTouchButtonPresses()
-  cancelTouchMining()
+  cancelMining()
 }
 
 function openPauseMenu() {
@@ -2766,7 +2770,7 @@ function updateOrientationClass() {
     stick.style.transform = 'translate(-50%, -50%)'
     setJoystickActive(false)
     clearTouchButtonPresses()
-    cancelTouchMining()
+    cancelMining()
   }
 }
 
@@ -2842,6 +2846,7 @@ window.addEventListener('blur', () => {
   stick.style.transform = 'translate(-50%, -50%)'
   setJoystickActive(false)
   clearTouchButtonPresses()
+  cancelMining()
 })
 
 const placeNormal = new THREE.Vector3()
@@ -2864,14 +2869,15 @@ function pickBlock() {
   return blockPicker.pickFromCamera(camera, lookupPickBlock, controls.object.position) ?? undefined
 }
 
-function breakTargetBlock() {
+function breakTargetBlock(expectedKey?: string) {
   const hit = pickBlock()
-  if (!hit || hit.distance > RAYCAST_REACH) return
+  if (!hit || hit.distance > RAYCAST_REACH) return false
   const minedKey = blockKey(hit.x, hit.y, hit.z)
+  if (expectedKey && minedKey !== expectedKey) return false
   const blockId = hit.id
   if (!progression.canMine(blockId)) {
     showToast(`${progression.requiredToolName(blockId)} required`)
-    return
+    return false
   }
   hitBlockPosition.set(hit.x, hit.y, hit.z)
   if (hitBlockPosition.y > 0) {
@@ -2896,7 +2902,9 @@ function breakTargetBlock() {
     if (canAbsorbCharge) absorbCrystalPower(blockId, !collectedShard)
     updateHotbar()
     updateProgressionUi()
+    return true
   }
+  return false
 }
 
 function placeTargetBlock() {
@@ -2998,7 +3006,7 @@ function wouldTrapPlayer(blockPosition: THREE.Vector3) {
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (!controls.isLocked || isPaused) return
   if (e.button === 0) {
-    breakTargetBlock()
+    beginMining('desktop')
   } else if (e.button === 2) {
     placeTargetBlock()
   } else if (e.button === 1) {
@@ -3009,6 +3017,9 @@ renderer.domElement.addEventListener('mousedown', (e) => {
       if (idx >= 0) selectHotbarSlot(idx, 'pointer')
     }
   }
+})
+document.addEventListener('mouseup', (event) => {
+  if (event.button === 0 && miningSource === 'desktop') cancelMining()
 })
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 
@@ -3027,12 +3038,14 @@ let previousLookY = 0
 let lookStartX = 0
 let lookStartY = 0
 let lookMoved = false
-let touchMining = false
-let touchMiningComplete = false
-let touchMiningStartedAt = 0
+type MiningInputSource = 'desktop' | 'touch-button' | 'touch-canvas'
+let miningSource: MiningInputSource | null = null
+let miningCompleted = false
+let miningRevision = 0
 let touchStartedOnRight = false
+let touchGestureStartedAt = 0
 const TOUCH_TAP_MAX_MOVE = isTouchDevice ? 30 : 24
-const TOUCH_MINE_MS = 650
+const TOUCH_PLACE_TAP_MS = 320
 
 function vibrateTouch(pattern: number | number[]) {
   if (!isTouchDevice || typeof navigator.vibrate !== 'function') return
@@ -3086,6 +3099,24 @@ function bindTouchButton(button: HTMLButtonElement, action: () => void) {
     stopUiTouch(event)
     releaseButtonPress(button, event.pointerId)
   })
+}
+
+function bindMiningButton(button: HTMLButtonElement) {
+  button.addEventListener('contextmenu', stopUiTouch)
+  button.addEventListener('pointerdown', (event) => {
+    stopUiTouch(event)
+    button.setPointerCapture(event.pointerId)
+    button.classList.add('pressed')
+    vibrateTouch(8)
+    beginMining('touch-button')
+  })
+  const release = (event: PointerEvent) => {
+    stopUiTouch(event)
+    releaseButtonPress(button, event.pointerId)
+    if (miningSource === 'touch-button') cancelMining()
+  }
+  button.addEventListener('pointerup', release)
+  button.addEventListener('pointercancel', release)
 }
 
 function updateJoystick(event: PointerEvent) {
@@ -3142,7 +3173,7 @@ function runJump() {
 }
 
 bindTouchButton(jumpButton, runJump)
-bindTouchButton(breakButton, breakTargetBlock)
+bindMiningButton(breakButton)
 bindTouchButton(placeButton, placeTargetBlock)
 
 const hudEl = document.querySelector<HTMLElement>('.hud')!
@@ -3161,25 +3192,39 @@ function isUiTouch(target: HTMLElement | null): boolean {
 
 let mineProgressTimeoutId: number | null = null
 
-function beginTouchMining() {
-  if (!pickBlock()) return
-  touchMining = true
-  touchMiningComplete = false
-  touchMiningStartedAt = performance.now()
+function beginMining(source: MiningInputSource) {
+  const hit = pickBlock()
+  if (!hit || hit.distance > RAYCAST_REACH) return false
+  if (!progression.canMine(hit.id)) {
+    showToast(`${progression.requiredToolName(hit.id)} required`)
+    return false
+  }
+  cancelMining()
+  const started = miningSession.begin({
+    key: blockKey(hit.x, hit.y, hit.z),
+    id: hit.id,
+    durationMs: progression.getMiningDuration(hit.id),
+  }, performance.now())
+  if (!started) return false
+  miningSource = source
+  miningCompleted = false
   mineRing.style.setProperty('--progress', '0deg')
 
   if (mineProgressTimeoutId) window.clearTimeout(mineProgressTimeoutId)
   mineProgressTimeoutId = window.setTimeout(() => {
-    if (touchMining) {
-      mineProgress.querySelector('span')!.textContent = 'Hold to break'
+    if (miningSession.active) {
+      mineProgress.querySelector('span')!.textContent = `Mining ${BLOCKS.find(({ id }) => id === hit.id)?.name ?? 'block'}`
       mineProgress.classList.add('visible')
     }
   }, 120)
+  return true
 }
 
-function cancelTouchMining() {
-  touchMining = false
-  touchMiningComplete = false
+function cancelMining() {
+  miningSession.cancel()
+  miningSource = null
+  miningCompleted = false
+  miningRevision += 1
   if (mineProgressTimeoutId) {
     window.clearTimeout(mineProgressTimeoutId)
     mineProgressTimeoutId = null
@@ -3190,17 +3235,26 @@ function cancelTouchMining() {
   mineRing.style.setProperty('--progress', '0deg')
 }
 
-function updateTouchMining() {
-  if (!touchMining) return
-  const progress = Math.min((performance.now() - touchMiningStartedAt) / progression.getMiningDuration(TOUCH_MINE_MS), 1)
-  mineRing.style.setProperty('--progress', `${Math.round(progress * 360)}deg`)
-  if (progress < 1 || touchMiningComplete) return
-  touchMiningComplete = true
+function updateMining() {
+  if (!miningSession.active) return
+  const hit = pickBlock()
+  const currentKey = hit && hit.distance <= RAYCAST_REACH ? blockKey(hit.x, hit.y, hit.z) : null
+  const update = miningSession.update(performance.now(), currentKey)
+  if (update.status === 'cancelled') {
+    cancelMining()
+    return
+  }
+  mineRing.style.setProperty('--progress', `${Math.round(update.progress * 360)}deg`)
+  if (update.status !== 'complete' || miningCompleted) return
+  miningCompleted = true
   mineProgress.classList.add('mining-complete')
   mineProgress.querySelector('span')!.textContent = 'Break'
-  vibrateTouch([10, 22, 14])
-  breakTargetBlock()
-  window.setTimeout(cancelTouchMining, 180)
+  if (miningSource !== 'desktop') vibrateTouch([10, 22, 14])
+  breakTargetBlock(update.key ?? undefined)
+  const completionRevision = miningRevision
+  window.setTimeout(() => {
+    if (miningRevision === completionRevision && !miningSession.active && miningCompleted) cancelMining()
+  }, 180)
 }
 
 function applyTouchLookDelta(dx: number, dy: number) {
@@ -3242,7 +3296,8 @@ renderer.domElement.addEventListener('pointerdown', (event) => {
   lookStartY = event.clientY
   lookMoved = false
   touchStartedOnRight = event.clientX > window.innerWidth * 0.5
-  if (touchStartedOnRight) beginTouchMining()
+  touchGestureStartedAt = performance.now()
+  if (touchStartedOnRight) beginMining('touch-canvas')
   renderer.domElement.setPointerCapture(event.pointerId)
 })
 renderer.domElement.addEventListener('pointermove', (event) => {
@@ -3254,28 +3309,29 @@ renderer.domElement.addEventListener('pointermove', (event) => {
   previousLookY = event.clientY
   if (Math.hypot(event.clientX - lookStartX, event.clientY - lookStartY) > TOUCH_TAP_MAX_MOVE) {
     lookMoved = true
-    if (touchMining && !touchMiningComplete) cancelTouchMining()
+    if (miningSource === 'touch-canvas' && miningSession.active && !miningCompleted) cancelMining()
   }
   applyTouchLookDelta(dx, dy)
 })
 renderer.domElement.addEventListener('pointerup', (event) => {
   if (event.pointerId !== lookPointerId) return
   event.preventDefault()
-  const shouldPlace = touchStartedOnRight && !lookMoved && touchMining && !touchMiningComplete
+  const shouldPlace = touchStartedOnRight && !lookMoved && !miningCompleted &&
+    performance.now() - touchGestureStartedAt <= TOUCH_PLACE_TAP_MS
   lookPointerId = null
   if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
   if (shouldPlace) {
     vibrateTouch(12)
     placeTargetBlock()
   }
-  cancelTouchMining()
+  cancelMining()
 })
 renderer.domElement.addEventListener('pointercancel', (event) => {
   if (event.pointerId === lookPointerId) {
     event.preventDefault()
     lookPointerId = null
     if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId)
-    cancelTouchMining()
+    cancelMining()
   }
 })
 
@@ -3787,7 +3843,7 @@ function animate() {
   if (pos.y < floor) { pos.y = floor; playerMotion.land() }
   else if (pos.y > floor + 0.05) playerMotion.setGrounded(false)
   if (playerCollision.collidesAt(pos)) pos.y = Math.max(pos.y, floor)
-  updateTouchMining()
+  updateMining()
   stabilizeFirstPersonLook()
 
   if (!cosmeticEffectsReduced || Math.floor(elapsedTime * 10) % 2 === 0) animateBlockMaterials(materials, elapsedTime)

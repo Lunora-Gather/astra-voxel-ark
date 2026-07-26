@@ -52,6 +52,8 @@ stale compass targets and keeping navigation memory proportional to resident ter
 - Terrain plans are applied at most one chunk per accepted frame.
 - Player motion reuses one step object and caps simulation deltas at 50 ms; keyboard and touch
   share the same normalized acceleration path without per-frame vector allocation.
+- Hold-to-mine progress reuses one session result object and reads absolute time, so slow frames do
+  not lengthen mining or allocate progress objects.
 - Particle meshes are pooled.
 - Point lights use allocation and active-light budgets.
 - Hidden pages do no rendering work.

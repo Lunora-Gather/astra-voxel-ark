@@ -34,6 +34,13 @@ advance it through narrow adapters in `main.ts`. Its optional compact snapshot i
 older saves infer already-finished steps from progression statistics. Roomy HUDs show the current
 step directly, while constrained touch layouts mirror it into the existing help panel.
 
+`src/singleplayer/MiningSystem.ts` owns block hardness, tool-tier duration scaling and the transient
+mining session. Desktop mouse, the touch Break button and touch-canvas holds all enter the same
+session adapter. Progress uses absolute frame time and a reused result object; changing the aimed
+block cancels the session, and completion passes the locked block key back to the world mutation
+adapter. A short touch-canvas tap remains a placement gesture, including against a tool-gated
+target. Mining state is intentionally not persisted.
+
 ## Session contract
 
 `SessionGateway` deliberately exposes only lifecycle and session metadata. `LocalSessionGateway` is active. `ReservedMultiplayerGateway` keeps the product and code entry visible but always reports unavailable.

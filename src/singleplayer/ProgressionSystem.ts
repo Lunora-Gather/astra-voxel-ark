@@ -1,4 +1,5 @@
 import type { BlockId } from '../blocks'
+import { getBlockMiningDuration } from './MiningSystem'
 
 export type ToolTier = 0 | 1 | 2 | 3
 
@@ -139,8 +140,8 @@ export class ProgressionSystem {
     return TOOL_TIER_NAMES[MINING_TIER[id] ?? 0]
   }
 
-  getMiningDuration(baseDurationMs: number) {
-    return Math.round(baseDurationMs * [1, 0.78, 0.58, 0.4][this.toolTier])
+  getMiningDuration(id: BlockId) {
+    return getBlockMiningDuration(id, this.toolTier)
   }
 
   canCraft(recipe: Recipe, inventory: InventoryPort) {

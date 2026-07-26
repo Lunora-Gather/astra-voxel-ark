@@ -11,7 +11,7 @@ export type TutorialStep = {
 
 const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id: 'move', title: 'First Steps', desktopPrompt: 'Use WASD to move', touchPrompt: 'Use the left joystick to move' },
-  { id: 'mine', title: 'Gather', desktopPrompt: 'Break any surface block', touchPrompt: 'Hold Break on any surface block' },
+  { id: 'mine', title: 'Gather', desktopPrompt: 'Hold left mouse to mine a surface block', touchPrompt: 'Hold Break on any surface block' },
   { id: 'place', title: 'Build', desktopPrompt: 'Select a block and place it', touchPrompt: 'Select a block, then tap Place' },
   { id: 'backpack', title: 'Backpack', desktopPrompt: 'Press E to open your backpack', touchPrompt: 'Open Menu → Expedition' },
   { id: 'craft', title: 'Craft', desktopPrompt: 'Craft your first tool or material', touchPrompt: 'Craft your first tool or material' },

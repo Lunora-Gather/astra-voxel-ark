@@ -115,6 +115,8 @@ High-impact tasks:
 - Block coordinates are integrated with budgeted HUD updates, copy feedback and compact-menu fallback.
 - Contextual onboarding is integrated with save-aware progression, touch-specific prompts and a
   compact help-panel fallback for short or constrained displays.
+- Block hardness and tool-speed progression are integrated through one allocation-free mining
+  session shared by desktop and touch input paths.
 - Add a performance/debug panel for draw calls, geometries, textures, chunks, and dirty queues — integrated.
 
 ## Phase 5: Testing and release confidence
