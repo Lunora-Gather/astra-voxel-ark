@@ -7,6 +7,7 @@ const requiredFiles = [
   'src/performance/DeviceProfile.ts',
   'src/performance/QualityRuntimeProfile.ts',
   'src/performance/RuntimePerformanceGuard.ts',
+  'src/platform/RuntimeBootstrap.ts',
   'src/world/ChunkManager.ts',
   'src/world/ProceduralTerrain.ts',
   'src/world/ProceduralTerrainWorkerClient.ts',
@@ -22,8 +23,9 @@ const requiredFiles = [
 ]
 
 const checks = [
-  ['src/main.ts', 'new SettingsStore'],
-  ['src/main.ts', 'resolveQualityRuntimeProfile'],
+  ['src/platform/RuntimeBootstrap.ts', 'new SettingsStore'],
+  ['src/platform/RuntimeBootstrap.ts', 'resolveQualityRuntimeProfile'],
+  ['src/main.ts', 'createRuntimeBootstrap()'],
   ['src/main.ts', 'new RuntimePerformanceGuard'],
   ['src/main.ts', 'new ProceduralTerrainWorkerClient'],
   ['src/main.ts', 'new ChunkManager'],

@@ -34,7 +34,6 @@ import { isGreedyMeshEligible } from './render/BlockRenderLayers'
 import { PointLightBudgetController } from './render/lightBudget'
 import { SkyDecorationSystem } from './render/SkyDecorationSystem'
 import { ParticleEffectsPipeline } from './app/ParticleEffectsPipeline'
-import { detectRuntimeDeviceProfile, isConstrainedTier, type RuntimeTier } from './performance/DeviceProfile'
 import { FrameRateLimiter } from './performance/FrameRateLimiter'
 import { resolveQualityRuntimeProfile, type TerrainRenderStyle } from './performance/QualityRuntimeProfile'
 import { RuntimePerformanceGuard } from './performance/RuntimePerformanceGuard'
@@ -43,6 +42,7 @@ import {
   WORLD_SLOT_IDS,
   buildLandmarkPlan,
   buildProceduralChunkPlan,
+  clearTerrainNoiseCache,
   createWorldSeed,
   formatWorldSeed,
   formatWorldCoordinates,
@@ -52,6 +52,7 @@ import {
   PLAYER_SPAWN,
   PLAYER_SPAWN_ROTATION,
   proceduralTerrainHeightAt,
+  proceduralSeededNoise,
   getWorldExportSlug,
   getWorldSlotSaveKey,
   normalizeWorldSeed,
@@ -78,50 +79,24 @@ import {
   type FloraVariantId,
 } from './world'
 import { IdleTaskQueue } from './platform/IdleTaskQueue'
+import { createRuntimeBootstrap } from './platform/RuntimeBootstrap'
+import { PerformanceHud, formatPerformanceNumber } from './ui/PerformanceHud'
+import { SurvivalHud } from './ui/SurvivalHud'
 import { audioSystem, playGameSound, playShardCollectSound, unlockGameAudio } from './systems'
-import { PageLifecycleSaveCoordinator, SaveActivityTracker, SettingsStore, type GameSettings, type QualityPreset } from './game'
+import { PageLifecycleSaveCoordinator, SaveActivityTracker, type GameSettings, type QualityPreset } from './game'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
-const GAME_VERSION_LABEL = 'v1.0.0 Full Release'
-const smokeParams = new URLSearchParams(window.location.hash.slice(1))
-const isSmokeTest = smokeParams.has('smoke')
-const smokeTouchParam = isSmokeTest ? smokeParams.get('touch') : null
-const smokeTouchMode = smokeTouchParam === '1'
-const smokeDesktopMode = smokeTouchParam === '0'
-const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
-const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches
-const isMobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-const hasTouchCapability = hasCoarsePointer || navigator.maxTouchPoints > 0
-const isTouchPrimaryDevice = hasCoarsePointer && (isSmallScreen || isMobileUserAgent)
-const isTouchDevice = smokeTouchMode || (!smokeDesktopMode && isTouchPrimaryDevice)
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-const requestedRuntimeTier = smokeParams.get('device-tier')
-const forcedRuntimeTier: RuntimeTier | null = isSmokeTest && (
-  requestedRuntimeTier === 'ultra-low' || requestedRuntimeTier === 'low' ||
-  requestedRuntimeTier === 'standard' || requestedRuntimeTier === 'high'
-) ? requestedRuntimeTier : null
-const runtimeProfile = detectRuntimeDeviceProfile({
-  touchPrimary: isTouchDevice || hasTouchCapability,
-  reducedMotion: prefersReducedMotion,
-  forcedTier: forcedRuntimeTier,
-})
-const runtimeLimits = runtimeProfile.limits
-const lowPowerMode = isConstrainedTier(runtimeProfile.tier)
-const settingsStore = new SettingsStore({
-  maxViewDistance: runtimeLimits.maxViewDistance,
-  defaults: {
-    sensitivity: 72,
-    fov: 72,
-    viewDistance: 1,
-    quality: 'balanced',
-    showPerf: false,
-    frameRate: runtimeLimits.targetFps === 30 ? 30 : 60,
-    volume: 70,
-    soundEnabled: true,
-  },
-})
-const startupSettings = settingsStore.load()
-const startupGraphics = resolveQualityRuntimeProfile(startupSettings.quality, runtimeProfile.tier, runtimeLimits)
+const GAME_VERSION_LABEL = 'v1.0.1 Maintenance Release'
+const {
+  isSmokeTest,
+  isTouchDevice,
+  runtimeProfile,
+  runtimeLimits,
+  lowPowerMode,
+  settingsStore,
+  startupSettings,
+  startupGraphics,
+} = createRuntimeBootstrap()
 let frameRateLimit: 30 | 60 = startupSettings.frameRate
 const gameplayFrameLimiter = new FrameRateLimiter(frameRateLimit)
 const performanceGuard = new RuntimePerformanceGuard(frameRateLimit)
@@ -351,6 +326,9 @@ app.innerHTML = `
   </div>
 `
 
+const performanceHud = new PerformanceHud(app)
+const survivalHud = new SurvivalHud(app)
+
 const scene = new THREE.Scene()
 const nightSkyColor = new THREE.Color(0x17213d)
 const daySkyColor = new THREE.Color(0xaedcff)
@@ -532,7 +510,6 @@ let terrainLoadRadius = startupSettings.viewDistance
 const RAYCAST_REACH = 8
 const GRASS_ANIMATION_BUDGET = runtimeLimits.grassAnimationBudget
 const MIN_RENDER_QUALITY = runtimeLimits.minRenderScale
-const MAX_RENDER_QUALITY = runtimeLimits.maxRenderScale
 const QUALITY_STEP = 0.06
 const TOUCH_JOYSTICK_DEADZONE = 0.08
 const TOUCH_JOYSTICK_EDGE = 0.42
@@ -774,7 +751,7 @@ function refreshBlockVisualAt(k: PackedBlockKey) {
   const shouldRender = hasExposedFace(x, y, z, id)
 
   if (usesChunkMesh(id)) {
-    if (isInstancedBlockRef(visual)) removeInstancedBlockVisual(k, visual)
+    if (isInstancedBlockRef(visual)) removeInstancedBlockVisual(visual)
     blocks.set(k, undefined)
     if (shouldRender) ensureGlowLightAt(k, x, y, z, id)
     else removeGlowLightAt(k)
@@ -788,7 +765,7 @@ function refreshBlockVisualAt(k: PackedBlockKey) {
   }
 
   if (!shouldRender && isInstancedBlockRef(visual)) {
-    removeInstancedBlockVisual(k, visual)
+    removeInstancedBlockVisual(visual)
     blocks.set(k, undefined)
     removeGlowLightAt(k)
   }
@@ -873,7 +850,7 @@ function growInstancedBlockMesh(id: BlockId, oldMesh: THREE.InstancedMesh, keysF
   return newMesh
 }
 
-function removeInstancedBlockVisual(k: PackedBlockKey, ref: InstancedBlockRef) {
+function removeInstancedBlockVisual(ref: InstancedBlockRef) {
   const keysForType = instancedBlockKeys.get(ref.id)
   if (!keysForType) return
 
@@ -943,11 +920,6 @@ function rebuildOptimizedChunkMeshes(limit: number, timeBudgetMs = Number.POSITI
   }
 }
 
-function seededNoise(...values: number[]) {
-  const legacySeed = values.reduce((seed, value) => seed * 31 + value, 17)
-  return hashNoise(legacySeed + (worldSeed === 0 ? 0 : worldSeed * 0.61803398875))
-}
-
 const grassPos = new THREE.Vector3()
 const grassRot = new THREE.Quaternion()
 const grassScale = new THREE.Vector3()
@@ -965,15 +937,15 @@ function addGrassTuft(x: number, y: number, z: number, variant: FloraVariantId =
     grassTuftIndicesByAnchor.set(anchorKey, tuftIndices)
   }
   const flora = getFloraDefinition(variant)
-  const baseX = x + (seededNoise(x, y, z, 1) - 0.5) * 0.35
+  const baseX = x + (proceduralSeededNoise(worldSeed, x, y, z, 1) - 0.5) * 0.35
   const baseY = y + 0.56
-  const baseZ = z + (seededNoise(x, y, z, 2) - 0.5) * 0.35
+  const baseZ = z + (proceduralSeededNoise(worldSeed, x, y, z, 2) - 0.5) * 0.35
 
   for (let i = 0; i < 3; i++) {
     const index = grassBladeMesh.count
 
-    const rotY = (Math.PI / 3) * i + seededNoise(x, y, z, i, 4) * 0.22
-    const scale = 0.72 + seededNoise(x, y, z, i, 5) * 0.35
+    const rotY = (Math.PI / 3) * i + proceduralSeededNoise(worldSeed, x, y, z, i, 4) * 0.22
+    const scale = 0.72 + proceduralSeededNoise(worldSeed, x, y, z, i, 5) * 0.35
 
     grassPos.set(baseX, baseY, baseZ)
     grassEuler.set(0, rotY, 0)
@@ -1057,7 +1029,7 @@ function removeBlockAtKey(k: PackedBlockKey, source: 'player' | 'system' = 'syst
   }
   removeGlowLightAt(k)
   if (isInstancedBlockRef(visual)) {
-    removeInstancedBlockVisual(k, visual)
+    removeInstancedBlockVisual(visual)
   }
   removeGrassTuftsAt(k)
   blocks.delete(k)
@@ -1102,6 +1074,7 @@ function readSavedExploration(savedExploration: SavedWorld['exploration']) {
 }
 
 function clearWorldBlocks() {
+  clearTerrainNoiseCache()
   const keysToRemove = [...blockData.keys()]
   keysToRemove.forEach((key) => removeBlockAtKey(key))
   instancedBlockMeshes.forEach((mesh) => {
@@ -1593,6 +1566,9 @@ if (isSmokeTest) {
   void import('./app/ParticleEffectsPipelineSmoke').then(({ assertParticleEffectsPipelineSmoke }) => {
     assertParticleEffectsPipelineSmoke()
   }).catch((error) => console.error(error))
+  void import('./platform/RuntimeBootstrapSmoke').then(({ assertRuntimeBootstrapSmoke }) => {
+    assertRuntimeBootstrapSmoke()
+  }).catch((error) => console.error(error))
 }
 
 function restorePlayerState(state: PlayerStateSnapshot) {
@@ -1671,11 +1647,6 @@ let soundEnabled = startupSettings.soundEnabled
 
 function isTerrainChunkInBounds(cx: number, cz: number) {
   return Math.hypot(cx, cz) <= TERRAIN_MAX_RADIUS
-}
-
-function hashNoise(seed: number) {
-  const x = Math.sin(seed * 12.9898) * 43758.5453
-  return x - Math.floor(x)
 }
 
 function terrainHeightAt(x: number, z: number) {
@@ -3599,23 +3570,6 @@ renderer.domElement.addEventListener('pointercancel', (event) => {
 })
 
 const clock = new THREE.Clock()
-const fpsEl = document.querySelector<HTMLElement>('.perf-fps')
-const msEl = document.querySelector<HTMLElement>('.perf-ms')
-const blocksEl = document.querySelector<HTMLElement>('.perf-blocks')
-const chunksEl = document.querySelector<HTMLElement>('.perf-chunks')
-const terrainChunksEl = document.querySelector<HTMLElement>('.perf-terrain-chunks')
-const dirtyEl = document.querySelector<HTMLElement>('.perf-dirty')
-const callsEl = document.querySelector<HTMLElement>('.perf-calls')
-const trianglesEl = document.querySelector<HTMLElement>('.perf-triangles')
-const geometriesEl = document.querySelector<HTMLElement>('.perf-geometries')
-const texturesEl = document.querySelector<HTMLElement>('.perf-textures')
-const crystalBarEl = document.querySelector<HTMLElement>('.charge-bar')
-const crystalValEl = document.querySelector<HTMLElement>('.crystal-val')
-const threatValEl = document.querySelector<HTMLElement>('.threat-val')
-const survivalBadgeEl = document.querySelector<HTMLElement>('.survival-badge')
-const coldVignetteEl = document.querySelector<HTMLElement>('.cold-vignette')
-const healthBarEl = document.querySelector<HTMLElement>('.health-bar')
-const healthValEl = document.querySelector<HTMLElement>('.health-val')
 const worldBiomeEl = document.querySelector<HTMLElement>('.world-biome')
 const worldCoordinatesEl = document.querySelector<HTMLElement>('.world-coordinates')
 const worldBadgeButton = document.querySelector<HTMLButtonElement>('.world-badge')
@@ -3636,8 +3590,7 @@ function syncPerformanceGuardUi() {
   const level = performanceGuard.currentLevel
   document.body.dataset.runtimePressure = level
   syncShadowBudget()
-  const mode = document.querySelector<HTMLElement>('.perf-mode')
-  if (mode) mode.textContent = level === 'normal' ? runtimeProfile.tier : `${runtimeProfile.tier} · ${level}`
+  performanceHud.setMode(level === 'normal' ? runtimeProfile.tier : `${runtimeProfile.tier} · ${level}`)
 }
 
 syncPerformanceGuardUi()
@@ -3658,11 +3611,6 @@ function updateAdaptiveQuality(avgMs: number, elapsedTime: number) {
   }
 }
 
-let lastSurvivalUiAt = -Infinity
-let lastSurvivalCharge = -1
-let lastSurvivalThreat = ''
-let lastSurvivalProtectionLabel = ''
-let lastSurvivalStyle = ''
 let lastShardSignalAt = -Infinity
 let lastBiomeUiAt = -Infinity
 
@@ -3693,9 +3641,7 @@ function respawnPlayer() {
 }
 
 function updateHealthUi() {
-  const health = Math.round(survivalVitals.getHealth())
-  if (healthBarEl) healthBarEl.style.width = `${health}%`
-  if (healthValEl) healthValEl.textContent = `${health}%`
+  survivalHud.setHealth(survivalVitals.getHealth())
 }
 
 function applyLandingImpact(impactSpeed: number) {
@@ -3736,10 +3682,6 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const shardWardLabel = shardWardLevel > 0 ? ` · Ward ${shardWardLevel}` : ''
   const protectionLabel = `${carriedLabel}${shardWardLabel}`
 
-  if (coldVignetteEl) {
-    coldVignetteEl.style.opacity = String(coldIntensity)
-  }
-
   renderer.toneMappingExposure = 1.12 - coldIntensity * 0.2
   const baseFogDensity = runtimeProfile.tier === 'ultra-low' ? 0.019 : lowPowerMode ? 0.014 : 0.009
   sceneFog.density = baseFogDensity + (1 - day) * 0.006 + coldIntensity * 0.018
@@ -3747,8 +3689,6 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   let phase = 'Day'
   let threat = carriedCrystal > 0 ? 'Protected' : shardWardLevel > 0 ? 'Beacon Ward' : 'Safe'
   let threatColor = '#a8ffb9'
-  let styleBand = 'high'
-
   if (day > 0.8) {
     phase = 'Noon'
   } else if (day > 0.4) {
@@ -3775,58 +3715,15 @@ function updateSurvivalLoop(dt: number, day: number, elapsedTime: number) {
   const chargeInt = Math.floor(crystalPower)
   const threatText = `${phase} · ${threat}`
 
-  if (!threatValEl || !crystalBarEl || !crystalValEl || !survivalBadgeEl) return
-  updateHealthUi()
-  if (
-    elapsedTime - lastSurvivalUiAt < 0.25 &&
-    chargeInt === lastSurvivalCharge &&
-    threatText === lastSurvivalThreat &&
-    protectionLabel === lastSurvivalProtectionLabel
-  ) {
-    return
-  }
-
-  lastSurvivalUiAt = elapsedTime
-  if (threatText !== lastSurvivalThreat) {
-    threatValEl.textContent = threatText
-    threatValEl.style.color = threatColor
-    lastSurvivalThreat = threatText
-  } else if (threatValEl.style.color !== threatColor) {
-    threatValEl.style.color = threatColor
-  }
-  if (chargeInt !== lastSurvivalCharge) {
-    crystalBarEl.style.width = `${chargeInt}%`
-    lastSurvivalCharge = chargeInt
-  }
-  if (protectionLabel !== lastSurvivalProtectionLabel || crystalValEl.textContent !== `${chargeInt}%${protectionLabel}`) {
-    crystalValEl.textContent = `${chargeInt}%${protectionLabel}`
-    lastSurvivalProtectionLabel = protectionLabel
-  }
-
-  if (chargeInt < 25) {
-    styleBand = 'low'
-  } else if (chargeInt < 60) {
-    styleBand = 'mid'
-  }
-
-  if (styleBand === lastSurvivalStyle) return
-  lastSurvivalStyle = styleBand
-  if (styleBand === 'low') {
-    crystalBarEl.style.background = 'linear-gradient(90deg, #5fcfff, #ff8c8c)'
-    crystalValEl.style.color = '#8fd8ff'
-    survivalBadgeEl.style.borderColor = 'rgba(95, 207, 255, 0.55)'
-    survivalBadgeEl.style.boxShadow = '0 20px 50px rgba(95, 207, 255, 0.16)'
-  } else if (styleBand === 'mid') {
-    crystalBarEl.style.background = 'linear-gradient(90deg, #ffd754, #fff3a8)'
-    crystalValEl.style.color = '#fff3a8'
-    survivalBadgeEl.style.borderColor = 'rgba(255, 215, 84, 0.4)'
-    survivalBadgeEl.style.boxShadow = '0 20px 50px rgba(255, 215, 84, 0.1)'
-  } else {
-    crystalBarEl.style.background = 'linear-gradient(90deg, #a78cff, #d999ff)'
-    crystalValEl.style.color = '#d999ff'
-    survivalBadgeEl.style.borderColor = 'rgba(141, 117, 255, 0.35)'
-    survivalBadgeEl.style.boxShadow = '0 20px 50px rgba(0,0,0,0.35)'
-  }
+  survivalHud.update({
+    health: survivalVitals.getHealth(),
+    charge: chargeInt,
+    threatText,
+    threatColor,
+    protectionLabel,
+    coldIntensity,
+    elapsedTime,
+  })
 }
 
 let lastLightCullAt = -Infinity
@@ -3893,34 +3790,22 @@ function updateFrameStats(dt: number, elapsedTime: number) {
   )
 
   if (!showPerformanceHud) return
-  if (fpsEl && msEl) {
-    fpsEl.textContent = String(currentFps)
-    msEl.textContent = `${avgMs} · Q${Math.round(renderQuality * 100)}%`
-    fpsEl.style.color = currentFps >= frameRateLimit * 0.92 ? '#a8ffb9' : currentFps >= frameRateLimit * 0.65 ? '#fff3a8' : '#ffd7fa'
-  }
-  if (blocksEl) {
-    blocksEl.textContent = String(blocks.size)
-  }
-  if (chunksEl) {
-    chunksEl.textContent = String(optimizedChunks.chunkCount)
-  }
-  if (terrainChunksEl) {
-    terrainChunksEl.textContent = `${generatedTerrainChunks.size}/${discoveredTerrainChunks.size}`
-  }
-  if (dirtyEl) {
-    dirtyEl.textContent = `${terrainGenerationQueue.length + terrainWorkerInFlight}/${optimizedChunks.dirtyChunkCount}`
-  }
-  if (callsEl) callsEl.textContent = formatPerformanceNumber(renderer.info.render.calls)
-  if (trianglesEl) trianglesEl.textContent = formatPerformanceNumber(renderer.info.render.triangles)
-  if (geometriesEl) geometriesEl.textContent = formatPerformanceNumber(renderer.info.memory.geometries)
-  if (texturesEl) texturesEl.textContent = formatPerformanceNumber(renderer.info.memory.textures)
-}
-
-function formatPerformanceNumber(value: number) {
-  const safeValue = Math.max(0, Math.round(Number.isFinite(value) ? value : 0))
-  if (safeValue < 1000) return String(safeValue)
-  if (safeValue < 1_000_000) return `${(safeValue / 1000).toFixed(safeValue < 10_000 ? 1 : 0)}k`
-  return `${(safeValue / 1_000_000).toFixed(safeValue < 10_000_000 ? 1 : 0)}m`
+  performanceHud.update({
+    fps: currentFps,
+    averageFrameMs: avgMs,
+    renderQuality,
+    targetFps: frameRateLimit,
+    blocks: blocks.size,
+    chunks: optimizedChunks.chunkCount,
+    residentTerrainChunks: generatedTerrainChunks.size,
+    discoveredTerrainChunks: discoveredTerrainChunks.size,
+    queuedTerrainChunks: terrainGenerationQueue.length + terrainWorkerInFlight,
+    dirtyChunks: optimizedChunks.dirtyChunkCount,
+    drawCalls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    geometries: renderer.info.memory.geometries,
+    textures: renderer.info.memory.textures,
+  })
 }
 
 const AUTO_SAVE_INTERVAL = 300 // 5 minutes

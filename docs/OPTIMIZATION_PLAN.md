@@ -1,6 +1,6 @@
-# AstraVoxel Ark v1.0 Optimization Baseline
+# AstraVoxel Ark v1.0.1 Optimization Baseline
 
-This document records the performance and maintainability baseline of the v1.0.0 single-player release. Historical migration scaffolding and experimental default-off pipelines were removed before release; the modules listed here are the paths used by the live game.
+This document records the performance and maintainability baseline of the v1.0.1 single-player release. Historical migration scaffolding and experimental default-off pipelines were removed before release; the modules listed here are the paths used by the live game.
 
 ## Release goals
 
@@ -27,6 +27,10 @@ src/
 ```
 
 `src/main.ts` remains the composition root. Gameplay rules and reusable performance components live in focused modules and are covered by runtime or static smoke tests.
+
+Browser capability and startup graphics selection now live in `src/platform/RuntimeBootstrap.ts`.
+Performance and survival HUD presentation live in typed `src/ui/` components, keeping DOM lookup,
+formatting, throttling and visual styling out of the frame-loop composition code.
 
 ## Implemented performance work
 
@@ -85,7 +89,7 @@ The GitHub Pages and package workflows run the same verification command before 
 - Keep new world decoration inside existing instanced batches where possible.
 - Add device-lab frame traces for representative 2 GB, 4 GB and integrated-GPU hardware.
 
-## Non-goals for v1.0.0
+## Non-goals for v1.0.1
 
 - No active multiplayer transport or synchronization.
 - No renderer rewrite.

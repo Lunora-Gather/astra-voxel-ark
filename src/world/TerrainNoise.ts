@@ -2,10 +2,6 @@ const TERRAIN_NOISE_CACHE_LIMIT = 32768
 const terrainNoiseCache = new Map<number, Map<number, number>>()
 let terrainNoiseCacheSize = 0
 
-export function blockKey(x: number, y: number, z: number) {
-  return x + ',' + y + ',' + z
-}
-
 export function terrainNoise(x: number, z: number) {
   const cachedRow = terrainNoiseCache.get(x)
   const cached = cachedRow?.get(z)

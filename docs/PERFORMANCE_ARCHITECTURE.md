@@ -19,6 +19,10 @@ marks every chunk dirty, so meshes rebuild progressively inside the normal frame
 View distance is a player choice up to Far on `low` (Normal on `ultra-low`); the pressure guard
 still subtracts radius under sustained load and Eco still caps it to Near.
 
+`src/platform/RuntimeBootstrap.ts` is the single pre-WebGL startup boundary. It resolves browser
+capabilities, test overrides, device policy, persisted settings and the initial graphics profile
+before the renderer is created.
+
 `src/performance/RuntimePerformanceGuard.ts` adds a second, transient layer for sustained runtime
 pressure. Sample hysteresis moves through `normal`, `strained`, and `critical` rather than reacting
 to individual slow frames. It scales greedy-mesh rebuild batches and time budgets, terrain cadence,
@@ -32,6 +36,10 @@ Recovery happens one level at a time.
 ores, vegetation, trees, and landmarks. Initial spawn terrain can be built synchronously;
 streamed terrain is planned by `src/workers/proceduralTerrainWorker.ts`. The main thread only
 applies completed plans in bounded batches.
+
+Terrain noise caching lives with the world implementation in `src/world/TerrainNoise.ts`. The cache
+has a hard entry limit and is cleared on world transitions so switching seeds does not retain stale
+samples.
 
 Worker requests are guarded by a generation epoch. Loading or resetting a world invalidates
 old responses so stale terrain cannot leak into the new session.

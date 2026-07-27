@@ -3,6 +3,7 @@ import fs from 'node:fs'
 const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
 const style = fs.readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 const hudSmoke = fs.readFileSync(new URL('./hud-smoke-electron.cjs', import.meta.url), 'utf8')
+const performanceHud = fs.readFileSync(new URL('../src/ui/PerformanceHud.ts', import.meta.url), 'utf8')
 
 const expectations = [
   [main.includes('perf-render-row'), 'dedicated render metrics row'],
@@ -10,7 +11,8 @@ const expectations = [
   [main.includes('renderer.info.render.triangles'), 'triangle metric'],
   [main.includes('renderer.info.memory.geometries'), 'geometry metric'],
   [main.includes('renderer.info.memory.textures'), 'texture metric'],
-  [main.includes('formatPerformanceNumber'), 'compact metric formatter'],
+  [performanceHud.includes('formatPerformanceNumber'), 'compact metric formatter'],
+  [main.includes('new PerformanceHud(app)'), 'typed performance HUD integration'],
   [main.includes('if (!showPerformanceHud) return'), 'hidden HUD DOM update guard'],
   [style.includes('.perf-row + .perf-row'), 'three-row visual hierarchy'],
   [style.includes('body.menu-open .menu-toggle-btn { display: none; }'), 'menu overlap prevention'],

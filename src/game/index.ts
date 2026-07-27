@@ -1,4 +1,3 @@
 export * from './PageLifecycleSaveCoordinator'
-export * from './performance'
 export * from './SaveActivityTracker'
 export * from './settings'

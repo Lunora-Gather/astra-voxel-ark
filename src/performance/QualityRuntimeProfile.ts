@@ -1,4 +1,4 @@
-import type { QualityPreset } from '../game/performance'
+import type { QualityPreset } from '../game/settings'
 import type { RuntimeLimits, RuntimeTier } from './DeviceProfile'
 
 export type QualityRenderBounds = {

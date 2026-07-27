@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const worldMath = readFileSync(resolve(process.cwd(), 'src/worldMath.ts'), 'utf8').replace(/\r\n/g, '\n')
+const worldMath = readFileSync(resolve(process.cwd(), 'src/world/TerrainNoise.ts'), 'utf8').replace(/\r\n/g, '\n')
+const main = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf8').replace(/\r\n/g, '\n')
 
 const terrainNoiseBody = worldMath.match(/export function terrainNoise\(x: number, z: number\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
 const clearBody = worldMath.match(/export function clearTerrainNoiseCache\(\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
@@ -35,6 +36,10 @@ if (!clearBody.includes('terrainNoiseCache.clear()') || !clearBody.includes('ter
 
 if (!sizeBody.includes('return terrainNoiseCacheSize')) {
   errors.push('getTerrainNoiseCacheSize should return the tracked cache size')
+}
+
+if (!main.includes('clearTerrainNoiseCache()')) {
+  errors.push('world transitions should release cached terrain samples')
 }
 
 if (errors.length > 0) {

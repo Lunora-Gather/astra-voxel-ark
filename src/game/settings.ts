@@ -1,4 +1,4 @@
-import type { QualityPreset } from './performance'
+export type QualityPreset = 'eco' | 'low' | 'balanced' | 'high'
 
 export type GameSettings = {
   sensitivity: number
